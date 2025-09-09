@@ -74,7 +74,8 @@ const App = () => {
   const [isAddressDialogOpen, setIsAddressDialogOpen] = useState(false);
   const [showDepositDialog, setShowDepositDialog] = useState<boolean>(false);
   const [showDepositDetails, setShowDepositDetails] = useState<boolean>(false);
-  const [isAssetBreakdownOpen, setIsAssetBreakdownOpen] = useState<boolean>(false);
+  const [isAssetBreakdownOpen, setIsAssetBreakdownOpen] =
+    useState<boolean>(false);
   const [tooltipsEnabled, setTooltipsEnabled] = useState(false);
 
   // Disable tooltips when dialog opens, enable after a delay
@@ -107,7 +108,7 @@ const App = () => {
         projectClientKey: process.env.NEXT_PUBLIC_CLIENT_KEY!,
         projectAppUuid: process.env.NEXT_PUBLIC_APP_ID!,
         ownerAddress: address,
-        rpcUrl: "https://universal-rpc-staging.particle.network",
+
         // If not set it will use auto-slippage
         tradeConfig: {
           slippageBps: 100, // 1% slippage tolerance
@@ -388,7 +389,7 @@ const App = () => {
 
               {/* Right Column - Universal Balance Section */}
               <div>
-                <button 
+                <button
                   onClick={() => setIsAssetBreakdownOpen(true)}
                   className="w-full bg-[#2A2A4A] rounded-lg p-6 border border-[#4A4A6A] shadow-inner hover:border-yellow-500 transition-colors h-full flex flex-col justify-center"
                 >
@@ -539,7 +540,7 @@ const App = () => {
             solanaAddress={accountInfo.solanaSmartAccount}
           />
         )}
-        
+
         {/* Asset Breakdown Dialog */}
         <AssetBreakdownDialog
           isOpen={isAssetBreakdownOpen}
