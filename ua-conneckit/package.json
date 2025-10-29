@@ -38,7 +38,7 @@
     "tailwindcss": "^3.4.1",
     "typescript": "^5"
   },
-  "overrides": {
-    "@coinbase/wallet-sdk": "4.3.4"
-  }
+"resolutions": {
+  "@coinbase/wallet-sdk": "4.3.4"
+}
 }
