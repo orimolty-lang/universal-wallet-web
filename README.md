@@ -1,6 +1,6 @@
 # Universal Accounts with Particle ConnectKit Demo
 
-This demo showcases how to integrate Particle Network's Universal Accounts with ConnectKit to enable cross-chain transactions and smart contract interactions without requiring users to switch networks or hold native tokens on each chain.
+This demo showcases how to integrate Particle Network's Universal Accounts with ConnectKit to enable cross-chain transactions and smart contract interactions without requiring users to switch networks or bridge tokens.
 
 > Find more details in the [official documentation](https://developers.particle.network/universal-accounts/cha/overview).
 
