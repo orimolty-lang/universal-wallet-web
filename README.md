@@ -8,68 +8,99 @@ This demo showcases how to integrate Particle Network's Universal Accounts with 
 
 The application demonstrates the power of Universal Accounts by allowing users to:
 
-- Connect with Particle ConnectKit via social logins
-- View account details (EOA, EVM universal account, Solana universal account)
-- Perform cross-chain transfers
-- Interact with smart contracts
-- Deposit assets to Universal Accounts
+- **Connect** with Particle ConnectKit via social logins or traditional wallets.
+- **View Account Details**, including the owner EOA, EVM Universal Account, and Solana Universal Account addresses.
+- **Check Universal Balance**, an aggregated total of all primary assets across all supported chains.
+- **View Transaction History** with detailed breakdowns of each transaction.
+- **Deposit Assets** to the Universal Account from any chain.
+- **Perform Cross-Chain Interactions**, such as minting an NFT on a different chain from where the funds are held.
 
 ## Quickstart
 
 ### Prerequisites
 
-- Particle Network project credentials (Project ID, Client Key, App ID)
+- Particle Network project credentials (Project ID, Client Key, App ID).
 
 Find your credentials in the [Particle Network Dashboard](https://dashboard.particle.network/).
 
 ### Installation
 
-1. Clone this repository
-2. Install dependencies with `yarn install`
-3. Create a `.env` file based on `.env.example` with your Particle Network credentials
-4. Run the development server with `yarn dev`
-5. Open [http://localhost:3000](http://localhost:3000) in your browser
+1. Clone this repository.
+2. Install dependencies with `yarn install`.
+3. Create a `.env` file based on `.env.example` and add your Particle Network credentials.
+4. Run the development server with `yarn dev`.
+5. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## Key Features
+## Code Structure: `ua-conneckit/app/page.tsx`
 
-### Universal Account Integration
+The `page.tsx` file is the heart of this demo, managing the entire lifecycle of the Universal Account. Here’s how it works:
 
-The demo initializes a Universal Account instance when a user connects their wallet, providing them with:
+### 1. Initialization
 
-- An EVM Universal Account address
-- A Solana Universal Account address
-- Aggregated balance across all chains
+A `useEffect` hook listens for changes in the user's connection status (`isConnected` and `address`).
 
-### Transaction Functionality
+- **On Connect**: It creates a new `UniversalAccount` instance, passing the required project credentials and the owner's EOA address.
+- **On Disconnect**: It resets the `universalAccountInstance` to `null`.
 
-#### Smart Contract Interaction
+```javascript
+// === Initialize UniversalAccount ===
+useEffect(() => {
+  if (isConnected && address) {
+    const ua = new UniversalAccount({
+      // ...config
+    });
+    setUniversalAccountInstance(ua);
+  } else {
+    setUniversalAccountInstance(null);
+  }
+}, [isConnected, address]);
+```
 
-The application demonstrates how to interact with smart contracts using Universal Accounts:
+### 2. Data Fetching
 
-1. **Mint NFT on Polygon**: Users can mint an NFT on Polygon Mainnet using tokens they hold in their Universal Account, even if those tokens are on different chains.
+Once the `universalAccountInstance` is available, a series of `useEffect` hooks trigger to fetch essential data:
 
-2. **Transaction Flow**:
-   - Creates a universal transaction using `createUniversalTransaction()`
-   - Signs the transaction with the user's wallet
-   - Sends the transaction using `sendTransaction()`
-   - Provides a link to view the transaction on the explorer
+- **`getSmartAccountOptions()`**: Retrieves the EVM and Solana Universal Account addresses.
+- **`getPrimaryAssets()`**: Fetches the aggregated balance of all primary assets across all chains.
+- **`getTransactions()`**: Fetches the user's transaction history with pagination.
 
-#### Cross-Chain Transfers
+Each of these API calls is wrapped in its own `useEffect` for clarity and separation of concerns.
 
-The application demonstrates how to send funds across chains:
+```javascript
+// === Fetch Universal Account Addresses ===
+useEffect(() => {
+  if (!universalAccountInstance) return;
+  // ...fetches addresses
+}, [universalAccountInstance]);
 
-1. **Send USDC to EOA**: Users can send USDC from their Universal Account to their connected EOA wallet on Arbitrum, regardless of which chains their funds are on.
+// === Fetch Primary Assets ===
+useEffect(() => {
+  if (!universalAccountInstance) return;
+  // ...fetches primary assets
+}, [universalAccountInstance]);
 
-2. **Transaction Flow**:
-   - Creates a transfer transaction using `createTransferTransaction()`
-   - Signs the transaction with the user's wallet
-   - Sends the transaction using `sendTransaction()`
-   - Provides a link to view the transaction on the explorer
+// === Fetch Transaction History ===
+useEffect(() => {
+  if (!universalAccountInstance) return;
+  // ...fetches transaction history
+}, [universalAccountInstance]);
+```
 
-### Deposit Functionality
+### 3. Transaction Handling
 
-Users can deposit assets to their Universal Account from any wallet:
+The demo includes several components that showcase different types of transactions:
 
-- Supports deposits to both EVM and Solana addresses
-- Provides QR codes for easy scanning
-- Allows copying of addresses for external transfers
+- `ContractInteraction.tsx`: Mints an NFT on a different chain.
+- `SendFunds.tsx`: Sends funds to an EOA address.
+- `UsdcTransfer.tsx`: A universal transfer of USDC.
+- `Convertions.tsx`: Converts assets to USDC.
+
+The `universalAccountInstance` and the connected `walletClient` are passed as props to these components, which then use them to create and send transactions.
+
+### 4. Transaction History and Details
+
+- **`TxHistoryDialog.tsx`**: Displays a list of transactions. When a transaction is clicked, it calls the `handleTransactionClick` function.
+- **`handleTransactionClick`**: This function, located in `page.tsx`, fetches the full details of the selected transaction using `universalAccountInstance.getTransaction(transactionId)`.
+- **`TxDetailsDialog.tsx`**: A dialog that displays the comprehensive details of the fetched transaction, including token changes, fees, and user operations.
+
+This structure ensures that the main `page.tsx` component acts as a central controller, managing the Universal Account instance and fetching data, while the child components are responsible for specific UI and transaction logic.

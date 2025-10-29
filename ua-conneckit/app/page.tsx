@@ -36,8 +36,11 @@ import {
   type IAssetsResponse,
   //SUPPORTED_TOKEN_TYPE,
 } from "@particle-network/universal-account-sdk";
+import { type ITransactionHistoryResponse } from "./types/transaction-history";
 import DepositDialog from "./components/DepositDialog";
 import AssetBreakdownDialog from "./components/AssetBreakdownDialog";
+import TxHistoryDialog from "./components/TxHistoryDialog";
+import TxDetailsDialog from "./components/TxDetailsDialog";
 
 // Import components
 import ContractInteraction from "./components/ContractInteraction";
@@ -76,6 +79,15 @@ const App = () => {
   const [showDepositDetails, setShowDepositDetails] = useState<boolean>(false);
   const [isAssetBreakdownOpen, setIsAssetBreakdownOpen] =
     useState<boolean>(false);
+  const [isTxHistoryOpen, setIsTxHistoryOpen] = useState<boolean>(false);
+  const [isTxDetailsOpen, setIsTxDetailsOpen] = useState<boolean>(false);
+
+  // Transaction history
+  const [transactions, setTransactions] =
+    useState<ITransactionHistoryResponse | null>(null);
+  const [selectedTxDetails, setSelectedTxDetails] =
+    useState<ITransactionHistoryResponse | null>(null);
+  const [isLoadingTxDetails, setIsLoadingTxDetails] = useState<boolean>(false);
   const [tooltipsEnabled, setTooltipsEnabled] = useState(false);
 
   // Disable tooltips when dialog opens, enable after a delay
@@ -97,6 +109,26 @@ const App = () => {
       setCopiedAddress(text);
       setTimeout(() => setCopiedAddress(null), 2000);
     });
+  };
+
+  // Handle transaction click to fetch and show details
+  const handleTransactionClick = async (transactionId: string) => {
+    if (!universalAccountInstance) return;
+
+    setIsLoadingTxDetails(true);
+    setIsTxDetailsOpen(true);
+
+    try {
+      const txDetails = await universalAccountInstance.getTransaction(
+        transactionId
+      );
+      setSelectedTxDetails(txDetails);
+    } catch (error) {
+      console.error("Failed to fetch transaction details:", error);
+      setSelectedTxDetails(null);
+    } finally {
+      setIsLoadingTxDetails(false);
+    }
   };
 
   // === Initialize UniversalAccount ===
@@ -143,6 +175,48 @@ const App = () => {
     };
     fetchSmartAccountAddresses();
   }, [universalAccountInstance, address]);
+
+  // === Fetch Transaction History ===
+  useEffect(() => {
+    if (!universalAccountInstance) return;
+
+    const fetchTransactions = async () => {
+      try {
+        // Fetch first 2 pages of transactions (40 transactions max)
+        const allTransactions: ITransactionHistoryResponse = {
+          data: [],
+          hasNextPage: false,
+          currentPage: 1,
+        };
+        const pageSize = 20;
+        const maxPages = 2;
+
+        // Fetch up to maxPages
+        for (let currentPage = 1; currentPage <= maxPages; currentPage++) {
+          const response = await universalAccountInstance.getTransactions(
+            currentPage,
+            pageSize
+          );
+          allTransactions.data.push(...response.data);
+          allTransactions.hasNextPage = response.hasNextPage;
+          allTransactions.currentPage = response.currentPage;
+
+          // Stop if there are no more pages
+          if (!response.hasNextPage) break;
+        }
+
+        console.log(
+          `Fetched ${allTransactions.data.length} transactions:`,
+          allTransactions
+        );
+        setTransactions(allTransactions);
+      } catch (error) {
+        console.error("Failed to fetch transaction history:", error);
+      }
+    };
+
+    fetchTransactions();
+  }, [universalAccountInstance]);
 
   // Aggregated balance across all chains
   const [primaryAssets, setPrimaryAssets] = useState<IAssetsResponse | null>(
@@ -379,6 +453,16 @@ const App = () => {
 
                   {/* Logout Button */}
                   <button
+                    onClick={() => setIsTxHistoryOpen(true)}
+                    className="w-full bg-[#2A2A4A] rounded-lg p-3 border border-[#4A4A6A] shadow-inner hover:border-purple-500 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <span className="text-purple-300 font-medium">
+                      Transaction History
+                    </span>
+                  </button>
+
+                  {/* Logout Button */}
+                  <button
                     onClick={() => disconnect()}
                     className="w-full bg-[#2A2A4A] rounded-lg p-3 border border-[#4A4A6A] shadow-inner hover:border-red-500 transition-colors flex items-center justify-center gap-2"
                   >
@@ -546,6 +630,22 @@ const App = () => {
           isOpen={isAssetBreakdownOpen}
           setIsOpen={setIsAssetBreakdownOpen}
           assets={primaryAssets}
+        />
+
+        {/* Transaction History Dialog */}
+        <TxHistoryDialog
+          isOpen={isTxHistoryOpen}
+          setIsOpen={setIsTxHistoryOpen}
+          transactions={transactions?.data || []}
+          onTransactionClick={handleTransactionClick}
+        />
+
+        {/* Transaction Details Dialog */}
+        <TxDetailsDialog
+          isOpen={isTxDetailsOpen}
+          setIsOpen={setIsTxDetailsOpen}
+          transactionDetails={selectedTxDetails}
+          isLoading={isLoadingTxDetails}
         />
       </div>
     </div>
