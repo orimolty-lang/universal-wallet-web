@@ -89,7 +89,7 @@ const TxHistoryDialog = ({
             View Docs
           </a>
           <a
-            href="https://github.com/Particle-Network/universal-accounts-connectkit-demo"
+            href="https://github.com/Particle-Network/universal-accounts-connectkit-demo/blob/cb524c3e17f410d3401e77b871bf0e16632086e7/ua-conneckit/app/page.tsx#L179"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-purple-300 bg-[#2A2A4A] rounded-lg border border-[#4A4A6A] hover:bg-[#3A3A5A] transition-colors"
