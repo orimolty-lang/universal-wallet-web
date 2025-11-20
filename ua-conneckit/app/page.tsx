@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/tooltip";
 // Universal Accounts imports
 import {
-  SUPPORTED_TOKEN_TYPE,
+  //SUPPORTED_TOKEN_TYPE,
   UniversalAccount,
   type IAssetsResponse,
   //SUPPORTED_TOKEN_TYPE,
@@ -148,7 +148,7 @@ const App = () => {
         tradeConfig: {
           slippageBps: 100, // 1% slippage tolerance
           universalGas: false, // Prioritize PARTI token to pay for gas
-          usePrimaryTokens: [SUPPORTED_TOKEN_TYPE.SOL], // Specify token to use as source
+          //usePrimaryTokens: [SUPPORTED_TOKEN_TYPE.SOL], // Specify token to use as source
         },
       });
       console.log("UniversalAccount initialized:", ua);
