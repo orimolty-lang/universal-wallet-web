@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@particle-network/universal-account-sdk": "^1.0.10"
+  }
+}

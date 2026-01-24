@@ -25,7 +25,7 @@ const TxDetailsDialog = ({
   isLoading,
 }: TxDetailsDialogProps) => {
   const [copiedText, setCopiedText] = useState<string | null>(null);
-  console.log(transactionDetails);
+  //console.log(transactionDetails);
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedText(text);

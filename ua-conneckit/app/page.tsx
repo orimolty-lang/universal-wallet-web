@@ -7,7 +7,7 @@ import {
   useWallets,
   useDisconnect,
 } from "@particle-network/connectkit";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Eye,
   Copy,
@@ -33,9 +33,10 @@ import {
 } from "@/components/ui/tooltip";
 // Universal Accounts imports
 import {
-  //SUPPORTED_TOKEN_TYPE,
   UniversalAccount,
+  UNIVERSAL_ACCOUNT_VERSION,
   type IAssetsResponse,
+  type IUniversalAccountConfig,
   //SUPPORTED_TOKEN_TYPE,
 } from "@particle-network/universal-account-sdk";
 import { type ITransactionHistoryResponse } from "./types/transaction-history";
@@ -49,7 +50,9 @@ import ContractInteraction from "./components/ContractInteraction";
 import SendFunds from "./components/SendFunds";
 import UsdcTransfer from "./components/UniversalTransfer";
 import ConvertToUsdc from "./components/Convertions";
+import ConvertWithEIP7702 from "./components/ConvertWithEIP7702";
 import SolanaUsdcTransfer from "./components/UniversalTransferSolana";
+import SendSolana from "./components/SendSolana";
 
 // Helper functions
 const formatAddress = (addr: string) => {
@@ -122,9 +125,8 @@ const App = () => {
     setIsTxDetailsOpen(true);
 
     try {
-      const txDetails = await universalAccountInstance.getTransaction(
-        transactionId
-      );
+      const txDetails =
+        await universalAccountInstance.getTransaction(transactionId);
       setSelectedTxDetails(txDetails);
     } catch (error) {
       console.error("Failed to fetch transaction details:", error);
@@ -135,29 +137,40 @@ const App = () => {
   };
 
   // === Initialize UniversalAccount ===
+  const universalAccountConfig = useMemo(
+    (): IUniversalAccountConfig => ({
+      projectId: process.env.NEXT_PUBLIC_PROJECT_ID || "",
+      projectClientKey: process.env.NEXT_PUBLIC_CLIENT_KEY || "",
+      projectAppUuid: process.env.NEXT_PUBLIC_APP_ID || "",
+      smartAccountOptions: {
+        // 7702 mode: the EOA address itself becomes the Universal Account
+        useEIP7702: true,
+        name: "UNIVERSAL",
+        version: UNIVERSAL_ACCOUNT_VERSION,
+        ownerAddress: address!,
+      },
+      // If not set it will use auto-slippage
+      tradeConfig: {
+        slippageBps: 100, // 1% slippage tolerance
+        universalGas: false, // Prioritize PARTI token to pay for gas
+        //usePrimaryTokens: [SUPPORTED_TOKEN_TYPE.SOL], // Specify token to use as source
+      },
+    }),
+    [address],
+  );
+
   useEffect(() => {
     if (isConnected && address) {
       // Create new UA instance when user connects
-      const ua = new UniversalAccount({
-        projectId: process.env.NEXT_PUBLIC_PROJECT_ID!,
-        projectClientKey: process.env.NEXT_PUBLIC_CLIENT_KEY!,
-        projectAppUuid: process.env.NEXT_PUBLIC_APP_ID!,
-        ownerAddress: address,
+      const ua = new UniversalAccount(universalAccountConfig);
 
-        // If not set it will use auto-slippage
-        tradeConfig: {
-          slippageBps: 100, // 1% slippage tolerance
-          universalGas: false, // Prioritize PARTI token to pay for gas
-          //usePrimaryTokens: [SUPPORTED_TOKEN_TYPE.SOL], // Specify token to use as source
-        },
-      });
       console.log("UniversalAccount initialized:", ua);
       setUniversalAccountInstance(ua);
     } else {
       // Reset UA when user disconnects
       setUniversalAccountInstance(null);
     }
-  }, [isConnected, address]);
+  }, [isConnected, address, universalAccountConfig]);
 
   // === Fetch Universal Account Addresses ===
   useEffect(() => {
@@ -198,7 +211,7 @@ const App = () => {
         for (let currentPage = 1; currentPage <= maxPages; currentPage++) {
           const response = await universalAccountInstance.getTransactions(
             currentPage,
-            pageSize
+            pageSize,
           );
           allTransactions.data.push(...response.data);
           allTransactions.hasNextPage = response.hasNextPage;
@@ -210,7 +223,7 @@ const App = () => {
 
         console.log(
           `Fetched ${allTransactions.data.length} transactions:`,
-          allTransactions
+          allTransactions,
         );
         setTransactions(allTransactions);
       } catch (error) {
@@ -223,7 +236,7 @@ const App = () => {
 
   // Aggregated balance across all chains
   const [primaryAssets, setPrimaryAssets] = useState<IAssetsResponse | null>(
-    null
+    null,
   );
   const [isRefreshingPrimaryAssets, setIsRefreshingPrimaryAssets] =
     useState(false);
@@ -249,7 +262,7 @@ const App = () => {
   }, [fetchPrimaryAssets]);
 
   const handleRefreshPrimaryAssets = (
-    event: React.MouseEvent<HTMLButtonElement>
+    event: React.MouseEvent<HTMLButtonElement>,
   ) => {
     event.stopPropagation();
     fetchPrimaryAssets();
@@ -395,7 +408,7 @@ const App = () => {
                               <button
                                 onClick={() =>
                                   handleCopyToClipboard(
-                                    accountInfo.evmSmartAccount
+                                    accountInfo.evmSmartAccount,
                                   )
                                 }
                                 className="p-1.5 rounded-full hover:bg-[#3A3A5A] transition-colors flex-shrink-0"
@@ -450,7 +463,7 @@ const App = () => {
                               <button
                                 onClick={() =>
                                   handleCopyToClipboard(
-                                    accountInfo.solanaSmartAccount
+                                    accountInfo.solanaSmartAccount,
                                   )
                                 }
                                 className="p-1.5 rounded-full hover:bg-[#3A3A5A] transition-colors flex-shrink-0"
@@ -615,7 +628,7 @@ const App = () => {
               </div>
             </div>
 
-            {/* Contract Interaction and Send Funds Components */}
+            {/* Contract Interaction and Conversion Components */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <ContractInteraction
                 universalAccountInstance={universalAccountInstance}
@@ -623,6 +636,15 @@ const App = () => {
                 address={address}
               />
               <ConvertToUsdc
+                universalAccountInstance={universalAccountInstance}
+                walletClient={walletClient}
+                address={address}
+              />
+            </div>
+
+            {/* EIP-7702 Conversion Component */}
+            <div className="mt-6">
+              <ConvertWithEIP7702
                 universalAccountInstance={universalAccountInstance}
                 walletClient={walletClient}
                 address={address}
@@ -643,9 +665,15 @@ const App = () => {
               />
             </div>
 
-            {/* Solana USDC Transfer Component */}
-            <div className="mt-6">
+            {/* Solana Transfer Components */}
+            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
               <SolanaUsdcTransfer
+                universalAccountInstance={universalAccountInstance}
+                walletClient={walletClient}
+                address={address}
+                solanaSmartAccountAddress={accountInfo?.solanaSmartAccount}
+              />
+              <SendSolana
                 universalAccountInstance={universalAccountInstance}
                 walletClient={walletClient}
                 address={address}
