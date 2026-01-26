@@ -144,7 +144,7 @@ const App = () => {
       projectAppUuid: process.env.NEXT_PUBLIC_APP_ID || "",
       smartAccountOptions: {
         // 7702 mode: the EOA address itself becomes the Universal Account
-        useEIP7702: true,
+        useEIP7702: false,
         name: "UNIVERSAL",
         version: UNIVERSAL_ACCOUNT_VERSION,
         ownerAddress: address!,
@@ -642,14 +642,14 @@ const App = () => {
               />
             </div>
 
-            {/* EIP-7702 Conversion Component */}
+            {/* EIP-7702 Conversion Component 
             <div className="mt-6">
               <ConvertWithEIP7702
                 universalAccountInstance={universalAccountInstance}
                 walletClient={walletClient}
                 address={address}
               />
-            </div>
+            </div>*/}
 
             {/* Universal USDC Transfer and Send Funds Components */}
             <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
