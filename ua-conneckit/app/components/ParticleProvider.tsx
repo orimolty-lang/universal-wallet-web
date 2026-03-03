@@ -37,18 +37,15 @@ export const ParticleConnectkit = ({ children }: React.PropsWithChildren) => {
     walletConnectors: [
       authWalletConnectors({
         // Optional, configure this if you're using social logins
+        // Apple first (works in WebViews), Google last (blocked in WebViews)
         authTypes: [
-          "google",
           "apple",
           "twitter",
-          "github",
           "email",
           "phone",
-          "facebook",
-          "microsoft",
-          "linkedin",
           "discord",
-          "twitch",
+          "github",
+          "google", // Google OAuth blocked in WebViews - put last
         ], // Optional, restricts the types of social logins supported
         fiatCoin: "USD", // Optional, also supports CNY, JPY, HKD, INR, and KRW
         promptSettingConfig: {
