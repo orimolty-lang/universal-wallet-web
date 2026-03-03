@@ -43,6 +43,7 @@ interface ProfileSettings {
   emoji: string;
   customImage: string | null;
   displayName: string;
+  backgroundColor: string;
 }
 
 // Common emojis for profile selection
@@ -50,6 +51,13 @@ const PROFILE_EMOJIS = [
   "🍊", "😀", "😎", "🤠", "👻", "👽", "🤖", "👾", "🦊", "🐶", "🐱", "🦁",
   "🐯", "🐻", "🐼", "🐨", "🐸", "🐵", "🦄", "🐲", "🔥", "⚡", "🌟", "💎",
   "🚀", "🎮", "🎨", "🎵", "💰", "🏆", "👑", "🌈", "🌙", "☀️", "🪐", "🌊",
+];
+
+// Background colors for emoji
+const BACKGROUND_COLORS = [
+  "#f97316", "#ef4444", "#ec4899", "#a855f7", "#8b5cf6", "#6366f1", 
+  "#3b82f6", "#0ea5e9", "#14b8a6", "#22c55e", "#84cc16", "#eab308",
+  "#78716c", "#6b7280", "#64748b", "#1e293b", "#0f172a", "#000000",
 ];
 
 // Token icon mapping
@@ -104,6 +112,34 @@ const LoginScreen = () => (
   </div>
 );
 
+// Drag handle component for modals
+const DragHandle = ({ onClose }: { onClose: () => void }) => {
+  const [startY, setStartY] = useState<number | null>(null);
+  
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setStartY(e.touches[0].clientY);
+  };
+  
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (startY !== null) {
+      const deltaY = e.changedTouches[0].clientY - startY;
+      if (deltaY > 50) onClose();
+    }
+    setStartY(null);
+  };
+  
+  return (
+    <div 
+      className="flex justify-center py-3 cursor-grab active:cursor-grabbing"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onClick={onClose}
+    >
+      <div className="w-10 h-1 bg-gray-600 rounded-full" />
+    </div>
+  );
+};
+
 // Profile Emoji Picker Modal
 const ProfilePickerModal = ({
   isOpen,
@@ -117,7 +153,17 @@ const ProfilePickerModal = ({
   onUpdateProfile: (p: ProfileSettings) => void;
 }) => {
   const [displayName, setDisplayName] = useState(profile.displayName);
+  const [selectedColor, setSelectedColor] = useState(profile.backgroundColor || "#f97316");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isAnimating, setIsAnimating] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsAnimating(true);
+      setDisplayName(profile.displayName);
+      setSelectedColor(profile.backgroundColor || "#f97316");
+    }
+  }, [isOpen, profile]);
 
   if (!isOpen) return null;
 
@@ -132,11 +178,25 @@ const ProfilePickerModal = ({
     }
   };
 
+  const handleClose = () => {
+    setIsAnimating(false);
+    setTimeout(onClose, 200);
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-[#1a1a1a] rounded-2xl w-full max-w-md max-h-[80vh] overflow-auto" onClick={e => e.stopPropagation()}>
-        <div className="p-6">
-          <h2 className="text-white text-xl font-bold mb-6">Customize Profile</h2>
+    <div 
+      className="fixed inset-0 bg-black/80 flex items-end justify-center z-50 transition-opacity duration-200"
+      style={{ opacity: isAnimating ? 1 : 0 }}
+      onClick={handleClose}
+    >
+      <div 
+        className="bg-[#1a1a1a] rounded-t-3xl w-full max-w-md max-h-[85vh] overflow-auto transition-transform duration-200"
+        style={{ transform: isAnimating ? 'translateY(0)' : 'translateY(100%)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <DragHandle onClose={handleClose} />
+        <div className="px-6 pb-8">
+          <h2 className="text-white text-xl font-bold mb-6 text-center">Customize Profile</h2>
           
           {/* Display Name */}
           <div className="mb-6">
@@ -153,7 +213,10 @@ const ProfilePickerModal = ({
 
           {/* Current Avatar */}
           <div className="flex items-center gap-4 mb-6">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-3xl overflow-hidden">
+            <div 
+              className="w-16 h-16 rounded-full flex items-center justify-center text-3xl overflow-hidden"
+              style={{ backgroundColor: profile.customImage ? undefined : selectedColor }}
+            >
               {profile.customImage ? (
                 <img src={profile.customImage} alt="Profile" className="w-full h-full object-cover" />
               ) : (
@@ -175,16 +238,35 @@ const ProfilePickerModal = ({
             />
           </div>
 
+          {/* Background Color Picker */}
+          {!profile.customImage && (
+            <div className="mb-6">
+              <label className="text-gray-400 text-sm mb-2 block">Background Color</label>
+              <div className="grid grid-cols-9 gap-2">
+                {BACKGROUND_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    onClick={() => setSelectedColor(color)}
+                    className={`w-8 h-8 rounded-full transition-transform ${
+                      selectedColor === color ? "scale-110 ring-2 ring-white ring-offset-2 ring-offset-[#1a1a1a]" : ""
+                    }`}
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Emoji Grid */}
           <div className="mb-6">
-            <label className="text-gray-400 text-sm mb-2 block">Or pick an emoji</label>
+            <label className="text-gray-400 text-sm mb-2 block">Pick an emoji</label>
             <div className="grid grid-cols-8 gap-2">
               {PROFILE_EMOJIS.map((emoji) => (
                 <button
                   key={emoji}
-                  onClick={() => onUpdateProfile({ ...profile, emoji, customImage: null })}
+                  onClick={() => onUpdateProfile({ ...profile, emoji, customImage: null, backgroundColor: selectedColor })}
                   className={`w-10 h-10 rounded-lg flex items-center justify-center text-xl ${
-                    profile.emoji === emoji && !profile.customImage ? "bg-orange-500" : "bg-gray-800"
+                    profile.emoji === emoji && !profile.customImage ? "bg-gray-600" : "bg-gray-800"
                   }`}
                 >
                   {emoji}
@@ -196,8 +278,8 @@ const ProfilePickerModal = ({
           {/* Save Button */}
           <button
             onClick={() => {
-              onUpdateProfile({ ...profile, displayName });
-              onClose();
+              onUpdateProfile({ ...profile, displayName, backgroundColor: selectedColor });
+              handleClose();
             }}
             className="w-full bg-[#f5a623] text-black font-bold py-3 rounded-xl"
           >
@@ -222,8 +304,18 @@ const ReceiveModal = ({
   solanaAddress: string;
 }) => {
   const [copied, setCopied] = useState<string | null>(null);
+  const [isAnimating, setIsAnimating] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) setIsAnimating(true);
+  }, [isOpen]);
 
   if (!isOpen) return null;
+
+  const handleClose = () => {
+    setIsAnimating(false);
+    setTimeout(onClose, 200);
+  };
 
   const handleCopy = (addr: string, type: string) => {
     copyToClipboard(addr);
@@ -241,15 +333,21 @@ const ReceiveModal = ({
   ];
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-end sm:items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-[#1a1a1a] rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md max-h-[80vh] overflow-auto" onClick={e => e.stopPropagation()}>
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-white text-xl font-bold">Receive</h2>
-            <button onClick={onClose} className="text-gray-400 text-2xl">×</button>
-          </div>
+    <div 
+      className="fixed inset-0 bg-black/80 flex items-end justify-center z-50 transition-opacity duration-200"
+      style={{ opacity: isAnimating ? 1 : 0 }}
+      onClick={handleClose}
+    >
+      <div 
+        className="bg-[#1a1a1a] rounded-t-3xl w-full max-w-md max-h-[80vh] overflow-auto transition-transform duration-200"
+        style={{ transform: isAnimating ? 'translateY(0)' : 'translateY(100%)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <DragHandle onClose={handleClose} />
+        <div className="px-6 pb-8">
+          <h2 className="text-white text-xl font-bold mb-4 text-center">Receive</h2>
           
-          <p className="text-gray-400 text-sm mb-4">
+          <p className="text-gray-400 text-sm mb-4 text-center">
             Your Universal Account works across all chains. Use the same address for EVM chains.
           </p>
 
@@ -293,8 +391,18 @@ const SendModal = ({
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
   const [selectedToken, setSelectedToken] = useState<string | null>(null);
+  const [isAnimating, setIsAnimating] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) setIsAnimating(true);
+  }, [isOpen]);
 
   if (!isOpen) return null;
+
+  const handleClose = () => {
+    setIsAnimating(false);
+    setTimeout(onClose, 200);
+  };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tokens = assets?.assets?.filter((a: any) => {
@@ -303,13 +411,19 @@ const SendModal = ({
   }) || [];
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-end sm:items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-[#1a1a1a] rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md" onClick={e => e.stopPropagation()}>
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-white text-xl font-bold">Send</h2>
-            <button onClick={onClose} className="text-gray-400 text-2xl">×</button>
-          </div>
+    <div 
+      className="fixed inset-0 bg-black/80 flex items-end justify-center z-50 transition-opacity duration-200"
+      style={{ opacity: isAnimating ? 1 : 0 }}
+      onClick={handleClose}
+    >
+      <div 
+        className="bg-[#1a1a1a] rounded-t-3xl w-full max-w-md transition-transform duration-200"
+        style={{ transform: isAnimating ? 'translateY(0)' : 'translateY(100%)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <DragHandle onClose={handleClose} />
+        <div className="px-6 pb-8">
+          <h2 className="text-white text-xl font-bold mb-6 text-center">Send</h2>
 
           {/* Token Selection */}
           <div className="mb-4">
@@ -373,8 +487,18 @@ const ConvertModal = ({
   const [fromToken, setFromToken] = useState("");
   const [toToken, setToToken] = useState("");
   const [amount, setAmount] = useState("");
+  const [isAnimating, setIsAnimating] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) setIsAnimating(true);
+  }, [isOpen]);
 
   if (!isOpen) return null;
+
+  const handleClose = () => {
+    setIsAnimating(false);
+    setTimeout(onClose, 200);
+  };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tokens = assets?.assets?.filter((a: any) => {
@@ -383,13 +507,19 @@ const ConvertModal = ({
   }) || [];
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-end sm:items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-[#1a1a1a] rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md" onClick={e => e.stopPropagation()}>
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-white text-xl font-bold">Convert</h2>
-            <button onClick={onClose} className="text-gray-400 text-2xl">×</button>
-          </div>
+    <div 
+      className="fixed inset-0 bg-black/80 flex items-end justify-center z-50 transition-opacity duration-200"
+      style={{ opacity: isAnimating ? 1 : 0 }}
+      onClick={handleClose}
+    >
+      <div 
+        className="bg-[#1a1a1a] rounded-t-3xl w-full max-w-md transition-transform duration-200"
+        style={{ transform: isAnimating ? 'translateY(0)' : 'translateY(100%)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <DragHandle onClose={handleClose} />
+        <div className="px-6 pb-8">
+          <h2 className="text-white text-xl font-bold mb-6 text-center">Convert</h2>
 
           {/* From */}
           <div className="mb-4">
@@ -458,16 +588,33 @@ const BuyModal = ({
   isOpen: boolean;
   onClose: () => void;
 }) => {
+  const [isAnimating, setIsAnimating] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) setIsAnimating(true);
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
+  const handleClose = () => {
+    setIsAnimating(false);
+    setTimeout(onClose, 200);
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-end sm:items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-[#1a1a1a] rounded-t-3xl sm:rounded-2xl w-full sm:max-w-md" onClick={e => e.stopPropagation()}>
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-white text-xl font-bold">Buy Crypto</h2>
-            <button onClick={onClose} className="text-gray-400 text-2xl">×</button>
-          </div>
+    <div 
+      className="fixed inset-0 bg-black/80 flex items-end justify-center z-50 transition-opacity duration-200"
+      style={{ opacity: isAnimating ? 1 : 0 }}
+      onClick={handleClose}
+    >
+      <div 
+        className="bg-[#1a1a1a] rounded-t-3xl w-full max-w-md transition-transform duration-200"
+        style={{ transform: isAnimating ? 'translateY(0)' : 'translateY(100%)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <DragHandle onClose={handleClose} />
+        <div className="px-6 pb-8">
+          <h2 className="text-white text-xl font-bold mb-6 text-center">Buy Crypto</h2>
 
           <div className="text-center py-8">
             <div className="text-5xl mb-4">💳</div>
@@ -476,10 +623,6 @@ const BuyModal = ({
               Onramp integration with card payments will be available soon.
             </p>
           </div>
-
-          <button onClick={onClose} className="w-full bg-gray-800 text-white font-bold py-4 rounded-xl">
-            Close
-          </button>
         </div>
       </div>
     </div>
@@ -496,6 +639,7 @@ const AgentModal = ({
 }) => {
   const [message, setMessage] = useState("");
   const [chat, setChat] = useState<{role: "user" | "agent"; text: string}[]>([]);
+  const [isAnimating, setIsAnimating] = useState(false);
 
   const suggestions = [
     "Swap 10 USDC to ETH",
@@ -503,87 +647,104 @@ const AgentModal = ({
     "Bridge to Arbitrum",
   ];
 
+  useEffect(() => {
+    if (isOpen) setIsAnimating(true);
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
+  const handleClose = () => {
+    setIsAnimating(false);
+    setTimeout(onClose, 200);
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/90 flex flex-col z-50">
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-800">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
-            🤖
-          </div>
-          <div>
-            <div className="text-white font-bold">AI Agent</div>
-            <div className="text-green-500 text-xs">Online</div>
+    <div 
+      className="fixed inset-0 bg-black/90 flex flex-col z-50 transition-opacity duration-200"
+      style={{ opacity: isAnimating ? 1 : 0 }}
+    >
+      <div 
+        className="flex flex-col h-full transition-transform duration-200"
+        style={{ transform: isAnimating ? 'translateY(0)' : 'translateY(100%)' }}
+      >
+        {/* Header with drag handle */}
+        <DragHandle onClose={handleClose} />
+        <div className="flex items-center justify-center px-4 pb-4 border-b border-gray-800">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+              🤖
+            </div>
+            <div>
+              <div className="text-white font-bold">AI Agent</div>
+              <div className="text-green-500 text-xs">Online</div>
+            </div>
           </div>
         </div>
-        <button onClick={onClose} className="text-gray-400 text-3xl">×</button>
-      </div>
 
-      {/* Chat Content */}
-      <div className="flex-1 overflow-auto">
-        {chat.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full p-6">
-            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center mb-4">
-              <span className="text-3xl">🤖</span>
+        {/* Chat Content */}
+        <div className="flex-1 overflow-auto">
+          {chat.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full p-6">
+              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center mb-4">
+                <span className="text-3xl">🤖</span>
+              </div>
+              <h2 className="text-xl text-white font-bold mb-2">AI Agent</h2>
+              <p className="text-gray-500 text-center text-sm mb-6">Your crypto assistant</p>
+              <div className="w-full max-w-sm space-y-2">
+                {suggestions.map((s, i) => (
+                  <button key={i} onClick={() => setMessage(s)} className="w-full bg-gray-900 rounded-xl p-3 text-left text-gray-300 text-sm">
+                    {s}
+                  </button>
+                ))}
+              </div>
             </div>
-            <h2 className="text-xl text-white font-bold mb-2">AI Agent</h2>
-            <p className="text-gray-500 text-center text-sm mb-6">Your crypto assistant</p>
-            <div className="w-full max-w-sm space-y-2">
-              {suggestions.map((s, i) => (
-                <button key={i} onClick={() => setMessage(s)} className="w-full bg-gray-900 rounded-xl p-3 text-left text-gray-300 text-sm">
-                  {s}
-                </button>
+          ) : (
+            <div className="p-4 space-y-3">
+              {chat.map((msg, i) => (
+                <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div className={`max-w-[80%] rounded-2xl px-4 py-2 ${msg.role === "user" ? "bg-[#f5a623] text-black" : "bg-gray-800 text-white"}`}>
+                    {msg.text}
+                  </div>
+                </div>
               ))}
             </div>
-          </div>
-        ) : (
-          <div className="p-4 space-y-3">
-            {chat.map((msg, i) => (
-              <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-[80%] rounded-2xl px-4 py-2 ${msg.role === "user" ? "bg-[#f5a623] text-black" : "bg-gray-800 text-white"}`}>
-                  {msg.text}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+          )}
+        </div>
 
-      {/* Input */}
-      <div className="p-4 border-t border-gray-800">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="Ask anything..."
-            className="flex-1 bg-gray-900 rounded-xl px-4 py-3 text-white placeholder-gray-500 outline-none"
-            onKeyPress={(e) => {
-              if (e.key === "Enter" && message.trim()) {
-                setChat([...chat, { role: "user", text: message }]);
-                setMessage("");
-                setTimeout(() => {
-                  setChat(c => [...c, { role: "agent", text: "I'm still learning! This feature is coming soon." }]);
-                }, 500);
-              }
-            }}
-          />
-          <button 
-            onClick={() => {
-              if (message.trim()) {
-                setChat([...chat, { role: "user", text: message }]);
-                setMessage("");
-                setTimeout(() => {
-                  setChat(c => [...c, { role: "agent", text: "I'm still learning! This feature is coming soon." }]);
-                }, 500);
-              }
-            }}
-            className="bg-[#f5a623] rounded-xl px-4 text-black font-medium"
-          >
-            ↑
-          </button>
+        {/* Input */}
+        <div className="p-4 border-t border-gray-800 pb-8">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="Ask anything..."
+              className="flex-1 bg-gray-900 rounded-xl px-4 py-3 text-white placeholder-gray-500 outline-none"
+              onKeyPress={(e) => {
+                if (e.key === "Enter" && message.trim()) {
+                  setChat([...chat, { role: "user", text: message }]);
+                  setMessage("");
+                  setTimeout(() => {
+                    setChat(c => [...c, { role: "agent", text: "I'm still learning! This feature is coming soon." }]);
+                  }, 500);
+                }
+              }}
+            />
+            <button 
+              onClick={() => {
+                if (message.trim()) {
+                  setChat([...chat, { role: "user", text: message }]);
+                  setMessage("");
+                  setTimeout(() => {
+                    setChat(c => [...c, { role: "agent", text: "I'm still learning! This feature is coming soon." }]);
+                  }, 500);
+                }
+              }}
+              className="bg-[#f5a623] rounded-xl px-4 text-black font-medium"
+            >
+              ↑
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -598,36 +759,53 @@ const TokenDetailModal = ({
   token: TokenResult | null;
   onClose: () => void;
 }) => {
+  const [isAnimating, setIsAnimating] = useState(false);
+
+  useEffect(() => {
+    if (token) setIsAnimating(true);
+  }, [token]);
+
   if (!token) return null;
 
+  const handleClose = () => {
+    setIsAnimating(false);
+    setTimeout(onClose, 200);
+  };
+
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-[#1a1a1a] rounded-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
-        <div className="p-6">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              {token.logo ? (
-                <img src={token.logo} alt={token.symbol} className="w-12 h-12 rounded-full" onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }} />
-              ) : (
-                <div className="w-12 h-12 rounded-full bg-gray-800 flex items-center justify-center text-2xl">
-                  {getTokenIcon(token.symbol)}
-                </div>
-              )}
-              <div>
-                <div className="text-white font-bold text-xl">{token.name}</div>
-                <div className="text-gray-500 uppercase">{token.symbol}</div>
+    <div 
+      className="fixed inset-0 bg-black/80 flex items-end justify-center z-50 transition-opacity duration-200"
+      style={{ opacity: isAnimating ? 1 : 0 }}
+      onClick={handleClose}
+    >
+      <div 
+        className="bg-[#1a1a1a] rounded-t-3xl w-full max-w-md transition-transform duration-200"
+        style={{ transform: isAnimating ? 'translateY(0)' : 'translateY(100%)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <DragHandle onClose={handleClose} />
+        <div className="px-6 pb-8">
+          <div className="flex items-center justify-center gap-3 mb-6">
+            {token.logo ? (
+              <img src={token.logo} alt={token.symbol} className="w-12 h-12 rounded-full" onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none';
+              }} />
+            ) : (
+              <div className="w-12 h-12 rounded-full bg-gray-800 flex items-center justify-center text-2xl">
+                {getTokenIcon(token.symbol)}
               </div>
+            )}
+            <div>
+              <div className="text-white font-bold text-xl">{token.name}</div>
+              <div className="text-gray-500 uppercase">{token.symbol}</div>
             </div>
-            <button onClick={onClose} className="text-gray-400 text-2xl">×</button>
           </div>
 
           <div className="space-y-4">
             <div className="bg-gray-800 rounded-xl p-4">
               <div className="text-gray-500 text-sm">Price</div>
-              <div className="text-white text-2xl font-bold">{formatPrice(token.price || 0)}</div>
-              {token.price_change_24h !== undefined && (
+              <div className="text-white text-2xl font-bold">{formatPrice(typeof token.price === 'number' ? token.price : 0)}</div>
+              {typeof token.price_change_24h === 'number' && (
                 <div className={`text-sm ${token.price_change_24h >= 0 ? "text-green-500" : "text-red-500"}`}>
                   {token.price_change_24h >= 0 ? "+" : ""}{token.price_change_24h.toFixed(2)}% (24h)
                 </div>
@@ -651,10 +829,6 @@ const TokenDetailModal = ({
               </div>
             )}
           </div>
-
-          <button onClick={onClose} className="w-full bg-gray-800 text-white font-bold py-4 rounded-xl mt-6">
-            Close
-          </button>
         </div>
       </div>
     </div>
@@ -696,7 +870,8 @@ const HomeTab = ({
       <div className="flex flex-col items-center pt-6 pb-4">
         <button 
           onClick={onShowProfilePicker}
-          className="w-16 h-16 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-3xl mb-3 overflow-hidden relative group"
+          className="w-16 h-16 rounded-full flex items-center justify-center text-3xl mb-3 overflow-hidden relative group"
+          style={{ backgroundColor: profile.customImage ? undefined : (profile.backgroundColor || "#f97316") }}
         >
           {profile.customImage ? (
             <img src={profile.customImage} alt="Profile" className="w-full h-full object-cover" />
@@ -785,14 +960,15 @@ const SearchTab = () => {
     }
     setLoading(true);
     try {
-      const res = await fetch(`https://api.mobula.io/api/1/search?name=${encodeURIComponent(q)}`, {
+      const res = await fetch(`https://api.mobula.io/api/1/search?input=${encodeURIComponent(q)}`, {
         headers: { "Authorization": MOBULA_API_KEY }
       });
       const data = await res.json();
       
-      // Map Mobula response to our format
-      const tokens: TokenResult[] = (data.data || []).slice(0, 15).map((t: {
-        id?: string;
+      // Map Mobula response to our format with defensive checks
+      const rawTokens = data?.data || [];
+      const tokens: TokenResult[] = rawTokens.slice(0, 15).map((t: {
+        id?: number | string;
         name?: string;
         symbol?: string;
         logo?: string;
@@ -801,14 +977,14 @@ const SearchTab = () => {
         market_cap?: number;
         contracts?: Array<{ address: string; blockchain: string }>;
       }) => ({
-        id: t.id || t.name,
-        name: t.name,
-        symbol: t.symbol,
-        logo: t.logo,
-        price: t.price,
-        price_change_24h: t.price_change_24h,
-        market_cap: t.market_cap,
-        contracts: t.contracts,
+        id: String(t.id || t.name || Math.random()),
+        name: t.name || "Unknown",
+        symbol: t.symbol || "???",
+        logo: t.logo || "",
+        price: typeof t.price === 'number' ? t.price : undefined,
+        price_change_24h: typeof t.price_change_24h === 'number' ? t.price_change_24h : undefined,
+        market_cap: typeof t.market_cap === 'number' ? t.market_cap : undefined,
+        contracts: Array.isArray(t.contracts) ? t.contracts : [],
       }));
       setResults(tokens);
     } catch (e) {
@@ -878,10 +1054,10 @@ const SearchTab = () => {
                 </div>
               </div>
               <div className="text-right">
-                {token.price !== undefined && (
+                {typeof token.price === 'number' && (
                   <>
                     <div className="text-white">{formatPrice(token.price)}</div>
-                    {token.price_change_24h !== undefined && (
+                    {typeof token.price_change_24h === 'number' && (
                       <div className={`text-sm ${token.price_change_24h >= 0 ? "text-green-500" : "text-red-500"}`}>
                         {token.price_change_24h >= 0 ? "+" : ""}{token.price_change_24h.toFixed(2)}%
                       </div>
@@ -985,7 +1161,7 @@ const App = () => {
       const saved = localStorage.getItem('walletProfile');
       if (saved) return JSON.parse(saved);
     }
-    return { emoji: "🍊", customImage: null, displayName: "" };
+    return { emoji: "🍊", customImage: null, displayName: "", backgroundColor: "#f97316" };
   });
 
   const updateProfile = (p: ProfileSettings) => {
