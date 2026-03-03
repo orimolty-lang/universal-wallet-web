@@ -112,30 +112,104 @@ const LoginScreen = () => (
   </div>
 );
 
-// Drag handle component for modals
-const DragHandle = ({ onClose }: { onClose: () => void }) => {
-  const [startY, setStartY] = useState<number | null>(null);
-  
-  const handleTouchStart = (e: React.TouchEvent) => {
-    setStartY(e.touches[0].clientY);
-  };
-  
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (startY !== null) {
-      const deltaY = e.changedTouches[0].clientY - startY;
-      if (deltaY > 50) onClose();
+// Chain name mapping
+const CHAIN_NAMES: Record<number, string> = {
+  1: "Ethereum",
+  10: "Optimism", 
+  56: "BNB Chain",
+  137: "Polygon",
+  8453: "Base",
+  42161: "Arbitrum",
+  43114: "Avalanche",
+};
+
+const getChainName = (chainId: number) => CHAIN_NAMES[chainId] || `Chain ${chainId}`;
+
+// Bottom Sheet Modal wrapper - proper sliding animation
+const BottomSheet = ({ 
+  isOpen, 
+  onClose, 
+  children,
+  fullScreen = false,
+}: { 
+  isOpen: boolean; 
+  onClose: () => void;
+  children: React.ReactNode;
+  fullScreen?: boolean;
+}) => {
+  const [isVisible, setIsVisible] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const startYRef = useRef<number | null>(null);
+  const currentYRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (isOpen) {
+      setIsVisible(true);
+      requestAnimationFrame(() => setIsAnimating(true));
+    } else {
+      setIsAnimating(false);
+      const timer = setTimeout(() => setIsVisible(false), 300);
+      return () => clearTimeout(timer);
     }
-    setStartY(null);
+  }, [isOpen]);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    startYRef.current = e.touches[0].clientY;
   };
-  
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (startYRef.current === null || !sheetRef.current) return;
+    const deltaY = e.touches[0].clientY - startYRef.current;
+    if (deltaY > 0) {
+      currentYRef.current = deltaY;
+      sheetRef.current.style.transform = `translateY(${deltaY}px)`;
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (!sheetRef.current) return;
+    if (currentYRef.current > 100) {
+      onClose();
+    } else {
+      sheetRef.current.style.transform = '';
+    }
+    startYRef.current = null;
+    currentYRef.current = 0;
+  };
+
+  if (!isVisible) return null;
+
   return (
     <div 
-      className="flex justify-center py-3 cursor-grab active:cursor-grabbing"
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
+      className="fixed inset-0 z-50 flex items-end justify-center"
       onClick={onClose}
     >
-      <div className="w-10 h-1 bg-gray-600 rounded-full" />
+      {/* Backdrop */}
+      <div 
+        className={`absolute inset-0 bg-black transition-opacity duration-300 ${isAnimating ? 'opacity-80' : 'opacity-0'}`}
+      />
+      {/* Sheet */}
+      <div 
+        ref={sheetRef}
+        className={`relative bg-[#1a1a1a] ${fullScreen ? 'h-full' : 'max-h-[90vh]'} w-full max-w-md rounded-t-3xl overflow-hidden transition-transform duration-300 ease-out`}
+        style={{ transform: isAnimating ? 'translateY(0)' : 'translateY(100%)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Drag Handle */}
+        <div 
+          className="flex justify-center py-3 cursor-grab active:cursor-grabbing touch-none"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          <div className="w-10 h-1 bg-gray-600 rounded-full" />
+        </div>
+        {/* Content */}
+        <div className={`overflow-auto ${fullScreen ? 'h-[calc(100%-40px)]' : 'max-h-[calc(90vh-40px)]'}`}>
+          {children}
+        </div>
+      </div>
     </div>
   );
 };
@@ -155,17 +229,13 @@ const ProfilePickerModal = ({
   const [displayName, setDisplayName] = useState(profile.displayName);
   const [selectedColor, setSelectedColor] = useState(profile.backgroundColor || "#f97316");
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isAnimating, setIsAnimating] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      setIsAnimating(true);
       setDisplayName(profile.displayName);
       setSelectedColor(profile.backgroundColor || "#f97316");
     }
   }, [isOpen, profile]);
-
-  if (!isOpen) return null;
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -178,116 +248,100 @@ const ProfilePickerModal = ({
     }
   };
 
-  const handleClose = () => {
-    setIsAnimating(false);
-    setTimeout(onClose, 200);
-  };
-
   return (
-    <div 
-      className="fixed inset-0 bg-black/80 flex items-end justify-center z-50 transition-opacity duration-200"
-      style={{ opacity: isAnimating ? 1 : 0 }}
-      onClick={handleClose}
-    >
-      <div 
-        className="bg-[#1a1a1a] rounded-t-3xl w-full max-w-md max-h-[85vh] overflow-auto transition-transform duration-200"
-        style={{ transform: isAnimating ? 'translateY(0)' : 'translateY(100%)' }}
-        onClick={e => e.stopPropagation()}
-      >
-        <DragHandle onClose={handleClose} />
-        <div className="px-6 pb-8">
-          <h2 className="text-white text-xl font-bold mb-6 text-center">Customize Profile</h2>
-          
-          {/* Display Name */}
-          <div className="mb-6">
-            <label className="text-gray-400 text-sm mb-2 block">Display Name</label>
-            <input
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Enter a custom name..."
-              className="w-full bg-gray-800 rounded-xl px-4 py-3 text-white outline-none"
-              maxLength={20}
-            />
+    <BottomSheet isOpen={isOpen} onClose={onClose}>
+      <div className="px-6 pb-8">
+        <h2 className="text-white text-xl font-bold mb-6 text-center">Customize Profile</h2>
+        
+        {/* Display Name */}
+        <div className="mb-6">
+          <label className="text-gray-400 text-sm mb-2 block">Display Name</label>
+          <input
+            type="text"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            placeholder="Enter a custom name..."
+            className="w-full bg-gray-800 rounded-xl px-4 py-3 text-white outline-none"
+            maxLength={20}
+          />
+        </div>
+
+        {/* Current Avatar */}
+        <div className="flex items-center gap-4 mb-6">
+          <div 
+            className="w-16 h-16 rounded-full flex items-center justify-center text-3xl overflow-hidden"
+            style={{ backgroundColor: profile.customImage ? undefined : selectedColor }}
+          >
+            {profile.customImage ? (
+              <img src={profile.customImage} alt="Profile" className="w-full h-full object-cover" />
+            ) : (
+              profile.emoji
+            )}
           </div>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="bg-gray-800 text-white px-4 py-2 rounded-xl text-sm"
+          >
+            Upload Image
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleImageUpload}
+            className="hidden"
+          />
+        </div>
 
-          {/* Current Avatar */}
-          <div className="flex items-center gap-4 mb-6">
-            <div 
-              className="w-16 h-16 rounded-full flex items-center justify-center text-3xl overflow-hidden"
-              style={{ backgroundColor: profile.customImage ? undefined : selectedColor }}
-            >
-              {profile.customImage ? (
-                <img src={profile.customImage} alt="Profile" className="w-full h-full object-cover" />
-              ) : (
-                profile.emoji
-              )}
-            </div>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="bg-gray-800 text-white px-4 py-2 rounded-xl text-sm"
-            >
-              Upload Image
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleImageUpload}
-              className="hidden"
-            />
-          </div>
-
-          {/* Background Color Picker */}
-          {!profile.customImage && (
-            <div className="mb-6">
-              <label className="text-gray-400 text-sm mb-2 block">Background Color</label>
-              <div className="grid grid-cols-9 gap-2">
-                {BACKGROUND_COLORS.map((color) => (
-                  <button
-                    key={color}
-                    onClick={() => setSelectedColor(color)}
-                    className={`w-8 h-8 rounded-full transition-transform ${
-                      selectedColor === color ? "scale-110 ring-2 ring-white ring-offset-2 ring-offset-[#1a1a1a]" : ""
-                    }`}
-                    style={{ backgroundColor: color }}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Emoji Grid */}
+        {/* Background Color Picker */}
+        {!profile.customImage && (
           <div className="mb-6">
-            <label className="text-gray-400 text-sm mb-2 block">Pick an emoji</label>
-            <div className="grid grid-cols-8 gap-2">
-              {PROFILE_EMOJIS.map((emoji) => (
+            <label className="text-gray-400 text-sm mb-2 block">Background Color</label>
+            <div className="grid grid-cols-9 gap-2">
+              {BACKGROUND_COLORS.map((color) => (
                 <button
-                  key={emoji}
-                  onClick={() => onUpdateProfile({ ...profile, emoji, customImage: null, backgroundColor: selectedColor })}
-                  className={`w-10 h-10 rounded-lg flex items-center justify-center text-xl ${
-                    profile.emoji === emoji && !profile.customImage ? "bg-gray-600" : "bg-gray-800"
+                  key={color}
+                  onClick={() => setSelectedColor(color)}
+                  className={`w-8 h-8 rounded-full transition-transform ${
+                    selectedColor === color ? "scale-110 ring-2 ring-white ring-offset-2 ring-offset-[#1a1a1a]" : ""
                   }`}
-                >
-                  {emoji}
-                </button>
+                  style={{ backgroundColor: color }}
+                />
               ))}
             </div>
           </div>
+        )}
 
-          {/* Save Button */}
-          <button
-            onClick={() => {
-              onUpdateProfile({ ...profile, displayName, backgroundColor: selectedColor });
-              handleClose();
-            }}
-            className="w-full bg-[#f5a623] text-black font-bold py-3 rounded-xl"
-          >
-            Save
-          </button>
+        {/* Emoji Grid */}
+        <div className="mb-6">
+          <label className="text-gray-400 text-sm mb-2 block">Pick an emoji</label>
+          <div className="grid grid-cols-8 gap-2">
+            {PROFILE_EMOJIS.map((emoji) => (
+              <button
+                key={emoji}
+                onClick={() => onUpdateProfile({ ...profile, emoji, customImage: null, backgroundColor: selectedColor })}
+                className={`w-10 h-10 rounded-lg flex items-center justify-center text-xl ${
+                  profile.emoji === emoji && !profile.customImage ? "bg-gray-600" : "bg-gray-800"
+                }`}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
         </div>
+
+        {/* Save Button */}
+        <button
+          onClick={() => {
+            onUpdateProfile({ ...profile, displayName, backgroundColor: selectedColor });
+            onClose();
+          }}
+          className="w-full bg-[#f5a623] text-black font-bold py-3 rounded-xl"
+        >
+          Save
+        </button>
       </div>
-    </div>
+    </BottomSheet>
   );
 };
 
@@ -304,18 +358,6 @@ const ReceiveModal = ({
   solanaAddress: string;
 }) => {
   const [copied, setCopied] = useState<string | null>(null);
-  const [isAnimating, setIsAnimating] = useState(false);
-
-  useEffect(() => {
-    if (isOpen) setIsAnimating(true);
-  }, [isOpen]);
-
-  if (!isOpen) return null;
-
-  const handleClose = () => {
-    setIsAnimating(false);
-    setTimeout(onClose, 200);
-  };
 
   const handleCopy = (addr: string, type: string) => {
     copyToClipboard(addr);
@@ -333,48 +375,37 @@ const ReceiveModal = ({
   ];
 
   return (
-    <div 
-      className="fixed inset-0 bg-black/80 flex items-end justify-center z-50 transition-opacity duration-200"
-      style={{ opacity: isAnimating ? 1 : 0 }}
-      onClick={handleClose}
-    >
-      <div 
-        className="bg-[#1a1a1a] rounded-t-3xl w-full max-w-md max-h-[80vh] overflow-auto transition-transform duration-200"
-        style={{ transform: isAnimating ? 'translateY(0)' : 'translateY(100%)' }}
-        onClick={e => e.stopPropagation()}
-      >
-        <DragHandle onClose={handleClose} />
-        <div className="px-6 pb-8">
-          <h2 className="text-white text-xl font-bold mb-4 text-center">Receive</h2>
-          
-          <p className="text-gray-400 text-sm mb-4 text-center">
-            Your Universal Account works across all chains. Use the same address for EVM chains.
-          </p>
+    <BottomSheet isOpen={isOpen} onClose={onClose}>
+      <div className="px-6 pb-8">
+        <h2 className="text-white text-xl font-bold mb-4 text-center">Receive</h2>
+        
+        <p className="text-gray-400 text-sm mb-4 text-center">
+          Your Universal Account works across all chains. Use the same address for EVM chains.
+        </p>
 
-          <div className="space-y-3">
-            {chains.map((chain) => (
-              <div key={chain.name} className="bg-gray-800 rounded-xl p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{chain.icon}</span>
-                    <span className="text-white">{chain.name}</span>
-                  </div>
-                  <button
-                    onClick={() => handleCopy(chain.address, chain.name)}
-                    className="bg-gray-700 text-white px-3 py-1 rounded-lg text-sm"
-                  >
-                    {copied === chain.name ? "Copied!" : "Copy"}
-                  </button>
+        <div className="space-y-3">
+          {chains.map((chain) => (
+            <div key={chain.name} className="bg-gray-800 rounded-xl p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">{chain.icon}</span>
+                  <span className="text-white">{chain.name}</span>
                 </div>
-                <div className="text-gray-500 text-xs mt-2 font-mono break-all">
-                  {chain.address}
-                </div>
+                <button
+                  onClick={() => handleCopy(chain.address, chain.name)}
+                  className="bg-gray-700 text-white px-3 py-1 rounded-lg text-sm"
+                >
+                  {copied === chain.name ? "Copied!" : "Copy"}
+                </button>
               </div>
-            ))}
-          </div>
+              <div className="text-gray-500 text-xs mt-2 font-mono break-all">
+                {chain.address}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
-    </div>
+    </BottomSheet>
   );
 };
 
@@ -391,18 +422,6 @@ const SendModal = ({
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
   const [selectedToken, setSelectedToken] = useState<string | null>(null);
-  const [isAnimating, setIsAnimating] = useState(false);
-
-  useEffect(() => {
-    if (isOpen) setIsAnimating(true);
-  }, [isOpen]);
-
-  if (!isOpen) return null;
-
-  const handleClose = () => {
-    setIsAnimating(false);
-    setTimeout(onClose, 200);
-  };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tokens = assets?.assets?.filter((a: any) => {
@@ -411,66 +430,55 @@ const SendModal = ({
   }) || [];
 
   return (
-    <div 
-      className="fixed inset-0 bg-black/80 flex items-end justify-center z-50 transition-opacity duration-200"
-      style={{ opacity: isAnimating ? 1 : 0 }}
-      onClick={handleClose}
-    >
-      <div 
-        className="bg-[#1a1a1a] rounded-t-3xl w-full max-w-md transition-transform duration-200"
-        style={{ transform: isAnimating ? 'translateY(0)' : 'translateY(100%)' }}
-        onClick={e => e.stopPropagation()}
-      >
-        <DragHandle onClose={handleClose} />
-        <div className="px-6 pb-8">
-          <h2 className="text-white text-xl font-bold mb-6 text-center">Send</h2>
+    <BottomSheet isOpen={isOpen} onClose={onClose}>
+      <div className="px-6 pb-8">
+        <h2 className="text-white text-xl font-bold mb-6 text-center">Send</h2>
 
-          {/* Token Selection */}
-          <div className="mb-4">
-            <label className="text-gray-400 text-sm mb-2 block">Token</label>
-            <select
-              value={selectedToken || ""}
-              onChange={(e) => setSelectedToken(e.target.value)}
-              className="w-full bg-gray-800 rounded-xl px-4 py-3 text-white outline-none"
-            >
-              <option value="">Select a token</option>
-              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              {tokens.map((t: any, i: number) => (
-                <option key={i} value={t.symbol}>{t.symbol} - {t.name}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Recipient */}
-          <div className="mb-4">
-            <label className="text-gray-400 text-sm mb-2 block">Recipient Address</label>
-            <input
-              type="text"
-              value={recipient}
-              onChange={(e) => setRecipient(e.target.value)}
-              placeholder="0x... or .eth"
-              className="w-full bg-gray-800 rounded-xl px-4 py-3 text-white outline-none"
-            />
-          </div>
-
-          {/* Amount */}
-          <div className="mb-6">
-            <label className="text-gray-400 text-sm mb-2 block">Amount</label>
-            <input
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0.00"
-              className="w-full bg-gray-800 rounded-xl px-4 py-3 text-white outline-none"
-            />
-          </div>
-
-          <button className="w-full bg-[#f5a623] text-black font-bold py-4 rounded-xl">
-            Review Send
-          </button>
+        {/* Token Selection */}
+        <div className="mb-4">
+          <label className="text-gray-400 text-sm mb-2 block">Token</label>
+          <select
+            value={selectedToken || ""}
+            onChange={(e) => setSelectedToken(e.target.value)}
+            className="w-full bg-gray-800 rounded-xl px-4 py-3 text-white outline-none"
+          >
+            <option value="">Select a token</option>
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            {tokens.map((t: any, i: number) => (
+              <option key={i} value={t.symbol}>{t.symbol} - {t.name}</option>
+            ))}
+          </select>
         </div>
+
+        {/* Recipient */}
+        <div className="mb-4">
+          <label className="text-gray-400 text-sm mb-2 block">Recipient Address</label>
+          <input
+            type="text"
+            value={recipient}
+            onChange={(e) => setRecipient(e.target.value)}
+            placeholder="0x... or .eth"
+            className="w-full bg-gray-800 rounded-xl px-4 py-3 text-white outline-none"
+          />
+        </div>
+
+        {/* Amount */}
+        <div className="mb-6">
+          <label className="text-gray-400 text-sm mb-2 block">Amount</label>
+          <input
+            type="number"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="0.00"
+            className="w-full bg-gray-800 rounded-xl px-4 py-3 text-white outline-none"
+          />
+        </div>
+
+        <button className="w-full bg-[#f5a623] text-black font-bold py-4 rounded-xl">
+          Review Send
+        </button>
       </div>
-    </div>
+    </BottomSheet>
   );
 };
 
@@ -487,18 +495,6 @@ const ConvertModal = ({
   const [fromToken, setFromToken] = useState("");
   const [toToken, setToToken] = useState("");
   const [amount, setAmount] = useState("");
-  const [isAnimating, setIsAnimating] = useState(false);
-
-  useEffect(() => {
-    if (isOpen) setIsAnimating(true);
-  }, [isOpen]);
-
-  if (!isOpen) return null;
-
-  const handleClose = () => {
-    setIsAnimating(false);
-    setTimeout(onClose, 200);
-  };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tokens = assets?.assets?.filter((a: any) => {
@@ -507,76 +503,65 @@ const ConvertModal = ({
   }) || [];
 
   return (
-    <div 
-      className="fixed inset-0 bg-black/80 flex items-end justify-center z-50 transition-opacity duration-200"
-      style={{ opacity: isAnimating ? 1 : 0 }}
-      onClick={handleClose}
-    >
-      <div 
-        className="bg-[#1a1a1a] rounded-t-3xl w-full max-w-md transition-transform duration-200"
-        style={{ transform: isAnimating ? 'translateY(0)' : 'translateY(100%)' }}
-        onClick={e => e.stopPropagation()}
-      >
-        <DragHandle onClose={handleClose} />
-        <div className="px-6 pb-8">
-          <h2 className="text-white text-xl font-bold mb-6 text-center">Convert</h2>
+    <BottomSheet isOpen={isOpen} onClose={onClose}>
+      <div className="px-6 pb-8">
+        <h2 className="text-white text-xl font-bold mb-6 text-center">Convert</h2>
 
-          {/* From */}
-          <div className="mb-4">
-            <label className="text-gray-400 text-sm mb-2 block">From</label>
-            <div className="flex gap-2">
-              <select
-                value={fromToken}
-                onChange={(e) => setFromToken(e.target.value)}
-                className="flex-1 bg-gray-800 rounded-xl px-4 py-3 text-white outline-none"
-              >
-                <option value="">Select token</option>
-                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                {tokens.map((t: any, i: number) => (
-                  <option key={i} value={t.symbol}>{t.symbol}</option>
-                ))}
-              </select>
-              <input
-                type="number"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="0.00"
-                className="w-32 bg-gray-800 rounded-xl px-4 py-3 text-white outline-none text-right"
-              />
-            </div>
-          </div>
-
-          {/* Swap Icon */}
-          <div className="flex justify-center my-4">
-            <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-xl">
-              ↕
-            </div>
-          </div>
-
-          {/* To */}
-          <div className="mb-6">
-            <label className="text-gray-400 text-sm mb-2 block">To</label>
+        {/* From */}
+        <div className="mb-4">
+          <label className="text-gray-400 text-sm mb-2 block">From</label>
+          <div className="flex gap-2">
             <select
-              value={toToken}
-              onChange={(e) => setToToken(e.target.value)}
-              className="w-full bg-gray-800 rounded-xl px-4 py-3 text-white outline-none"
+              value={fromToken}
+              onChange={(e) => setFromToken(e.target.value)}
+              className="flex-1 bg-gray-800 rounded-xl px-4 py-3 text-white outline-none"
             >
               <option value="">Select token</option>
-              <option value="ETH">ETH</option>
-              <option value="USDC">USDC</option>
-              <option value="USDT">USDT</option>
-              <option value="SOL">SOL</option>
-              <option value="ARB">ARB</option>
-              <option value="OP">OP</option>
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              {tokens.map((t: any, i: number) => (
+                <option key={i} value={t.symbol}>{t.symbol}</option>
+              ))}
             </select>
+            <input
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="0.00"
+              className="w-32 bg-gray-800 rounded-xl px-4 py-3 text-white outline-none text-right"
+            />
           </div>
-
-          <button className="w-full bg-[#f5a623] text-black font-bold py-4 rounded-xl">
-            Review Swap
-          </button>
         </div>
+
+        {/* Swap Icon */}
+        <div className="flex justify-center my-4">
+          <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-xl">
+            ↕
+          </div>
+        </div>
+
+        {/* To */}
+        <div className="mb-6">
+          <label className="text-gray-400 text-sm mb-2 block">To</label>
+          <select
+            value={toToken}
+            onChange={(e) => setToToken(e.target.value)}
+            className="w-full bg-gray-800 rounded-xl px-4 py-3 text-white outline-none"
+          >
+            <option value="">Select token</option>
+            <option value="ETH">ETH</option>
+            <option value="USDC">USDC</option>
+            <option value="USDT">USDT</option>
+            <option value="SOL">SOL</option>
+            <option value="ARB">ARB</option>
+            <option value="OP">OP</option>
+          </select>
+        </div>
+
+        <button className="w-full bg-[#f5a623] text-black font-bold py-4 rounded-xl">
+          Review Swap
+        </button>
       </div>
-    </div>
+    </BottomSheet>
   );
 };
 
@@ -588,44 +573,20 @@ const BuyModal = ({
   isOpen: boolean;
   onClose: () => void;
 }) => {
-  const [isAnimating, setIsAnimating] = useState(false);
-
-  useEffect(() => {
-    if (isOpen) setIsAnimating(true);
-  }, [isOpen]);
-
-  if (!isOpen) return null;
-
-  const handleClose = () => {
-    setIsAnimating(false);
-    setTimeout(onClose, 200);
-  };
-
   return (
-    <div 
-      className="fixed inset-0 bg-black/80 flex items-end justify-center z-50 transition-opacity duration-200"
-      style={{ opacity: isAnimating ? 1 : 0 }}
-      onClick={handleClose}
-    >
-      <div 
-        className="bg-[#1a1a1a] rounded-t-3xl w-full max-w-md transition-transform duration-200"
-        style={{ transform: isAnimating ? 'translateY(0)' : 'translateY(100%)' }}
-        onClick={e => e.stopPropagation()}
-      >
-        <DragHandle onClose={handleClose} />
-        <div className="px-6 pb-8">
-          <h2 className="text-white text-xl font-bold mb-6 text-center">Buy Crypto</h2>
+    <BottomSheet isOpen={isOpen} onClose={onClose}>
+      <div className="px-6 pb-8">
+        <h2 className="text-white text-xl font-bold mb-6 text-center">Buy Crypto</h2>
 
-          <div className="text-center py-8">
-            <div className="text-5xl mb-4">💳</div>
-            <h3 className="text-white text-lg mb-2">Coming Soon</h3>
-            <p className="text-gray-500 text-sm">
-              Onramp integration with card payments will be available soon.
-            </p>
-          </div>
+        <div className="text-center py-8">
+          <div className="text-5xl mb-4">💳</div>
+          <h3 className="text-white text-lg mb-2">Coming Soon</h3>
+          <p className="text-gray-500 text-sm">
+            Onramp integration with card payments will be available soon.
+          </p>
         </div>
       </div>
-    </div>
+    </BottomSheet>
   );
 };
 
@@ -639,7 +600,6 @@ const AgentModal = ({
 }) => {
   const [message, setMessage] = useState("");
   const [chat, setChat] = useState<{role: "user" | "agent"; text: string}[]>([]);
-  const [isAnimating, setIsAnimating] = useState(false);
 
   const suggestions = [
     "Swap 10 USDC to ETH",
@@ -647,28 +607,10 @@ const AgentModal = ({
     "Bridge to Arbitrum",
   ];
 
-  useEffect(() => {
-    if (isOpen) setIsAnimating(true);
-  }, [isOpen]);
-
-  if (!isOpen) return null;
-
-  const handleClose = () => {
-    setIsAnimating(false);
-    setTimeout(onClose, 200);
-  };
-
   return (
-    <div 
-      className="fixed inset-0 bg-black/90 flex flex-col z-50 transition-opacity duration-200"
-      style={{ opacity: isAnimating ? 1 : 0 }}
-    >
-      <div 
-        className="flex flex-col h-full transition-transform duration-200"
-        style={{ transform: isAnimating ? 'translateY(0)' : 'translateY(100%)' }}
-      >
-        {/* Header with drag handle */}
-        <DragHandle onClose={handleClose} />
+    <BottomSheet isOpen={isOpen} onClose={onClose} fullScreen>
+      <div className="flex flex-col h-full bg-[#1a1a1a]">
+        {/* Header */}
         <div className="flex items-center justify-center px-4 pb-4 border-b border-gray-800">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
@@ -747,7 +689,7 @@ const AgentModal = ({
           </div>
         </div>
       </div>
-    </div>
+    </BottomSheet>
   );
 };
 
@@ -759,31 +701,9 @@ const TokenDetailModal = ({
   token: TokenResult | null;
   onClose: () => void;
 }) => {
-  const [isAnimating, setIsAnimating] = useState(false);
-
-  useEffect(() => {
-    if (token) setIsAnimating(true);
-  }, [token]);
-
-  if (!token) return null;
-
-  const handleClose = () => {
-    setIsAnimating(false);
-    setTimeout(onClose, 200);
-  };
-
   return (
-    <div 
-      className="fixed inset-0 bg-black/80 flex items-end justify-center z-50 transition-opacity duration-200"
-      style={{ opacity: isAnimating ? 1 : 0 }}
-      onClick={handleClose}
-    >
-      <div 
-        className="bg-[#1a1a1a] rounded-t-3xl w-full max-w-md transition-transform duration-200"
-        style={{ transform: isAnimating ? 'translateY(0)' : 'translateY(100%)' }}
-        onClick={e => e.stopPropagation()}
-      >
-        <DragHandle onClose={handleClose} />
+    <BottomSheet isOpen={!!token} onClose={onClose}>
+      {token && (
         <div className="px-6 pb-8">
           <div className="flex items-center justify-center gap-3 mb-6">
             {token.logo ? (
@@ -830,8 +750,8 @@ const TokenDetailModal = ({
             )}
           </div>
         </div>
-      </div>
-    </div>
+      )}
+    </BottomSheet>
   );
 };
 
@@ -855,13 +775,25 @@ const HomeTab = ({
   onSend: () => void;
   onConvert: () => void;
 }) => {
+  const [expandedToken, setExpandedToken] = useState<string | null>(null);
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tokens = primaryAssets?.assets?.map((asset: any) => ({
-    symbol: asset.symbol || "???",
-    name: asset.name || asset.symbol || "Token",
-    balance: typeof asset.balance === 'string' ? parseFloat(asset.balance) : (asset.balance || 0),
+    symbol: asset.symbol || asset.tokenType?.toUpperCase() || "???",
+    name: asset.name || asset.symbol || asset.tokenType || "Token",
+    balance: typeof asset.amount === 'string' ? parseFloat(asset.amount) : (asset.amount || 0),
     amountInUSD: asset.amountInUSD || 0,
-    change: 0,
+    price: asset.price || 0,
+    // Chain breakdown from chainAggregation
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    chainBreakdown: asset.chainAggregation?.map((chain: any) => ({
+      chainId: chain.token?.chainId,
+      chainName: getChainName(chain.token?.chainId) || chain.token?.chainId,
+      amount: typeof chain.amount === 'string' ? parseFloat(chain.amount) : (chain.amount || 0),
+      amountInUSD: chain.amountInUSD || 0,
+      address: chain.token?.address,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    })).filter((c: any) => c.amount > 0.0001) || [],
   })).filter((t: { balance: number }) => t.balance > 0.0001) || [];
 
   return (
@@ -910,25 +842,65 @@ const HomeTab = ({
         ))}
       </div>
 
-      {/* Token List */}
+      {/* Token List with Chain Breakdown */}
       <div className="px-4 mt-2">
         {tokens.length > 0 ? (
           <div>
-            {tokens.map((token: { symbol: string; name: string; balance: number; amountInUSD: number; change: number }, i: number) => (
-              <div key={i} className="flex items-center justify-between py-4 border-b border-gray-800/30">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-lg">
-                    {getTokenIcon(token.symbol)}
+            {tokens.map((token: { 
+              symbol: string; 
+              name: string; 
+              balance: number; 
+              amountInUSD: number; 
+              price: number;
+              chainBreakdown: Array<{ chainId: number; chainName: string; amount: number; amountInUSD: number; address: string }>;
+            }, i: number) => (
+              <div key={i} className="border-b border-gray-800/30">
+                {/* Main Token Row */}
+                <button 
+                  className="w-full flex items-center justify-between py-4"
+                  onClick={() => setExpandedToken(expandedToken === token.symbol ? null : token.symbol)}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-lg">
+                      {getTokenIcon(token.symbol)}
+                    </div>
+                    <div className="text-left">
+                      <div className="text-white font-medium">{token.name}</div>
+                      <div className="text-gray-500 text-sm">{token.balance.toFixed(4)} {token.symbol}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="text-white font-medium">{token.name}</div>
-                    <div className="text-gray-500 text-sm">{token.balance.toFixed(4)} {token.symbol}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-right">
+                      <div className="text-white">${token.amountInUSD.toFixed(2)}</div>
+                      {token.chainBreakdown.length > 1 && (
+                        <div className="text-gray-500 text-xs">{token.chainBreakdown.length} chains</div>
+                      )}
+                    </div>
+                    {token.chainBreakdown.length > 0 && (
+                      <span className={`text-gray-500 text-sm transition-transform ${expandedToken === token.symbol ? 'rotate-180' : ''}`}>
+                        ▼
+                      </span>
+                    )}
                   </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-white">${token.amountInUSD.toFixed(2)}</div>
-                  <div className="text-green-500 text-sm">+0.00%</div>
-                </div>
+                </button>
+                
+                {/* Chain Breakdown (Expanded) */}
+                {expandedToken === token.symbol && token.chainBreakdown.length > 0 && (
+                  <div className="pl-14 pb-4 space-y-2">
+                    {token.chainBreakdown.map((chain, j) => (
+                      <div key={j} className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 rounded-full bg-gray-600" />
+                          <span className="text-gray-400">{chain.chainName}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-gray-300">{chain.amount.toFixed(4)} {token.symbol}</span>
+                          <span className="text-gray-500 ml-2">(${chain.amountInUSD.toFixed(2)})</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -950,22 +922,34 @@ const SearchTab = () => {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<TokenResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [selectedToken, setSelectedToken] = useState<TokenResult | null>(null);
   const recentSearches = ["bitcoin", "ethereum", "solana"];
 
   const searchTokens = async (q: string) => {
     if (!q.trim() || q.length < 2) {
       setResults([]);
+      setError(null);
       return;
     }
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch(`https://api.mobula.io/api/1/search?input=${encodeURIComponent(q)}`, {
-        headers: { "Authorization": MOBULA_API_KEY }
+        headers: { 
+          "Authorization": MOBULA_API_KEY,
+          "Content-Type": "application/json",
+        }
       });
+      
+      if (!res.ok) {
+        throw new Error(`API error: ${res.status}`);
+      }
+      
       const data = await res.json();
       
       // Map Mobula response to our format with defensive checks
+      // Mobula returns contracts as string[] and blockchains as string[]
       const rawTokens = data?.data || [];
       const tokens: TokenResult[] = rawTokens.slice(0, 15).map((t: {
         id?: number | string;
@@ -975,20 +959,35 @@ const SearchTab = () => {
         price?: number;
         price_change_24h?: number;
         market_cap?: number;
-        contracts?: Array<{ address: string; blockchain: string }>;
-      }) => ({
-        id: String(t.id || t.name || Math.random()),
-        name: t.name || "Unknown",
-        symbol: t.symbol || "???",
-        logo: t.logo || "",
-        price: typeof t.price === 'number' ? t.price : undefined,
-        price_change_24h: typeof t.price_change_24h === 'number' ? t.price_change_24h : undefined,
-        market_cap: typeof t.market_cap === 'number' ? t.market_cap : undefined,
-        contracts: Array.isArray(t.contracts) ? t.contracts : [],
-      }));
+        contracts?: string[];
+        blockchains?: string[];
+      }) => {
+        // Map contracts and blockchains arrays together
+        const contractsList: Array<{ address: string; blockchain: string }> = [];
+        if (Array.isArray(t.contracts) && Array.isArray(t.blockchains)) {
+          t.contracts.forEach((addr, idx) => {
+            contractsList.push({
+              address: addr,
+              blockchain: t.blockchains?.[idx] || "Unknown",
+            });
+          });
+        }
+        
+        return {
+          id: String(t.id || t.name || Math.random()),
+          name: t.name || "Unknown",
+          symbol: t.symbol || "???",
+          logo: t.logo || "",
+          price: typeof t.price === 'number' ? t.price : undefined,
+          price_change_24h: typeof t.price_change_24h === 'number' ? t.price_change_24h : undefined,
+          market_cap: typeof t.market_cap === 'number' ? t.market_cap : undefined,
+          contracts: contractsList,
+        };
+      });
       setResults(tokens);
     } catch (e) {
       console.error("Search failed:", e);
+      setError(e instanceof Error ? e.message : "Search failed");
       setResults([]);
     }
     setLoading(false);
@@ -1010,6 +1009,8 @@ const SearchTab = () => {
       />
       
       {loading && <div className="text-gray-500 text-center py-4">Searching...</div>}
+      
+      {error && <div className="text-red-500 text-center py-4 text-sm">Error: {error}</div>}
       
       {!query && (
         <div className="mb-4">
