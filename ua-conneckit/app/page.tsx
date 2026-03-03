@@ -1,6 +1,5 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
-import "./components/animations.css";
 import {
   ConnectButton,
   useAccount,
@@ -9,50 +8,32 @@ import {
 } from "@particle-network/connectkit";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
-  Eye,
+  Home,
+  Search,
+  Bot,
+  Activity,
   Copy,
   Check,
-  HelpCircle,
+  Send,
   ArrowDownToLine,
-  ChevronDown,
-  ChevronUp,
-  RefreshCw,
 } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-// Universal Accounts imports
 import {
   UniversalAccount,
   UNIVERSAL_ACCOUNT_VERSION,
   type IAssetsResponse,
   type IUniversalAccountConfig,
-  //SUPPORTED_TOKEN_TYPE,
 } from "@particle-network/universal-account-sdk";
-import { type ITransactionHistoryResponse } from "./types/transaction-history";
 import DepositDialog from "./components/DepositDialog";
 import AssetBreakdownDialog from "./components/AssetBreakdownDialog";
-import TxHistoryDialog from "./components/TxHistoryDialog";
-import TxDetailsDialog from "./components/TxDetailsDialog";
 
-// Import components
-import ContractInteraction from "./components/ContractInteraction";
-import SendFunds from "./components/SendFunds";
-import UsdcTransfer from "./components/UniversalTransfer";
-import ConvertToUsdc from "./components/Convertions";
-import ConvertWithEIP7702 from "./components/ConvertWithEIP7702";
-import SolanaUsdcTransfer from "./components/UniversalTransferSolana";
-import SendSolana from "./components/SendSolana";
+// Types
+type TabType = "home" | "search" | "agent" | "activity";
+
+interface AccountInfo {
+  ownerAddress: string;
+  evmSmartAccount: string;
+  solanaSmartAccount: string;
+}
 
 // Helper functions
 const formatAddress = (addr: string) => {
@@ -60,675 +41,374 @@ const formatAddress = (addr: string) => {
   return `${addr.substring(0, 6)}...${addr.substring(addr.length - 4)}`;
 };
 
-const copyToClipboard = (text: string, callback?: () => void) => {
+const copyToClipboard = (text: string) => {
   navigator.clipboard.writeText(text);
-  if (callback) callback();
 };
 
-const App = () => {
-  // Get wallet from Particle Connect
-  const [primaryWallet] = useWallets();
-  const walletClient = primaryWallet?.getWalletClient();
-  const { address, isConnected } = useAccount();
-  const { disconnect } = useDisconnect();
-  const [universalAccountInstance, setUniversalAccountInstance] =
-    useState<UniversalAccount | null>(null);
-  const [accountInfo, setAccountInfo] = useState<{
-    ownerAddress: string;
-    evmSmartAccount: string;
-    solanaSmartAccount: string;
-  } | null>(null);
+// Login Screen Component
+const LoginScreen = () => (
+  <div className="flex flex-col items-center justify-center min-h-screen bg-black p-6">
+    <div className="text-7xl mb-6">🍊</div>
+    <h1 className="text-3xl font-bold text-white mb-2 tracking-wider">UNIVERSAL WALLET</h1>
+    
+    <div className="my-12 space-y-5 w-full max-w-xs">
+      <div className="flex items-center gap-4">
+        <div className="border-2 border-purple-500 rounded-lg px-4 py-2">
+          <span className="text-purple-500 font-bold">One</span>
+        </div>
+        <span className="text-white text-2xl font-bold">Account</span>
+      </div>
+      <div className="flex items-center gap-4">
+        <div className="border-2 border-purple-500 rounded-lg px-4 py-2">
+          <span className="text-purple-500 font-bold">One</span>
+        </div>
+        <span className="text-white text-2xl font-bold">Balance</span>
+      </div>
+      <div className="flex items-center gap-4">
+        <div className="border-2 border-purple-500 rounded-lg px-4 py-2">
+          <span className="text-purple-500 font-bold">Any</span>
+        </div>
+        <span className="text-white text-2xl font-bold">Chain</span>
+      </div>
+    </div>
 
-  // State for dialogs
-  const [isAddressDialogOpen, setIsAddressDialogOpen] = useState(false);
-  const [showDepositDialog, setShowDepositDialog] = useState<boolean>(false);
-  const [showDepositDetails, setShowDepositDetails] = useState<boolean>(false);
-  const [isAssetBreakdownOpen, setIsAssetBreakdownOpen] =
-    useState<boolean>(false);
-  const [isTxHistoryOpen, setIsTxHistoryOpen] = useState<boolean>(false);
-  const [isTxDetailsOpen, setIsTxDetailsOpen] = useState<boolean>(false);
+    <div className="mt-8 w-full max-w-xs">
+      <ConnectButton label="Get Started" />
+    </div>
+  </div>
+);
 
-  // Transaction history
-  const [transactions, setTransactions] =
-    useState<ITransactionHistoryResponse | null>(null);
-  const [selectedTxDetails, setSelectedTxDetails] =
-    useState<ITransactionHistoryResponse | null>(null);
-  const [isLoadingTxDetails, setIsLoadingTxDetails] = useState<boolean>(false);
-  const [tooltipsEnabled, setTooltipsEnabled] = useState(false);
-
-  // Disable tooltips when dialog opens, enable after a delay
-  useEffect(() => {
-    if (isAddressDialogOpen) {
-      setTooltipsEnabled(false);
-      const timer = setTimeout(() => {
-        setTooltipsEnabled(true);
-      }, 1000); // Enable tooltips after 1 second
-      return () => clearTimeout(timer);
-    }
-  }, [isAddressDialogOpen]);
-
-  // Copy address to clipboard with feedback
+// Home Tab Component
+const HomeTab = ({ 
+  accountInfo, 
+  primaryAssets, 
+  onDeposit,
+  onSend,
+  onViewAssets
+}: {
+  accountInfo: AccountInfo | null;
+  primaryAssets: IAssetsResponse | null;
+  onDeposit: () => void;
+  onSend: () => void;
+  onViewAssets: () => void;
+}) => {
   const [copiedAddress, setCopiedAddress] = useState<string | null>(null);
 
-  const handleCopyToClipboard = (text: string) => {
-    copyToClipboard(text, () => {
-      setCopiedAddress(text);
-      setTimeout(() => setCopiedAddress(null), 2000);
-    });
-  };
-
-  // Handle transaction click to fetch and show details
-  const handleTransactionClick = async (transactionId: string) => {
-    if (!universalAccountInstance) return;
-
-    setIsLoadingTxDetails(true);
-    setIsTxDetailsOpen(true);
-
-    try {
-      const txDetails =
-        await universalAccountInstance.getTransaction(transactionId);
-      setSelectedTxDetails(txDetails);
-    } catch (error) {
-      console.error("Failed to fetch transaction details:", error);
-      setSelectedTxDetails(null);
-    } finally {
-      setIsLoadingTxDetails(false);
-    }
-  };
-
-  // === Initialize UniversalAccount ===
-  const universalAccountConfig = useMemo(
-    (): IUniversalAccountConfig => ({
-      projectId: process.env.NEXT_PUBLIC_PROJECT_ID || "",
-      projectClientKey: process.env.NEXT_PUBLIC_CLIENT_KEY || "",
-      projectAppUuid: process.env.NEXT_PUBLIC_APP_ID || "",
-      smartAccountOptions: {
-        // 7702 mode: the EOA address itself becomes the Universal Account
-        useEIP7702: false,
-        name: "UNIVERSAL",
-        version: UNIVERSAL_ACCOUNT_VERSION,
-        ownerAddress: address!,
-      },
-      // If not set it will use auto-slippage
-      tradeConfig: {
-        slippageBps: 100, // 1% slippage tolerance
-        universalGas: false, // Prioritize PARTI token to pay for gas
-        //usePrimaryTokens: [SUPPORTED_TOKEN_TYPE.SOL], // Specify token to use as source
-      },
-    }),
-    [address],
-  );
-
-  useEffect(() => {
-    if (isConnected && address) {
-      // Create new UA instance when user connects
-      const ua = new UniversalAccount(universalAccountConfig);
-
-      console.log("UniversalAccount initialized:", ua);
-      setUniversalAccountInstance(ua);
-    } else {
-      // Reset UA when user disconnects
-      setUniversalAccountInstance(null);
-    }
-  }, [isConnected, address, universalAccountConfig]);
-
-  // === Fetch Universal Account Addresses ===
-  useEffect(() => {
-    if (!universalAccountInstance || !address) return;
-    const fetchSmartAccountAddresses = async () => {
-      try {
-        // Get Universal Account addresses for both EVM and Solana
-        const options = await universalAccountInstance.getSmartAccountOptions();
-        setAccountInfo({
-          ownerAddress: address, // EOA address
-          evmSmartAccount: options.smartAccountAddress || "", // EVM Universal Account
-          solanaSmartAccount: options.solanaSmartAccountAddress || "", // Solana Universal Account
-        });
-        console.log("Universal Account Options:", options);
-      } catch (error) {
-        console.error("Failed to fetch smart account addresses:", error);
-      }
-    };
-    fetchSmartAccountAddresses();
-  }, [universalAccountInstance, address]);
-
-  // === Fetch Transaction History ===
-  useEffect(() => {
-    if (!universalAccountInstance) return;
-
-    const fetchTransactions = async () => {
-      try {
-        // Fetch first 2 pages of transactions (40 transactions max)
-        const allTransactions: ITransactionHistoryResponse = {
-          data: [],
-          hasNextPage: false,
-          currentPage: 1,
-        };
-        const pageSize = 20;
-        const maxPages = 2;
-
-        // Fetch up to maxPages
-        for (let currentPage = 1; currentPage <= maxPages; currentPage++) {
-          const response = await universalAccountInstance.getTransactions(
-            currentPage,
-            pageSize,
-          );
-          allTransactions.data.push(...response.data);
-          allTransactions.hasNextPage = response.hasNextPage;
-          allTransactions.currentPage = response.currentPage;
-
-          // Stop if there are no more pages
-          if (!response.hasNextPage) break;
-        }
-
-        console.log(
-          `Fetched ${allTransactions.data.length} transactions:`,
-          allTransactions,
-        );
-        setTransactions(allTransactions);
-      } catch (error) {
-        console.error("Failed to fetch transaction history:", error);
-      }
-    };
-
-    fetchTransactions();
-  }, [universalAccountInstance]);
-
-  // Aggregated balance across all chains
-  const [primaryAssets, setPrimaryAssets] = useState<IAssetsResponse | null>(
-    null,
-  );
-  const [isRefreshingPrimaryAssets, setIsRefreshingPrimaryAssets] =
-    useState(false);
-  // Transaction state is now handled in the ContractInteraction component
-
-  const fetchPrimaryAssets = useCallback(async () => {
-    if (!universalAccountInstance || !address) return;
-    setIsRefreshingPrimaryAssets(true);
-    try {
-      const assets = await universalAccountInstance.getPrimaryAssets();
-      console.log("Primary Assets:", assets);
-      setPrimaryAssets(assets);
-    } catch (error) {
-      console.error("Failed to fetch primary assets:", error);
-    } finally {
-      setIsRefreshingPrimaryAssets(false);
-    }
-  }, [universalAccountInstance, address]);
-
-  // === Fetch Primary Assets ===
-  useEffect(() => {
-    fetchPrimaryAssets();
-  }, [fetchPrimaryAssets]);
-
-  const handleRefreshPrimaryAssets = (
-    event: React.MouseEvent<HTMLButtonElement>,
-  ) => {
-    event.stopPropagation();
-    fetchPrimaryAssets();
+  const handleCopy = (addr: string) => {
+    copyToClipboard(addr);
+    setCopiedAddress(addr);
+    setTimeout(() => setCopiedAddress(null), 2000);
   };
 
   return (
-    <div className="relative flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-[#0A0A1A] to-[#1A0A2A] p-6 font-sans overflow-hidden">
-      {/* Particle background effect */}
-      <div
-        className="absolute inset-0 z-0 opacity-30"
-        style={{
-          background:
-            "radial-gradient(circle at 20% 80%, #8B5CF6 0%, transparent 30%), radial-gradient(circle at 80% 20%, #FACC15 0%, transparent 30%)",
-        }}
-      ></div>
-
-      <div className="relative z-10 w-full max-w-5xl mx-auto bg-[#1F1F3A]/80 rounded-xl shadow-2xl p-8 space-y-8 border border-[#3A3A5A] backdrop-blur-sm">
-        {/* Header Section */}
-        <div className="flex justify-center items-center mb-8 border-b border-[#3A3A5A] pb-6">
-          <h1 className="text-4xl font-bold text-[#C084FC] drop-shadow-lg">
-            Universal Account with Particle Connect
-          </h1>
+    <div className="flex-1 overflow-auto pb-24">
+      {/* Balance Card */}
+      <div 
+        className="bg-gradient-to-br from-purple-600 to-purple-900 rounded-2xl p-6 mx-4 mt-4 cursor-pointer"
+        onClick={onViewAssets}
+      >
+        <div className="text-sm text-purple-200 mb-1">Universal Balance</div>
+        <div className="text-4xl font-bold text-white mb-4">
+          ${primaryAssets?.totalAmountInUSD.toFixed(2) || "0.00"}
         </div>
-
-        {isConnected && (
-          <div className="w-full max-w-4xl mx-auto space-y-8">
-            {/* Main Content Grid - Account Details Button and Balance side by side */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Left Column - Account Details Button */}
-              <div>
-                <div className="flex flex-col gap-3">
-                  {/* Account Details Button */}
-                  <Dialog
-                    open={isAddressDialogOpen}
-                    onOpenChange={setIsAddressDialogOpen}
-                  >
-                    <DialogTrigger asChild>
-                      <button className="w-full bg-[#2A2A4A] rounded-lg p-6 border border-[#4A4A6A] shadow-inner hover:border-purple-500 transition-colors flex flex-col items-center justify-center gap-2">
-                        <div className="flex items-center gap-2">
-                          <Eye className="h-5 w-5 text-gray-300" />
-                          <span className="text-xl font-semibold text-gray-200">
-                            View Account Details
-                          </span>
-                        </div>
-                        {address && (
-                          <span className="text-sm text-gray-400">
-                            {formatAddress(address as string)}
-                          </span>
-                        )}
-                      </button>
-                    </DialogTrigger>
-                    <DialogContent className="sm:max-w-md bg-[#1F1F3A] border border-[#4A4A6A] text-gray-200">
-                      <DialogHeader>
-                        <DialogTitle className="text-xl font-semibold text-center text-[#C084FC]">
-                          Account Addresses
-                        </DialogTitle>
-                      </DialogHeader>
-                      <div className="grid grid-cols-1 gap-4 mt-4">
-                        {/* Wallet Address */}
-                        <div className="bg-[#2A2A4A] rounded-lg p-5 border border-[#4A4A6A] shadow-inner">
-                          <div className="text-sm text-gray-300 font-medium mb-2 flex items-center gap-2">
-                            Wallet Address
-                            {tooltipsEnabled ? (
-                              <TooltipProvider>
-                                <Tooltip delayDuration={300}>
-                                  <TooltipTrigger asChild>
-                                    <button className="inline-flex items-center justify-center rounded-full cursor-help">
-                                      <HelpCircle className="h-4 w-4 text-gray-400" />
-                                    </button>
-                                  </TooltipTrigger>
-                                  <TooltipContent
-                                    side="right"
-                                    className="bg-[#1F1F3A] text-gray-200 border border-[#4A4A6A] max-w-xs"
-                                  >
-                                    <p>
-                                      EOA the user used to login. This is the
-                                      owner of the universal account.
-                                    </p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            ) : (
-                              <button className="inline-flex items-center justify-center rounded-full cursor-help">
-                                <HelpCircle className="h-4 w-4 text-gray-400" />
-                              </button>
-                            )}
-                          </div>
-                          <div className="font-mono text-gray-200 text-sm break-all bg-[#1F1F3A] p-3 rounded-md flex justify-between items-center gap-2">
-                            <span className="overflow-auto">
-                              {address as string}
-                            </span>
-                            <button
-                              onClick={() =>
-                                handleCopyToClipboard(address as string)
-                              }
-                              className="p-1.5 rounded-full hover:bg-[#3A3A5A] transition-colors flex-shrink-0"
-                            >
-                              {copiedAddress === address ? (
-                                <Check className="h-4 w-4 text-green-400" />
-                              ) : (
-                                <Copy className="h-4 w-4 text-gray-400" />
-                              )}
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* EVM Universal Account */}
-                        {accountInfo && (
-                          <div className="bg-[#2A2A4A] rounded-lg p-5 border border-[#4A4A6A] shadow-inner">
-                            <div className="text-sm text-gray-300 font-medium mb-2 flex items-center gap-2">
-                              EVM Universal Account Address
-                              {tooltipsEnabled ? (
-                                <TooltipProvider>
-                                  <Tooltip delayDuration={300}>
-                                    <TooltipTrigger asChild>
-                                      <button className="inline-flex items-center justify-center rounded-full cursor-help">
-                                        <HelpCircle className="h-4 w-4 text-gray-400" />
-                                      </button>
-                                    </TooltipTrigger>
-                                    <TooltipContent
-                                      side="right"
-                                      className="bg-[#1F1F3A] text-gray-200 border border-[#4A4A6A] max-w-xs"
-                                    >
-                                      <p>
-                                        This is the EVM universal account. This
-                                        and the SOL address lead to the same
-                                        account and balance, but this is used to
-                                        deposit EVM assets on EVM chains.
-                                      </p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                              ) : (
-                                <button className="inline-flex items-center justify-center rounded-full cursor-help">
-                                  <HelpCircle className="h-4 w-4 text-gray-400" />
-                                </button>
-                              )}
-                            </div>
-                            <div className="font-mono text-gray-200 text-sm break-all bg-[#1F1F3A] p-3 rounded-md flex justify-between items-center gap-2">
-                              <span className="overflow-auto">
-                                {accountInfo.evmSmartAccount}
-                              </span>
-                              <button
-                                onClick={() =>
-                                  handleCopyToClipboard(
-                                    accountInfo.evmSmartAccount,
-                                  )
-                                }
-                                className="p-1.5 rounded-full hover:bg-[#3A3A5A] transition-colors flex-shrink-0"
-                              >
-                                {copiedAddress ===
-                                accountInfo.evmSmartAccount ? (
-                                  <Check className="h-4 w-4 text-green-400" />
-                                ) : (
-                                  <Copy className="h-4 w-4 text-gray-400" />
-                                )}
-                              </button>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* SOL Universal Account */}
-                        {accountInfo && (
-                          <div className="bg-[#2A2A4A] rounded-lg p-5 border border-[#4A4A6A] shadow-inner">
-                            <div className="text-sm text-gray-300 font-medium mb-2 flex items-center gap-2">
-                              SOL Universal Account Address
-                              {tooltipsEnabled ? (
-                                <TooltipProvider>
-                                  <Tooltip delayDuration={300}>
-                                    <TooltipTrigger asChild>
-                                      <button className="inline-flex items-center justify-center rounded-full cursor-help">
-                                        <HelpCircle className="h-4 w-4 text-gray-400" />
-                                      </button>
-                                    </TooltipTrigger>
-                                    <TooltipContent
-                                      side="right"
-                                      className="bg-[#1F1F3A] text-gray-200 border border-[#4A4A6A] max-w-xs"
-                                    >
-                                      <p>
-                                        This is the Solana universal account.
-                                        This and the EVM address lead to the
-                                        same account and balance, but this is
-                                        used to deposit assets on Solana.
-                                      </p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                              ) : (
-                                <button className="inline-flex items-center justify-center rounded-full cursor-help">
-                                  <HelpCircle className="h-4 w-4 text-gray-400" />
-                                </button>
-                              )}
-                            </div>
-                            <div className="font-mono text-gray-200 text-sm break-all bg-[#1F1F3A] p-3 rounded-md flex justify-between items-center gap-2">
-                              <span className="overflow-auto">
-                                {accountInfo.solanaSmartAccount}
-                              </span>
-                              <button
-                                onClick={() =>
-                                  handleCopyToClipboard(
-                                    accountInfo.solanaSmartAccount,
-                                  )
-                                }
-                                className="p-1.5 rounded-full hover:bg-[#3A3A5A] transition-colors flex-shrink-0"
-                              >
-                                {copiedAddress ===
-                                accountInfo.solanaSmartAccount ? (
-                                  <Check className="h-4 w-4 text-green-400" />
-                                ) : (
-                                  <Copy className="h-4 w-4 text-gray-400" />
-                                )}
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </DialogContent>
-                  </Dialog>
-
-                  {/* Logout Button */}
-                  <button
-                    onClick={() => setIsTxHistoryOpen(true)}
-                    className="w-full bg-[#2A2A4A] rounded-lg p-3 border border-[#4A4A6A] shadow-inner hover:border-purple-500 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <span className="text-purple-300 font-medium">
-                      Transaction History
-                    </span>
-                  </button>
-
-                  {/* Logout Button */}
-                  <button
-                    onClick={() => disconnect()}
-                    className="w-full bg-[#2A2A4A] rounded-lg p-3 border border-[#4A4A6A] shadow-inner hover:border-red-500 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <span className="text-red-500 font-medium">Log Out</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Right Column - Universal Balance Section */}
-              <div>
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setIsAssetBreakdownOpen(true)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      setIsAssetBreakdownOpen(true);
-                    }
-                  }}
-                  className="w-full bg-[#2A2A4A] rounded-lg p-6 border border-[#4A4A6A] shadow-inner hover:border-yellow-500 transition-colors flex flex-col gap-4 cursor-pointer"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="text-sm text-gray-300 font-medium">
-                        Universal Balance
-                      </div>
-                      <p className="text-4xl font-bold text-[#FACC15] mt-3">
-                        ${primaryAssets?.totalAmountInUSD.toFixed(4) || "0.00"}
-                      </p>
-                      <div className="text-xs text-gray-400 mt-3">
-                        Click to view asset breakdown
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleRefreshPrimaryAssets}
-                      disabled={isRefreshingPrimaryAssets}
-                      className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md border border-[#4A4A6A] text-gray-200 hover:border-purple-500 disabled:opacity-60"
-                    >
-                      <RefreshCw
-                        className={`h-4 w-4 ${
-                          isRefreshingPrimaryAssets ? "animate-spin" : ""
-                        }`}
-                      />
-                      {isRefreshingPrimaryAssets ? "Refreshing" : "Refresh"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <h3 className="text-xl font-semibold text-gray-200 border-b border-[#4A4A6A] pb-2 text-center">
-                Cross-Chain Deposits
-              </h3>
-              <div className="bg-[#2A2A4A] rounded-lg p-6 border border-[#4A4A6A] shadow-inner flex flex-col items-center gap-4 hover:border-purple-500 transition-colors">
-                <div className="w-full mb-2">
-                  <div className="flex justify-between items-center">
-                    <h4 className="text-lg font-medium text-purple-300">
-                      Deposit to Universal Account
-                    </h4>
-                    <button
-                      onClick={() => setShowDepositDetails(!showDepositDetails)}
-                      className="text-purple-300 hover:text-purple-400 transition-colors"
-                      aria-label={
-                        showDepositDetails ? "Hide details" : "Show details"
-                      }
-                    >
-                      {showDepositDetails ? (
-                        <ChevronUp size={18} />
-                      ) : (
-                        <ChevronDown size={18} />
-                      )}
-                    </button>
-                  </div>
-
-                  {showDepositDetails && (
-                    <div className="mt-3 animate-fadeIn">
-                      <p className="text-sm text-gray-300 mb-4">
-                        This example demonstrates how to deposit assets to your
-                        Universal Account across different chains. You can
-                        deposit to both EVM and Solana addresses from any
-                        wallet.
-                      </p>
-                      <div className="flex items-center justify-between text-xs text-gray-400 mb-4">
-                        <span>Supports multiple chains</span>
-                        <a
-                          href="https://github.com/soos3d/universal-accounts-connectkit-demo/blob/main/ua-conneckit/app/components/DepositDialog.tsx"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-purple-400 hover:underline flex items-center gap-1"
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="14"
-                            height="14"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77A5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
-                          </svg>
-                          View Code on GitHub
-                        </a>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  onClick={() => setShowDepositDialog(true)}
-                  className="w-full py-3 px-6 rounded-lg font-bold text-lg text-white bg-gradient-to-r from-purple-500 to-purple-700 hover:from-purple-600 hover:to-purple-800 transition-all duration-300 shadow-lg flex items-center justify-center gap-2"
-                >
-                  <ArrowDownToLine className="w-5 h-5" />
-                  Deposit
-                </button>
-
-                <div className="w-full mt-2 pt-3 border-t border-[#4A4A6A]">
-                  <p className="text-xs text-gray-400">
-                    <span className="font-medium text-gray-300">
-                      SDK Functions Used:
-                    </span>
-                    <code className="bg-[#1A1A2A] px-1 py-0.5 rounded text-purple-300 mx-1">
-                      getSmartAccountOptions
-                    </code>
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Contract Interaction and Conversion Components */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <ContractInteraction
-                universalAccountInstance={universalAccountInstance}
-                walletClient={walletClient}
-                address={address}
-              />
-              <ConvertToUsdc
-                universalAccountInstance={universalAccountInstance}
-                walletClient={walletClient}
-                address={address}
-              />
-            </div>
-
-            {/* EIP-7702 Conversion Component 
-            <div className="mt-6">
-              <ConvertWithEIP7702
-                universalAccountInstance={universalAccountInstance}
-                walletClient={walletClient}
-                address={address}
-              />
-            </div>*/}
-
-            {/* Universal USDC Transfer and Send Funds Components */}
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-              <UsdcTransfer
-                universalAccountInstance={universalAccountInstance}
-                walletClient={walletClient}
-                address={address}
-              />
-              <SendFunds
-                universalAccountInstance={universalAccountInstance}
-                walletClient={walletClient}
-                address={address}
-              />
-            </div>
-
-            {/* Solana Transfer Components */}
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-              <SolanaUsdcTransfer
-                universalAccountInstance={universalAccountInstance}
-                walletClient={walletClient}
-                address={address}
-                solanaSmartAccountAddress={accountInfo?.solanaSmartAccount}
-              />
-              <SendSolana
-                universalAccountInstance={universalAccountInstance}
-                walletClient={walletClient}
-                address={address}
-                solanaSmartAccountAddress={accountInfo?.solanaSmartAccount}
-              />
-            </div>
-
-            {/* Removed Disconnect Button from here */}
-          </div>
-        )}
-
-        {!isConnected && (
-          <div className="flex flex-col items-center justify-center space-y-6 mt-12 py-12">
-            <p className="text-gray-300 text-lg mb-2">
-              Connect your wallet to view account details
-            </p>
-            <div className="w-56">
-              <ConnectButton label="Log In" />
-            </div>
-          </div>
-        )}
-
-        {/* Deposit Dialog */}
-        {accountInfo && (
-          <DepositDialog
-            showDepositDialog={showDepositDialog}
-            setShowDepositDialog={setShowDepositDialog}
-            evmAddress={accountInfo.evmSmartAccount}
-            solanaAddress={accountInfo.solanaSmartAccount}
-          />
-        )}
-
-        {/* Asset Breakdown Dialog */}
-        <AssetBreakdownDialog
-          isOpen={isAssetBreakdownOpen}
-          setIsOpen={setIsAssetBreakdownOpen}
-          assets={primaryAssets}
-        />
-
-        {/* Transaction History Dialog */}
-        <TxHistoryDialog
-          isOpen={isTxHistoryOpen}
-          setIsOpen={setIsTxHistoryOpen}
-          transactions={transactions?.data || []}
-          onTransactionClick={handleTransactionClick}
-        />
-
-        {/* Transaction Details Dialog */}
-        <TxDetailsDialog
-          isOpen={isTxDetailsOpen}
-          setIsOpen={setIsTxDetailsOpen}
-          transactionDetails={selectedTxDetails}
-          isLoading={isLoadingTxDetails}
-        />
+        <div className="text-xs text-purple-300">Tap to view breakdown</div>
       </div>
+
+      {/* Action Buttons */}
+      <div className="flex gap-4 px-4 mt-6">
+        <button 
+          onClick={onDeposit}
+          className="flex-1 bg-zinc-900 rounded-xl p-4 flex flex-col items-center gap-2 border border-zinc-800"
+        >
+          <ArrowDownToLine className="w-6 h-6 text-purple-400" />
+          <span className="text-white text-sm">Receive</span>
+        </button>
+        <button 
+          onClick={onSend}
+          className="flex-1 bg-zinc-900 rounded-xl p-4 flex flex-col items-center gap-2 border border-zinc-800"
+        >
+          <Send className="w-6 h-6 text-purple-400" />
+          <span className="text-white text-sm">Send</span>
+        </button>
+      </div>
+
+      {/* Account Addresses */}
+      {accountInfo && (
+        <div className="px-4 mt-6 space-y-3">
+          <h3 className="text-gray-400 text-sm font-medium">Your Addresses</h3>
+          
+          {/* EVM UA */}
+          <div className="bg-zinc-900 rounded-xl p-4 border border-zinc-800">
+            <div className="flex justify-between items-center">
+              <div>
+                <div className="text-xs text-purple-400 mb-1">🌐 EVM Universal Account</div>
+                <div className="text-white font-mono text-sm">
+                  {formatAddress(accountInfo.evmSmartAccount)}
+                </div>
+              </div>
+              <button 
+                onClick={() => handleCopy(accountInfo.evmSmartAccount)}
+                className="p-2 rounded-lg bg-zinc-800"
+              >
+                {copiedAddress === accountInfo.evmSmartAccount ? (
+                  <Check className="w-4 h-4 text-green-400" />
+                ) : (
+                  <Copy className="w-4 h-4 text-gray-400" />
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Solana UA */}
+          <div className="bg-zinc-900 rounded-xl p-4 border border-zinc-800">
+            <div className="flex justify-between items-center">
+              <div>
+                <div className="text-xs text-green-400 mb-1">☀️ Solana Universal Account</div>
+                <div className="text-white font-mono text-sm">
+                  {formatAddress(accountInfo.solanaSmartAccount)}
+                </div>
+              </div>
+              <button 
+                onClick={() => handleCopy(accountInfo.solanaSmartAccount)}
+                className="p-2 rounded-lg bg-zinc-800"
+              >
+                {copiedAddress === accountInfo.solanaSmartAccount ? (
+                  <Check className="w-4 h-4 text-green-400" />
+                ) : (
+                  <Copy className="w-4 h-4 text-gray-400" />
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assets List */}
+      {primaryAssets && primaryAssets.assets && primaryAssets.assets.length > 0 && (
+        <div className="px-4 mt-6">
+          <h3 className="text-gray-400 text-sm font-medium mb-3">Assets</h3>
+          <div className="space-y-2">
+            {primaryAssets.assets.slice(0, 5).map((asset: { symbol?: string; name?: string; balance?: string | number; amountInUSD?: number }, i) => (
+              <div key={i} className="bg-zinc-900 rounded-xl p-4 border border-zinc-800 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-lg">
+                    {asset.symbol === "USDC" ? "💵" : asset.symbol === "ETH" ? "⟠" : "🪙"}
+                  </div>
+                  <div>
+                    <div className="text-white font-medium">{asset.symbol || "Token"}</div>
+                    <div className="text-gray-500 text-sm">{asset.name || ""}</div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-white">{asset.balance ? parseFloat(String(asset.balance)).toFixed(4) : "0"}</div>
+                  <div className="text-gray-500 text-sm">${asset.amountInUSD?.toFixed(2) || "0.00"}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Search Tab Component
+const SearchTab = () => (
+  <div className="flex-1 flex flex-col items-center justify-center p-6">
+    <Search className="w-16 h-16 text-zinc-700 mb-4" />
+    <h2 className="text-xl text-white font-bold mb-2">Search</h2>
+    <p className="text-gray-500 text-center">Search tokens, NFTs, and addresses across all chains</p>
+    <div className="mt-6 w-full max-w-sm">
+      <input 
+        type="text" 
+        placeholder="Search..." 
+        className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white placeholder-gray-500"
+      />
+    </div>
+  </div>
+);
+
+// Agent Tab Component
+const AgentTab = () => (
+  <div className="flex-1 flex flex-col items-center justify-center p-6">
+    <Bot className="w-16 h-16 text-purple-500 mb-4" />
+    <h2 className="text-xl text-white font-bold mb-2">AI Agent</h2>
+    <p className="text-gray-500 text-center mb-6">Your personal crypto assistant</p>
+    <div className="w-full max-w-sm bg-zinc-900 rounded-xl p-4 border border-zinc-800">
+      <p className="text-gray-400 text-sm mb-4">Try asking:</p>
+      <div className="space-y-2">
+        <div className="bg-zinc-800 rounded-lg p-3 text-sm text-gray-300">&quot;Swap 10 USDC to ETH&quot;</div>
+        <div className="bg-zinc-800 rounded-lg p-3 text-sm text-gray-300">&quot;Send 5 SOL to vitalik.eth&quot;</div>
+        <div className="bg-zinc-800 rounded-lg p-3 text-sm text-gray-300">&quot;What&apos;s my total balance?&quot;</div>
+      </div>
+    </div>
+  </div>
+);
+
+// Activity Tab Component  
+const ActivityTab = () => (
+  <div className="flex-1 flex flex-col items-center justify-center p-6">
+    <Activity className="w-16 h-16 text-zinc-700 mb-4" />
+    <h2 className="text-xl text-white font-bold mb-2">Activity</h2>
+    <p className="text-gray-500 text-center">Your transaction history will appear here</p>
+  </div>
+);
+
+// Bottom Tab Bar Component
+const TabBar = ({ activeTab, onTabChange }: { activeTab: TabType; onTabChange: (tab: TabType) => void }) => (
+  <div className="fixed bottom-0 left-0 right-0 bg-zinc-950 border-t border-zinc-800 px-6 py-3 flex justify-around items-center">
+    <button 
+      onClick={() => onTabChange("home")}
+      className={`flex flex-col items-center gap-1 ${activeTab === "home" ? "text-purple-400" : "text-gray-500"}`}
+    >
+      <Home className="w-6 h-6" />
+      <span className="text-xs">Home</span>
+    </button>
+    <button 
+      onClick={() => onTabChange("search")}
+      className={`flex flex-col items-center gap-1 ${activeTab === "search" ? "text-purple-400" : "text-gray-500"}`}
+    >
+      <Search className="w-6 h-6" />
+      <span className="text-xs">Search</span>
+    </button>
+    <button 
+      onClick={() => onTabChange("agent")}
+      className={`flex flex-col items-center gap-1 ${activeTab === "agent" ? "text-purple-400" : "text-gray-500"}`}
+    >
+      <Bot className="w-6 h-6" />
+      <span className="text-xs">Agent</span>
+    </button>
+    <button 
+      onClick={() => onTabChange("activity")}
+      className={`flex flex-col items-center gap-1 ${activeTab === "activity" ? "text-purple-400" : "text-gray-500"}`}
+    >
+      <Activity className="w-6 h-6" />
+      <span className="text-xs">Activity</span>
+    </button>
+  </div>
+);
+
+// Main App Component
+const App = () => {
+  useWallets(); // Keep hook active
+  const { address, isConnected } = useAccount();
+  const { disconnect } = useDisconnect();
+  
+  const [activeTab, setActiveTab] = useState<TabType>("home");
+  const [universalAccountInstance, setUniversalAccountInstance] = useState<UniversalAccount | null>(null);
+  const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null);
+  const [primaryAssets, setPrimaryAssets] = useState<IAssetsResponse | null>(null);
+  const [showDepositDialog, setShowDepositDialog] = useState(false);
+  const [showAssetBreakdown, setShowAssetBreakdown] = useState(false);
+
+  // Initialize Universal Account
+  const universalAccountConfig = useMemo((): IUniversalAccountConfig => ({
+    projectId: process.env.NEXT_PUBLIC_PROJECT_ID || "",
+    projectClientKey: process.env.NEXT_PUBLIC_CLIENT_KEY || "",
+    projectAppUuid: process.env.NEXT_PUBLIC_APP_ID || "",
+    smartAccountOptions: {
+      useEIP7702: false,
+      name: "UNIVERSAL",
+      version: UNIVERSAL_ACCOUNT_VERSION,
+      ownerAddress: address!,
+    },
+  }), [address]);
+
+  useEffect(() => {
+    if (isConnected && address) {
+      const ua = new UniversalAccount(universalAccountConfig);
+      setUniversalAccountInstance(ua);
+    } else {
+      setUniversalAccountInstance(null);
+      setAccountInfo(null);
+      setPrimaryAssets(null);
+    }
+  }, [isConnected, address, universalAccountConfig]);
+
+  // Fetch account addresses
+  useEffect(() => {
+    if (!universalAccountInstance || !address) return;
+    
+    const fetchAddresses = async () => {
+      try {
+        const options = await universalAccountInstance.getSmartAccountOptions();
+        setAccountInfo({
+          ownerAddress: address,
+          evmSmartAccount: options.smartAccountAddress || "",
+          solanaSmartAccount: options.solanaSmartAccountAddress || "",
+        });
+      } catch (error) {
+        console.error("Failed to fetch addresses:", error);
+      }
+    };
+    fetchAddresses();
+  }, [universalAccountInstance, address]);
+
+  // Fetch assets
+  const fetchAssets = useCallback(async () => {
+    if (!universalAccountInstance) return;
+    try {
+      const assets = await universalAccountInstance.getPrimaryAssets();
+      setPrimaryAssets(assets);
+    } catch (error) {
+      console.error("Failed to fetch assets:", error);
+    }
+  }, [universalAccountInstance]);
+
+  useEffect(() => {
+    fetchAssets();
+  }, [fetchAssets]);
+
+  // Show login screen if not connected
+  if (!isConnected) {
+    return <LoginScreen />;
+  }
+
+  return (
+    <div className="flex flex-col min-h-screen bg-black">
+      {/* Header */}
+      <div className="flex justify-between items-center px-4 py-3 border-b border-zinc-900">
+        <div className="text-2xl">🍊</div>
+        <button 
+          onClick={() => disconnect()}
+          className="text-gray-400 text-sm"
+        >
+          Logout
+        </button>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === "home" && (
+        <HomeTab 
+          accountInfo={accountInfo}
+          primaryAssets={primaryAssets}
+          onDeposit={() => setShowDepositDialog(true)}
+          onSend={() => {}}
+          onViewAssets={() => setShowAssetBreakdown(true)}
+        />
+      )}
+      {activeTab === "search" && <SearchTab />}
+      {activeTab === "agent" && <AgentTab />}
+      {activeTab === "activity" && <ActivityTab />}
+
+      {/* Bottom Tab Bar */}
+      <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
+
+      {/* Dialogs */}
+      {accountInfo && (
+        <DepositDialog
+          showDepositDialog={showDepositDialog}
+          setShowDepositDialog={setShowDepositDialog}
+          evmAddress={accountInfo.evmSmartAccount}
+          solanaAddress={accountInfo.solanaSmartAccount}
+        />
+      )}
+      
+      <AssetBreakdownDialog
+        isOpen={showAssetBreakdown}
+        setIsOpen={setShowAssetBreakdown}
+        assets={primaryAssets}
+      />
     </div>
   );
 };
