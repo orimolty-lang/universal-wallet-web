@@ -135,6 +135,8 @@ export async function get0xSwapQuote(
     url.searchParams.set("swapFeeBps", String(AFFILIATE_FEE_BPS));
     url.searchParams.set("swapFeeToken", buyToken);
 
+    console.log("[0x] Fetching quote:", url.toString());
+    
     const response = await fetch(url.toString(), {
       headers: {
         "0x-api-key": ZEROX_API_KEY,
@@ -142,15 +144,22 @@ export async function get0xSwapQuote(
       },
     });
 
+    const data = await response.json().catch(() => ({}));
+    console.log("[0x] Response:", response.status, data);
+
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
+      // Check for specific errors
+      if (data.code === "INSUFFICIENT_ASSET_LIQUIDITY" || data.reason?.includes("liquidity")) {
+        return { success: false, error: "No liquidity for this token on 0x" };
+      }
+      if (response.status === 400) {
+        return { success: false, error: data.reason || "Token not supported by 0x" };
+      }
       return {
         success: false,
-        error: errorData.reason || `0x API error: ${response.status}`,
+        error: data.reason || data.message || `0x API error: ${response.status}`,
       };
     }
-
-    const data = await response.json();
 
     return {
       success: true,
@@ -163,9 +172,10 @@ export async function get0xSwapQuote(
       allowanceTarget: data.allowanceTarget,
     };
   } catch (error) {
+    console.error("[0x] Error:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: error instanceof Error ? error.message : "Failed to fetch quote",
     };
   }
 }
@@ -337,11 +347,22 @@ export async function prepareRelaySwap(
 export async function executeSwap(params: SwapParams): Promise<SwapResult> {
   const { ua, fromToken, toTokenAddress, toTokenChainId, amountUsd, slippageBps = 100 } = params;
 
+  console.log("[Swap] Starting swap:", { fromToken, toTokenAddress, toTokenChainId, amountUsd });
+
   try {
     // Get smart account addresses
-    const smartAccountOptions = await ua.getSmartAccountOptions();
+    let smartAccountOptions;
+    try {
+      smartAccountOptions = await ua.getSmartAccountOptions();
+    } catch (e) {
+      console.error("[Swap] Failed to get smart account:", e);
+      return { success: false, error: "Failed to get wallet address" };
+    }
+    
     const evmSmartAccount = smartAccountOptions.smartAccountAddress;
     const solanaSmartAccount = smartAccountOptions.solanaSmartAccountAddress;
+
+    console.log("[Swap] Smart accounts:", { evmSmartAccount, solanaSmartAccount });
 
     if (!evmSmartAccount) {
       return { success: false, error: "EVM smart account not available" };
@@ -403,30 +424,52 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
       };
     } else {
       // ========== EVM SWAP VIA 0x ==========
+      console.log("[Swap] EVM swap via 0x, chain:", toTokenChainId);
       
-      // Determine sell token (USDC/USDT on same chain, or cross-chain via UA)
-      const sellToken = fromToken === "ETH" 
-        ? NATIVE_ETH 
-        : USDC_ADDRESSES[toTokenChainId] || USDC_ADDRESSES[RELAY_CHAIN_IDS.BASE];
+      // Determine sell token - always use USDC on the target chain
+      const sellToken = USDC_ADDRESSES[toTokenChainId] || USDC_ADDRESSES[RELAY_CHAIN_IDS.BASE];
+      if (!sellToken) {
+        return { success: false, error: `USDC not available on chain ${toTokenChainId}` };
+      }
 
-      // Convert USD to token units
-      const sellDecimals = fromToken === "ETH" ? 18 : 6;
-      const sellAmount = fromToken === "ETH"
-        ? String(BigInt(Math.floor(amountUsd * 1e18 / 3000))) // Rough ETH estimate at $3000
-        : String(Math.floor(amountUsd * Math.pow(10, sellDecimals)));
+      // Convert USD to USDC units (6 decimals)
+      const sellAmount = String(Math.floor(amountUsd * 1e6));
+      
+      console.log("[Swap] Quote params:", { 
+        sellToken, 
+        buyToken: toTokenAddress, 
+        sellAmount, 
+        chainId: toTokenChainId 
+      });
 
       // Get 0x quote
-      const quote = await get0xSwapQuote(
-        evmSmartAccount,
-        sellToken,
-        toTokenAddress,
-        sellAmount,
-        toTokenChainId,
-        slippageBps
-      );
+      let quote;
+      try {
+        quote = await get0xSwapQuote(
+          evmSmartAccount,
+          sellToken,
+          toTokenAddress,
+          sellAmount,
+          toTokenChainId,
+          slippageBps
+        );
+      } catch (e) {
+        console.error("[Swap] 0x quote failed:", e);
+        return { success: false, error: "Failed to get swap quote - token may not be supported" };
+      }
 
-      if (!quote.success || !quote.transaction) {
-        return { success: false, error: quote.error || "Failed to get 0x quote" };
+      console.log("[Swap] 0x quote result:", quote);
+
+      if (!quote.success) {
+        // Provide user-friendly error
+        if (quote.error?.includes("liquidity")) {
+          return { success: false, error: "No liquidity available for this token" };
+        }
+        return { success: false, error: quote.error || "Token not available for swap" };
+      }
+      
+      if (!quote.transaction) {
+        return { success: false, error: "No swap route found" };
       }
 
       // Build transactions array (approval + swap)
