@@ -230,8 +230,8 @@ export async function getLifiSwapQuote(
     url.searchParams.set("fromAddress", fromAddress);
     url.searchParams.set("slippage", String(slippage));
     // Integrator + fee - wallet configured in Li.Fi dashboard
-    url.searchParams.set("integrator", "universalwallet");
-    url.searchParams.set("fee", "0.0025"); // 0.25% our fee (Li.Fi takes 0.25%, total 0.5%)
+    url.searchParams.set("integrator", "Omni");
+    url.searchParams.set("fee", "0.0025"); // 0.25% our fee
 
     console.log("[Li.Fi] Fetching quote:", url.toString());
 

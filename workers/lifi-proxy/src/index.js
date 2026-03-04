@@ -31,7 +31,7 @@ export default {
     });
     
     // Always add integrator
-    lifiUrl.searchParams.set("integrator", "universalwallet");
+    lifiUrl.searchParams.set("integrator", "Omni");
 
     try {
       // Forward request to Li.Fi
