@@ -16,6 +16,7 @@ import {
 import DepositDialog from "./components/DepositDialog";
 import AssetBreakdownDialog from "./components/AssetBreakdownDialog";
 import TokenDetailModal from "./components/TokenDetailModal";
+import SwapModal from "./components/SwapModal";
 
 // Mobula API for token search
 const MOBULA_API_KEY = "a8e6a174-9dfd-4929-b0e0-9f6ece767923";
@@ -122,7 +123,7 @@ const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
 };
 
 // Types
-type TabType = "home" | "search" | "activity" | "settings";
+type TabType = "home" | "search" | "browser" | "points";
 
 interface AccountInfo {
   ownerAddress: string;
@@ -1299,11 +1300,9 @@ const HomeTab = ({
 // Search Tab with Mobula API
 const SearchTab = ({ 
   primaryAssets,
-  onSwap,
   onSend,
 }: { 
   primaryAssets: IAssetsResponse | null;
-  onSwap?: () => void;
   onSend?: () => void;
 }) => {
   const [query, setQuery] = useState("");
@@ -1311,6 +1310,8 @@ const SearchTab = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedToken, setSelectedToken] = useState<TokenResult | null>(null);
+  const [showSwapModal, setShowSwapModal] = useState(false);
+  const [swapTargetToken, setSwapTargetToken] = useState<TokenResult | null>(null);
 
   // Calculate user balance for selected token
   const getUserBalance = useCallback((token: TokenResult | null) => {
@@ -1557,31 +1558,192 @@ const SearchTab = ({
         token={selectedToken} 
         userBalance={getUserBalance(selectedToken)}
         onClose={() => setSelectedToken(null)} 
-        onSwap={() => { setSelectedToken(null); onSwap?.(); }}
+        onSwap={(token) => { 
+          setSwapTargetToken(token as TokenResult);
+          setShowSwapModal(true);
+          setSelectedToken(null);
+        }}
         onSend={() => { setSelectedToken(null); onSend?.(); }}
+      />
+
+      <SwapModal
+        isOpen={showSwapModal}
+        onClose={() => {
+          setShowSwapModal(false);
+          setSwapTargetToken(null);
+        }}
+        targetToken={swapTargetToken ? {
+          symbol: swapTargetToken.symbol,
+          name: swapTargetToken.name,
+          logo: swapTargetToken.logo,
+          price: swapTargetToken.price,
+        } : null}
+        primaryAssets={primaryAssets}
+        onSwapExecute={async (params) => {
+          console.log("Executing swap:", params);
+          // TODO: Integrate 0x swap logic
+        }}
       />
     </div>
   );
 };
 
-// Activity Tab
-const ActivityTab = () => (
+// Browser Tab (dApp Browser)
+const BrowserTab = () => {
+  const [url, setUrl] = useState("https://app.uniswap.org");
+  const [inputUrl, setInputUrl] = useState("");
+  
+  const quickLinks = [
+    { name: "Uniswap", url: "https://app.uniswap.org", icon: "🦄" },
+    { name: "Aave", url: "https://app.aave.com", icon: "👻" },
+    { name: "OpenSea", url: "https://opensea.io", icon: "🌊" },
+    { name: "Blur", url: "https://blur.io", icon: "🟠" },
+    { name: "GMX", url: "https://app.gmx.io", icon: "💎" },
+    { name: "Curve", url: "https://curve.fi", icon: "🔄" },
+  ];
+
+  return (
+    <div className="flex-1 flex flex-col bg-[#0a0a0a] pb-24">
+      {/* URL Bar */}
+      <div className="px-4 py-3 border-b border-gray-800">
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={inputUrl}
+            onChange={(e) => setInputUrl(e.target.value)}
+            placeholder="Enter URL or search..."
+            className="flex-1 bg-gray-900 rounded-xl px-4 py-2.5 text-white text-sm outline-none"
+            onKeyPress={(e) => {
+              if (e.key === "Enter" && inputUrl.trim()) {
+                const newUrl = inputUrl.startsWith("http") ? inputUrl : `https://${inputUrl}`;
+                setUrl(newUrl);
+              }
+            }}
+          />
+          <button 
+            onClick={() => {
+              if (inputUrl.trim()) {
+                const newUrl = inputUrl.startsWith("http") ? inputUrl : `https://${inputUrl}`;
+                setUrl(newUrl);
+              }
+            }}
+            className="bg-cyan-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium"
+          >
+            Go
+          </button>
+        </div>
+      </div>
+
+      {/* Quick Links */}
+      <div className="px-4 py-4">
+        <div className="text-gray-500 text-xs uppercase mb-3">Quick Access</div>
+        <div className="grid grid-cols-3 gap-3">
+          {quickLinks.map((link) => (
+            <button
+              key={link.name}
+              onClick={() => {
+                setUrl(link.url);
+                setInputUrl(link.url);
+              }}
+              className="flex flex-col items-center gap-2 p-3 bg-gray-900 rounded-xl"
+            >
+              <span className="text-2xl">{link.icon}</span>
+              <span className="text-white text-xs">{link.name}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Browser Frame */}
+      <div className="flex-1 mx-4 mb-4 rounded-xl overflow-hidden bg-gray-900">
+        <iframe
+          src={url}
+          className="w-full h-full border-0"
+          title="dApp Browser"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        />
+      </div>
+    </div>
+  );
+};
+
+// Points Tab
+const PointsTab = () => (
   <div className="flex-1 overflow-auto pb-24 bg-[#0a0a0a] px-4 pt-4">
-    <div className="text-white font-medium text-lg mb-4">Activity</div>
-    <div className="text-center py-16 text-gray-600">
-      No transactions yet
+    <div className="text-center py-16">
+      <div className="text-6xl mb-4">⭐</div>
+      <h2 className="text-white text-2xl font-bold mb-2">Points Program</h2>
+      <p className="text-gray-500 mb-6">Coming Soon</p>
+      
+      <div className="bg-gray-900 rounded-xl p-6 mx-4 text-left">
+        <h3 className="text-white font-medium mb-4">Earn Points By:</h3>
+        <ul className="space-y-3 text-gray-400 text-sm">
+          <li className="flex items-center gap-3">
+            <span className="text-cyan-400">•</span>
+            Trading tokens across chains
+          </li>
+          <li className="flex items-center gap-3">
+            <span className="text-cyan-400">•</span>
+            Referring friends
+          </li>
+          <li className="flex items-center gap-3">
+            <span className="text-cyan-400">•</span>
+            Daily check-ins
+          </li>
+          <li className="flex items-center gap-3">
+            <span className="text-cyan-400">•</span>
+            Completing quests
+          </li>
+        </ul>
+      </div>
+      
+      <div className="mt-8">
+        <div className="text-gray-500 text-sm">Your Points</div>
+        <div className="text-white text-4xl font-bold mt-1">0</div>
+      </div>
     </div>
   </div>
 );
 
-// Settings Tab
-const SettingsTab = ({ onLogout }: { onLogout: () => void }) => (
-  <div className="flex-1 overflow-auto pb-24 bg-[#0a0a0a] px-4 pt-4">
-    <div className="text-white font-medium text-lg mb-4">Settings</div>
-    <button onClick={onLogout} className="text-red-500">
-      Log out
-    </button>
-  </div>
+// Activity Modal (moved from tab)
+const ActivityModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => (
+  <BottomSheet isOpen={isOpen} onClose={onClose}>
+    <div className="px-6 pb-8">
+      <h2 className="text-white text-xl font-bold mb-6 text-center">Activity</h2>
+      <div className="text-center py-8 text-gray-600">
+        No transactions yet
+      </div>
+    </div>
+  </BottomSheet>
+);
+
+// Settings Modal (moved from tab)
+const SettingsModal = ({ isOpen, onClose, onLogout }: { isOpen: boolean; onClose: () => void; onLogout: () => void }) => (
+  <BottomSheet isOpen={isOpen} onClose={onClose}>
+    <div className="px-6 pb-8">
+      <h2 className="text-white text-xl font-bold mb-6 text-center">Settings</h2>
+      <div className="space-y-4">
+        <button className="w-full flex items-center justify-between py-3 border-b border-gray-800">
+          <span className="text-white">Network</span>
+          <span className="text-gray-500">Mainnet</span>
+        </button>
+        <button className="w-full flex items-center justify-between py-3 border-b border-gray-800">
+          <span className="text-white">Currency</span>
+          <span className="text-gray-500">USD</span>
+        </button>
+        <button className="w-full flex items-center justify-between py-3 border-b border-gray-800">
+          <span className="text-white">Slippage Tolerance</span>
+          <span className="text-gray-500">1%</span>
+        </button>
+        <button 
+          onClick={onLogout}
+          className="w-full py-3 text-red-500 text-center mt-4"
+        >
+          Log Out
+        </button>
+      </div>
+    </div>
+  </BottomSheet>
 );
 
 // Bottom Nav with Agent button
@@ -1608,15 +1770,14 @@ const BottomNav = ({
     { id: "agent" as TabType, icon: () => (
       <span className="text-xl">🤖</span>
     ), isAgent: true },
-    { id: "activity" as TabType, icon: () => (
+    { id: "browser" as TabType, icon: () => (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418"/>
       </svg>
     )},
-    { id: "settings" as TabType, icon: () => (
+    { id: "points" as TabType, icon: () => (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"/>
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"/>
       </svg>
     )},
   ];
@@ -1675,6 +1836,8 @@ const App = () => {
   const [showConvertModal, setShowConvertModal] = useState(false);
   const [showDepositDialog, setShowDepositDialog] = useState(false);
   const [showAssetBreakdown, setShowAssetBreakdown] = useState(false);
+  const [showActivityModal, setShowActivityModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
 
   // Profile settings (persisted to localStorage)
   const [profile, setProfile] = useState<ProfileSettings>(() => {
@@ -1753,6 +1916,29 @@ const App = () => {
 
   return (
     <div className="flex flex-col min-h-screen bg-[#0a0a0a]">
+      {/* Top Header with Activity/Settings */}
+      <div className="fixed top-0 left-0 right-0 z-30 flex items-center justify-end px-4 py-3" style={{ paddingTop: "max(env(safe-area-inset-top), 12px)" }}>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => setShowActivityModal(true)}
+            className="w-10 h-10 rounded-full bg-gray-800/80 flex items-center justify-center"
+          >
+            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+          </button>
+          <button 
+            onClick={() => setShowSettingsModal(true)}
+            className="w-10 h-10 rounded-full bg-gray-800/80 flex items-center justify-center"
+          >
+            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"/>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
       {activeTab === "home" && (
         <HomeTab 
           accountInfo={accountInfo}
@@ -1768,12 +1954,11 @@ const App = () => {
       {activeTab === "search" && (
         <SearchTab 
           primaryAssets={primaryAssets}
-          onSwap={() => setShowConvertModal(true)}
           onSend={() => setShowSendModal(true)}
         />
       )}
-      {activeTab === "activity" && <ActivityTab />}
-      {activeTab === "settings" && <SettingsTab onLogout={disconnect} />}
+      {activeTab === "browser" && <BrowserTab />}
+      {activeTab === "points" && <PointsTab />}
 
       <BottomNav 
         active={activeTab} 
@@ -1825,6 +2010,17 @@ const App = () => {
         isOpen={showAssetBreakdown}
         setIsOpen={setShowAssetBreakdown}
         assets={primaryAssets}
+      />
+
+      <ActivityModal 
+        isOpen={showActivityModal} 
+        onClose={() => setShowActivityModal(false)} 
+      />
+      
+      <SettingsModal 
+        isOpen={showSettingsModal} 
+        onClose={() => setShowSettingsModal(false)} 
+        onLogout={disconnect}
       />
     </div>
   );
