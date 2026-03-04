@@ -207,6 +207,7 @@ interface SellParams {
 
 /**
  * Get Li.Fi swap quote (better CORS support for browsers)
+ * Includes affiliate fee: 0.35% to AFFILIATE_FEE_RECIPIENT
  */
 export async function getLifiSwapQuote(
   fromAddress: string,
@@ -228,7 +229,10 @@ export async function getLifiSwapQuote(
     url.searchParams.set("fromAmount", fromAmount);
     url.searchParams.set("fromAddress", fromAddress);
     url.searchParams.set("slippage", String(slippage));
-    url.searchParams.set("integrator", "universal-wallet");
+    // Affiliate/integrator fees
+    url.searchParams.set("integrator", "universalwallet");
+    url.searchParams.set("fee", "0.0035"); // 0.35% fee
+    url.searchParams.set("referrer", AFFILIATE_FEE_RECIPIENT);
 
     console.log("[Li.Fi] Fetching quote:", url.toString());
 
