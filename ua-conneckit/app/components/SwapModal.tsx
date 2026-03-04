@@ -26,6 +26,19 @@ interface SwapModalProps {
   onSwapSuccess?: (txId: string) => void;
 }
 
+// Official USDC logo
+const USDC_LOGO = "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png";
+
+// Chain logos for badge
+const CHAIN_LOGOS: Record<number, string> = {
+  1: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png",
+  8453: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/info/logo.png",
+  42161: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png",
+  10: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/optimism/info/logo.png",
+  137: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png",
+  101: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png",
+};
+
 // Helper functions
 const formatTokenAmount = (amount: number, decimals: number = 6): string => {
   if (amount === 0) return "0";
@@ -34,6 +47,35 @@ const formatTokenAmount = (amount: number, decimals: number = 6): string => {
   if (amount < 1000) return amount.toFixed(4);
   if (amount < 1000000) return amount.toLocaleString(undefined, { maximumFractionDigits: 2 });
   return amount.toLocaleString(undefined, { maximumFractionDigits: 0 });
+};
+
+// Token logo with chain badge component
+const TokenWithChainBadge = ({ logo, symbol, chainId, size = "w-10 h-10" }: { 
+  logo?: string; 
+  symbol: string; 
+  chainId?: number;
+  size?: string;
+}) => {
+  const chainLogo = chainId ? CHAIN_LOGOS[chainId] : null;
+  
+  return (
+    <div className="relative">
+      {logo ? (
+        <img src={logo} alt={symbol} className={`${size} rounded-full`} />
+      ) : (
+        <div className={`${size} rounded-full bg-cyan-600 flex items-center justify-center text-white font-bold`}>
+          {symbol?.slice(0, 2) || "?"}
+        </div>
+      )}
+      {chainLogo && (
+        <img 
+          src={chainLogo} 
+          alt="chain" 
+          className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[#0f2744]" 
+        />
+      )}
+    </div>
+  );
 };
 
 export const SwapModal = ({
@@ -407,36 +449,29 @@ export const SwapModal = ({
                   <div className="flex items-center gap-3">
                     {direction === "buy" ? (
                       <>
-                        <div className="w-10 h-10 rounded-full bg-green-600 flex items-center justify-center text-xl">💵</div>
-                        <div>
-                          <div className="flex items-center gap-1">
-                            <span className="text-gray-400 text-2xl">$</span>
-                            <input type="text" value={amount} placeholder="0" className="bg-transparent text-white text-3xl font-bold w-28 outline-none" readOnly />
-                          </div>
-                          <div className="text-gray-400 text-sm">Spend USD</div>
+                        <img src={USDC_LOGO} alt="USDC" className="w-10 h-10 rounded-full" />
+                        <div className="flex items-center gap-1">
+                          <span className="text-gray-400 text-2xl">$</span>
+                          <input type="text" value={amount} placeholder="0" className="bg-transparent text-white text-3xl font-bold w-28 outline-none" readOnly />
                         </div>
                       </>
                     ) : (
                       <>
-                        {targetToken?.logo ? (
-                          <img src={targetToken.logo} alt={targetToken.symbol} className="w-10 h-10 rounded-full" />
-                        ) : (
-                          <div className="w-10 h-10 rounded-full bg-cyan-600 flex items-center justify-center text-white font-bold">
-                            {targetToken?.symbol?.slice(0, 2) || "?"}
-                          </div>
-                        )}
-                        <div>
-                          <div className="text-white text-3xl font-bold">
-                            {formatTokenAmount(tokenBalance * sliderValue / 100)}
-                          </div>
-                          <div className="text-gray-400 text-sm">Sell {targetToken?.symbol}</div>
+                        <TokenWithChainBadge 
+                          logo={targetToken?.logo} 
+                          symbol={targetToken?.symbol || "?"} 
+                          chainId={getTokenAddressAndChain().chainId}
+                        />
+                        <div className="text-white text-3xl font-bold">
+                          {formatTokenAmount(tokenBalance * sliderValue / 100)}
                         </div>
                       </>
                     )}
                   </div>
                   <div className="text-right">
-                    <div className={`${direction === "buy" ? "bg-green-600" : "bg-red-500"} text-white px-3 py-1.5 rounded-full font-medium`}>
-                      {direction === "buy" ? "USD" : targetToken?.symbol}
+                    <div className={`${direction === "buy" ? "bg-blue-600" : "bg-red-500"} text-white px-3 py-1.5 rounded-full font-medium flex items-center gap-1.5`}>
+                      {direction === "buy" && <img src={USDC_LOGO} alt="USDC" className="w-4 h-4 rounded-full" />}
+                      {direction === "buy" ? "USDC" : targetToken?.symbol}
                     </div>
                     <div className="text-gray-400 text-sm mt-1">
                       {direction === "buy" 
@@ -465,39 +500,27 @@ export const SwapModal = ({
                   <div className="flex items-center gap-3">
                     {direction === "buy" ? (
                       <>
-                        {targetToken?.logo ? (
-                          <img src={targetToken.logo} alt={targetToken.symbol} className="w-10 h-10 rounded-full" />
-                        ) : (
-                          <div className="w-10 h-10 rounded-full bg-cyan-600 flex items-center justify-center text-white font-bold">
-                            {targetToken?.symbol?.slice(0, 2) || "?"}
-                          </div>
-                        )}
-                        <div>
-                          <div className="text-white text-3xl font-bold">{formatTokenAmount(outputAmount)}</div>
-                          <div className="text-gray-400 text-sm">Receive {targetToken?.symbol}</div>
-                        </div>
+                        <TokenWithChainBadge 
+                          logo={targetToken?.logo} 
+                          symbol={targetToken?.symbol || "?"} 
+                          chainId={getTokenAddressAndChain().chainId}
+                        />
+                        <div className="text-white text-3xl font-bold">{formatTokenAmount(outputAmount)}</div>
                       </>
                     ) : (
                       <>
-                        <div className="w-10 h-10 rounded-full bg-green-600 flex items-center justify-center text-xl">💵</div>
-                        <div>
-                          <div className="flex items-center gap-1">
-                            <span className="text-gray-400 text-2xl">$</span>
-                            <span className="text-white text-3xl font-bold">{(tokenBalance * sliderValue / 100 * (targetToken?.price || 0) * 0.995).toFixed(2)}</span>
-                          </div>
-                          <div className="text-gray-400 text-sm">Receive USDC</div>
+                        <img src={USDC_LOGO} alt="USDC" className="w-10 h-10 rounded-full" />
+                        <div className="flex items-center gap-1">
+                          <span className="text-gray-400 text-2xl">$</span>
+                          <span className="text-white text-3xl font-bold">{(tokenBalance * sliderValue / 100 * (targetToken?.price || 0) * 0.995).toFixed(2)}</span>
                         </div>
                       </>
                     )}
                   </div>
                   <div className="text-right">
-                    <div className={`${direction === "sell" ? "bg-green-600" : "bg-gray-700"} text-white px-3 py-1.5 rounded-full font-medium`}>
+                    <div className={`${direction === "sell" ? "bg-blue-600" : "bg-gray-700"} text-white px-3 py-1.5 rounded-full font-medium flex items-center gap-1.5`}>
+                      {direction === "sell" && <img src={USDC_LOGO} alt="USDC" className="w-4 h-4 rounded-full" />}
                       {direction === "buy" ? targetToken?.symbol || "Select" : "USDC"}
-                    </div>
-                    <div className="text-gray-400 text-sm mt-1">
-                      {getTokenAddressAndChain().chainId === 101 ? "Solana" : 
-                       getTokenAddressAndChain().chainId === 8453 ? "Base" :
-                       getTokenAddressAndChain().chainId === 1 ? "Ethereum" : ""}
                     </div>
                   </div>
                 </div>
@@ -520,7 +543,7 @@ export const SwapModal = ({
               <div className="mt-8">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-gray-400">{direction === "buy" ? "💵" : "📉"}</span>
+                    <img src={USDC_LOGO} alt="USDC" className="w-5 h-5 rounded-full" />
                     <span className="text-white font-medium">
                       {direction === "buy" ? `Buy ${sliderValue}%` : `Sell ${sliderValue}%`}
                     </span>
