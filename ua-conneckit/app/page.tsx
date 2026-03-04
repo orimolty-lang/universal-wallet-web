@@ -2045,9 +2045,11 @@ const App = () => {
 
   useEffect(() => {
     if (isConnected && address) {
+      console.log("[UA] Creating UA instance for:", address);
       const ua = new UniversalAccount(universalAccountConfig);
       setUniversalAccountInstance(ua);
     } else {
+      console.log("[UA] Disconnected, clearing state");
       setUniversalAccountInstance(null);
       setAccountInfo(null);
       setPrimaryAssets(null);
@@ -2058,26 +2060,33 @@ const App = () => {
     if (!universalAccountInstance || !address) return;
     const fetchAddresses = async () => {
       try {
+        console.log("[UA] Fetching smart account options...");
         const options = await universalAccountInstance.getSmartAccountOptions();
+        console.log("[UA] Smart accounts:", { evm: options.smartAccountAddress, sol: options.solanaSmartAccountAddress });
         setAccountInfo({
           ownerAddress: address,
           evmSmartAccount: options.smartAccountAddress || "",
           solanaSmartAccount: options.solanaSmartAccountAddress || "",
         });
       } catch (error) {
-        console.error("Failed to fetch addresses:", error);
+        console.error("[UA] Failed to fetch addresses:", error);
       }
     };
     fetchAddresses();
   }, [universalAccountInstance, address]);
 
   const fetchAssets = useCallback(async () => {
-    if (!universalAccountInstance) return;
+    if (!universalAccountInstance) {
+      console.log("[Assets] No UA instance yet");
+      return;
+    }
     try {
+      console.log("[Assets] Fetching primary assets...");
       const assets = await universalAccountInstance.getPrimaryAssets();
+      console.log("[Assets] Got assets:", JSON.stringify(assets).slice(0, 500));
       setPrimaryAssets(assets);
     } catch (error) {
-      console.error("Failed to fetch assets:", error);
+      console.error("[Assets] Failed to fetch:", error);
     }
   }, [universalAccountInstance]);
 
@@ -2106,6 +2115,8 @@ const App = () => {
 
   // Merge UA primary assets with Mobula external assets
   const combinedAssets = useMemo(() => {
+    console.log("[CombinedAssets] primaryAssets:", primaryAssets ? `${primaryAssets.assets?.length} assets, $${primaryAssets.totalAmountInUSD}` : "null");
+    console.log("[CombinedAssets] mobulaAssets:", mobulaAssets?.length || 0);
     if (!primaryAssets) return null;
     
     // Get symbols already in primary assets
@@ -2183,6 +2194,12 @@ const App = () => {
             </svg>
           </button>
         </div>
+      </div>
+
+      {/* Debug banner - remove after debugging */}
+      <div className="fixed top-14 left-0 right-0 z-[100] bg-red-600 px-2 py-2 text-[11px] text-white font-mono" style={{paddingTop: 'max(env(safe-area-inset-top), 8px)'}}>
+        <div>EVM: {accountInfo?.evmSmartAccount || "loading..."}</div>
+        <div>UA Assets: {primaryAssets?.assets?.length || 0} | Mobula: {mobulaAssets?.length || 0} | Total: ${combinedAssets?.totalAmountInUSD?.toFixed(2) || "0"}</div>
       </div>
 
       {activeTab === "home" && (
