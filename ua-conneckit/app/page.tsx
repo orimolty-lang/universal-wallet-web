@@ -57,8 +57,10 @@ async function fetchMobulaWalletBalances(address: string): Promise<MobulaAsset[]
     console.log("[Mobula] URL:", url);
     
     const response = await fetch(url, {
+      method: "GET",
       headers: {
-        "Authorization": MOBULA_API_KEY,
+        "Authorization": `Bearer ${MOBULA_API_KEY}`,
+        "Content-Type": "application/json",
       },
     });
     
