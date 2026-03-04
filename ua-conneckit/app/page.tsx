@@ -2114,7 +2114,7 @@ const App = () => {
     // Filter Mobula assets to only include tokens NOT in primary assets
     const externalAssets = mobulaAssets
       .filter(ma => !primarySymbols.has(ma.asset.symbol?.toUpperCase()))
-      .filter(ma => ma.estimated_balance > 0.01) // Only show if worth > $0.01
+      .filter(ma => ma.token_balance > 0) // Show any token with balance
       .map(ma => ({
         symbol: ma.asset.symbol,
         name: ma.asset.name,
