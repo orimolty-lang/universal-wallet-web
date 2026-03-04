@@ -5,6 +5,7 @@ import {
   useAccount,
   useWallets,
   useDisconnect,
+  useParticleAuth,
 } from "@particle-network/connectkit";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
@@ -1883,11 +1884,71 @@ const ActivityModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => vo
 );
 
 // Settings Modal (moved from tab)
-const SettingsModal = ({ isOpen, onClose, onLogout }: { isOpen: boolean; onClose: () => void; onLogout: () => void }) => (
+const SettingsModal = ({ 
+  isOpen, 
+  onClose, 
+  onLogout,
+  onOpenAccountSecurity,
+  onOpenPaymentPassword,
+  userEmail
+}: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  onLogout: () => void;
+  onOpenAccountSecurity?: () => void;
+  onOpenPaymentPassword?: () => void;
+  userEmail?: string | null;
+}) => (
   <BottomSheet isOpen={isOpen} onClose={onClose}>
     <div className="px-6 pb-8">
       <h2 className="text-white text-xl font-bold mb-6 text-center">Settings</h2>
       <div className="space-y-4">
+        {/* Security Section */}
+        <div className="text-gray-500 text-xs uppercase tracking-wider mb-2">Security</div>
+        
+        <button 
+          onClick={onOpenAccountSecurity}
+          className="w-full flex items-center justify-between py-3 border-b border-gray-800"
+        >
+          <div className="flex items-center gap-3">
+            <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/>
+            </svg>
+            <span className="text-white">Account & Security</span>
+          </div>
+          <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.25 4.5l7.5 7.5-7.5 7.5"/>
+          </svg>
+        </button>
+        
+        <button 
+          onClick={() => userEmail && onOpenPaymentPassword?.()}
+          className="w-full flex items-center justify-between py-3 border-b border-gray-800"
+        >
+          <div className="flex items-center gap-3">
+            <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"/>
+            </svg>
+            <span className="text-white">Wallet Password</span>
+          </div>
+          <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.25 4.5l7.5 7.5-7.5 7.5"/>
+          </svg>
+        </button>
+        
+        <button className="w-full flex items-center justify-between py-3 border-b border-gray-800 opacity-50">
+          <div className="flex items-center gap-3">
+            <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7.864 4.243A7.5 7.5 0 0119.5 10.5c0 2.92-.556 5.709-1.568 8.268M5.742 6.364A7.465 7.465 0 004.5 10.5a7.464 7.464 0 01-1.15 3.993m1.989 3.559A11.209 11.209 0 008.25 10.5a3.75 3.75 0 117.5 0c0 .527-.021 1.049-.064 1.565M12 10.5a14.94 14.94 0 01-3.6 9.75m6.633-4.596a18.666 18.666 0 01-2.485 5.33"/>
+            </svg>
+            <span className="text-white">App Lock (Face ID)</span>
+          </div>
+          <span className="text-gray-600 text-xs">Coming Soon</span>
+        </button>
+        
+        {/* Preferences Section */}
+        <div className="text-gray-500 text-xs uppercase tracking-wider mb-2 mt-6">Preferences</div>
+        
         <button className="w-full flex items-center justify-between py-3 border-b border-gray-800">
           <span className="text-white">Network</span>
           <span className="text-gray-500">Mainnet</span>
@@ -1900,9 +1961,10 @@ const SettingsModal = ({ isOpen, onClose, onLogout }: { isOpen: boolean; onClose
           <span className="text-white">Slippage Tolerance</span>
           <span className="text-gray-500">1%</span>
         </button>
+        
         <button 
           onClick={onLogout}
-          className="w-full py-3 text-red-500 text-center mt-4"
+          className="w-full py-3 text-red-500 text-center mt-6"
         >
           Log Out
         </button>
@@ -1985,6 +2047,7 @@ const App = () => {
   useWallets();
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
+  const { openAccountAndSecurity, openSetPaymentPassword, getUserInfo } = useParticleAuth();
   
   const [showSplash, setShowSplash] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>("home");
@@ -2272,6 +2335,13 @@ const App = () => {
         isOpen={showSettingsModal} 
         onClose={() => setShowSettingsModal(false)} 
         onLogout={disconnect}
+        onOpenAccountSecurity={openAccountAndSecurity}
+        onOpenPaymentPassword={() => {
+          const userInfo = getUserInfo();
+          const email = userInfo?.email || userInfo?.google_email || userInfo?.security_account?.email;
+          if (email) openSetPaymentPassword(email);
+        }}
+        userEmail={getUserInfo()?.email || getUserInfo()?.google_email}
       />
     </div>
   );
