@@ -45,6 +45,107 @@ const USDC_ADDRESSES: Record<number, string> = {
 // Native ETH placeholder
 const NATIVE_ETH = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 
+// Chain explorer URLs
+const CHAIN_EXPLORERS: Record<number, string> = {
+  1: "https://etherscan.io",
+  8453: "https://basescan.org",
+  42161: "https://arbiscan.io",
+  10: "https://optimistic.etherscan.io",
+  137: "https://polygonscan.com",
+  56: "https://bscscan.com",
+  43114: "https://snowtrace.io",
+};
+
+// Chain logos
+export const CHAIN_LOGOS: Record<string, string> = {
+  "ethereum": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png",
+  "base": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/info/logo.png",
+  "arbitrum": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png",
+  "optimism": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/optimism/info/logo.png",
+  "polygon": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png",
+  "bsc": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/smartchain/info/logo.png",
+  "bnb": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/smartchain/info/logo.png",
+  "solana": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png",
+  "avalanche": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/avalanchec/info/logo.png",
+};
+
+/**
+ * Get explorer URL for a transaction hash
+ */
+export function getExplorerTxUrl(chainId: number, txHash: string): string {
+  const explorer = CHAIN_EXPLORERS[chainId];
+  if (!explorer) return `https://basescan.org/tx/${txHash}`;
+  return `${explorer}/tx/${txHash}`;
+}
+
+/**
+ * Get chain name from chain ID
+ */
+export function getChainName(chainId: number): string {
+  const names: Record<number, string> = {
+    1: "Ethereum",
+    8453: "Base",
+    42161: "Arbitrum",
+    10: "Optimism",
+    137: "Polygon",
+    56: "BNB Chain",
+    43114: "Avalanche",
+    101: "Solana",
+  };
+  return names[chainId] || `Chain ${chainId}`;
+}
+
+/**
+ * Poll transaction details to get actual received amounts and tx hash
+ */
+export async function pollTransactionDetails(
+  ua: UniversalAccount,
+  transactionId: string,
+  maxAttempts: number = 10,
+  delayMs: number = 3000
+): Promise<{
+  status: string;
+  receivedAmount?: string;
+  receivedToken?: string;
+  txHash?: string;
+  chainId?: number;
+  explorerUrl?: string;
+}> {
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const details = await ua.getTransaction(transactionId);
+      console.log("[TxDetails] Attempt", i + 1, details);
+      
+      // Check if transaction is complete
+      if (details?.status === "completed" || details?.status === "success") {
+        // Extract destination tx hash and amounts
+        const txHash = details.destinationTxHash || details.txHash || details.hash;
+        const chainId = details.destinationChainId || details.chainId || 8453;
+        
+        return {
+          status: "completed",
+          receivedAmount: details.receivedAmount || details.outputAmount,
+          receivedToken: details.receivedToken || details.outputToken,
+          txHash,
+          chainId,
+          explorerUrl: txHash ? getExplorerTxUrl(chainId, txHash) : undefined,
+        };
+      }
+      
+      if (details?.status === "failed") {
+        return { status: "failed" };
+      }
+      
+      // Wait before next poll
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    } catch (e) {
+      console.error("[TxDetails] Error:", e);
+    }
+  }
+  
+  return { status: "pending" };
+}
+
 // Token type mapping for UA SDK
 const TOKEN_TYPE = {
   ETH: SUPPORTED_TOKEN_TYPE?.ETH || "eth",
@@ -581,13 +682,10 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
         },
       ];
 
-      // Map to UA chain ID
-      let uaChainId = toTokenChainId;
-      if (toTokenChainId === 8453) uaChainId = CHAIN_ID.BASE_MAINNET;
-      if (toTokenChainId === 1) uaChainId = CHAIN_ID.ETHEREUM_MAINNET;
-      if (toTokenChainId === 42161) uaChainId = CHAIN_ID.ARBITRUM_MAINNET_ONE;
-      if (toTokenChainId === 10) uaChainId = CHAIN_ID.OPTIMISM_MAINNET;
-      if (toTokenChainId === 137) uaChainId = CHAIN_ID.POLYGON_MAINNET;
+      // Always use Base as source chain (UA aggregates from all chains anyway)
+      const uaChainId = CHAIN_ID.BASE_MAINNET;
+
+      console.log("[Swap] Creating UA transaction on chain:", uaChainId);
 
       // Create UA transaction
       const uaTx = await ua.createUniversalTransaction({

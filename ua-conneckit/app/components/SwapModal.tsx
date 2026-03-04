@@ -2,7 +2,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import type { IAssetsResponse, UniversalAccount } from "@particle-network/universal-account-sdk";
-import { executeSwap, getChainIdFromBlockchain } from "../lib/swapService";
+import { executeSwap, getChainIdFromBlockchain, pollTransactionDetails, getChainName } from "../lib/swapService";
 import { useWallets } from "@particle-network/connectkit";
 
 // Types
@@ -47,8 +47,16 @@ export const SwapModal = ({
   const [amount, setAmount] = useState("");
   const [sliderValue, setSliderValue] = useState(50);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
-  const [txResult, setTxResult] = useState<{ txId: string; outputAmount?: string } | null>(null);
+  const [txResult, setTxResult] = useState<{ 
+    txId: string; 
+    expectedAmount?: string;
+    actualAmount?: string;
+    explorerUrl?: string;
+    chainId?: number;
+    status: "pending" | "completed" | "failed";
+  } | null>(null);
 
   // Get total unified balance (UA aggregates across all chains)
   const totalBalance = primaryAssets?.totalAmountInUSD || 0;
@@ -185,15 +193,41 @@ export const SwapModal = ({
           });
 
           // Step 3: Send transaction
+          setLoadingStatus("Sending transaction...");
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const sendResult = await universalAccount.sendTransaction(result.transaction as any, signature as string);
           
           if (sendResult?.transactionId) {
+            // Format expected amount
+            const expectedFormatted = result.outputAmount 
+              ? formatTokenAmount(parseFloat(result.outputAmount) / Math.pow(10, targetToken?.decimals || 18))
+              : undefined;
+            
+            // Show pending state
             setTxResult({
               txId: sendResult.transactionId,
-              outputAmount: result.outputAmount,
+              expectedAmount: expectedFormatted,
+              status: "pending",
+              chainId: chainId,
             });
             onSwapSuccess?.(sendResult.transactionId);
+            setIsLoading(false);
+            
+            // Poll for actual transaction details
+            setLoadingStatus("Confirming...");
+            const txDetails = await pollTransactionDetails(universalAccount, sendResult.transactionId);
+            
+            if (txDetails.status === "completed") {
+              setTxResult(prev => prev ? {
+                ...prev,
+                status: "completed",
+                actualAmount: txDetails.receivedAmount,
+                explorerUrl: txDetails.explorerUrl,
+                chainId: txDetails.chainId,
+              } : null);
+            } else if (txDetails.status === "failed") {
+              setTxResult(prev => prev ? { ...prev, status: "failed" } : null);
+            }
           } else {
             setError("Transaction failed - no ID returned");
           }
@@ -203,10 +237,10 @@ export const SwapModal = ({
           return;
         }
       } else if (result.transactionId) {
-        // Direct result (shouldn't happen in current flow)
         setTxResult({
           txId: result.transactionId,
-          outputAmount: result.outputAmount,
+          expectedAmount: result.outputAmount,
+          status: "pending",
         });
         onSwapSuccess?.(result.transactionId);
       } else {
@@ -217,6 +251,7 @@ export const SwapModal = ({
       setError(err instanceof Error ? err.message : "Swap failed");
     } finally {
       setIsLoading(false);
+      setLoadingStatus("");
     }
   };
 
@@ -249,19 +284,60 @@ export const SwapModal = ({
         {/* Success State */}
         {txResult && (
           <div className="flex-1 flex flex-col items-center justify-center p-8">
-            <div className="text-6xl mb-4">✅</div>
-            <h2 className="text-white text-xl font-bold mb-2">Swap Submitted!</h2>
-            <p className="text-gray-400 text-center mb-4">
-              {txResult.outputAmount && `Expected: ~${txResult.outputAmount} ${targetToken?.symbol}`}
-            </p>
-            <a
-              href={`https://universalx.app/activity/details?id=${txResult.txId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-cyan-400 underline mb-6"
-            >
-              View Transaction
-            </a>
+            {/* Status Icon */}
+            <div className="text-6xl mb-4">
+              {txResult.status === "completed" ? "✅" : 
+               txResult.status === "failed" ? "❌" : "⏳"}
+            </div>
+            
+            {/* Title */}
+            <h2 className="text-white text-xl font-bold mb-2">
+              {txResult.status === "completed" ? "Swap Complete!" : 
+               txResult.status === "failed" ? "Swap Failed" : "Swap Pending..."}
+            </h2>
+            
+            {/* Amount Display */}
+            <div className="text-center mb-4">
+              {txResult.status === "completed" && txResult.actualAmount ? (
+                <p className="text-green-400 text-lg">
+                  Received: {formatTokenAmount(parseFloat(txResult.actualAmount))} {targetToken?.symbol}
+                </p>
+              ) : txResult.expectedAmount ? (
+                <p className="text-gray-400">
+                  Expected: ~{txResult.expectedAmount} {targetToken?.symbol}
+                </p>
+              ) : null}
+              
+              {/* Chain info */}
+              {txResult.chainId && (
+                <p className="text-gray-500 text-sm mt-1">
+                  on {getChainName(txResult.chainId)}
+                </p>
+              )}
+            </div>
+            
+            {/* Explorer Links */}
+            <div className="flex flex-col gap-2 mb-6">
+              {txResult.explorerUrl && (
+                <a
+                  href={txResult.explorerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-cyan-400 underline"
+                >
+                  View on {getChainName(txResult.chainId || 8453)} Explorer →
+                </a>
+              )}
+              <a
+                href={`https://universalx.app/activity/details?id=${txResult.txId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-gray-400 underline text-sm"
+              >
+                View on UniversalX
+              </a>
+            </div>
+            
             <button
               onClick={onClose}
               className="w-full max-w-xs bg-cyan-500 text-white py-3 rounded-xl font-bold"
@@ -425,7 +501,7 @@ export const SwapModal = ({
                 }`}
               >
                 {isLoading 
-                  ? "Swapping..." 
+                  ? loadingStatus || "Swapping..." 
                   : hasInsufficientBalance 
                     ? "Insufficient Balance"
                     : !universalAccount

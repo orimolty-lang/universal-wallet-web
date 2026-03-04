@@ -182,6 +182,52 @@ const TOKEN_ICONS: Record<string, string> = {
 
 const getTokenIcon = (symbol: string) => TOKEN_ICONS[symbol?.toUpperCase()] || "•";
 
+// Chain badge component for showing which chain a token is on
+const ChainBadge = ({ blockchain }: { blockchain: string }) => {
+  // Map blockchain names to CHAIN_LOGOS keys and short names
+  const chainMapping: Record<string, { logoKey: string; shortName: string }> = {
+    "ethereum": { logoKey: "Ethereum", shortName: "ETH" },
+    "base": { logoKey: "Base", shortName: "Base" },
+    "arbitrum": { logoKey: "Arbitrum", shortName: "ARB" },
+    "optimism": { logoKey: "Optimism", shortName: "OP" },
+    "polygon": { logoKey: "Polygon", shortName: "MATIC" },
+    "bsc": { logoKey: "BNB Chain", shortName: "BSC" },
+    "bnb": { logoKey: "BNB Chain", shortName: "BSC" },
+    "solana": { logoKey: "Solana", shortName: "SOL" },
+    "avalanche": { logoKey: "Avalanche", shortName: "AVAX" },
+  };
+  
+  const chainLower = blockchain.toLowerCase();
+  const mapping = chainMapping[chainLower];
+  
+  // CHAIN_LOGOS is defined later in the file, so we need to handle gracefully
+  const getChainLogo = (key: string) => {
+    const logos: Record<string, string> = {
+      "Ethereum": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png",
+      "Base": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/info/logo.png",
+      "Arbitrum": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png",
+      "Optimism": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/optimism/info/logo.png",
+      "Polygon": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png",
+      "BNB Chain": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/binance/info/logo.png",
+      "Solana": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png",
+      "Avalanche": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/avalanchec/info/logo.png",
+    };
+    return logos[key];
+  };
+  
+  const logo = mapping ? getChainLogo(mapping.logoKey) : undefined;
+  const shortName = mapping?.shortName || blockchain;
+  
+  return (
+    <div className="flex items-center gap-1 bg-gray-800/80 rounded-full px-1.5 py-0.5">
+      {logo && (
+        <img src={logo} alt={blockchain} className="w-3 h-3 rounded-full" />
+      )}
+      <span className="text-gray-400 text-[10px]">{shortName}</span>
+    </div>
+  );
+};
+
 // Helper functions
 const formatAddress = (addr: string) => {
   if (!addr) return "";
@@ -1470,7 +1516,20 @@ const SearchTab = ({
                     </div>
                   )}
                   <div>
-                    <div className="text-white font-medium text-sm">{token.symbol}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-white font-medium text-sm">{token.symbol}</span>
+                      {/* Chain badges */}
+                      {token.contracts && token.contracts.length > 0 && (
+                        <div className="flex gap-1">
+                          {token.contracts.slice(0, 2).map((c, i) => (
+                            <ChainBadge key={i} blockchain={c.blockchain} />
+                          ))}
+                          {token.contracts.length > 2 && (
+                            <span className="text-gray-500 text-[10px]">+{token.contracts.length - 2}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     <div className="text-gray-500 text-xs truncate max-w-[120px]">{token.name}</div>
                   </div>
                 </div>
@@ -1535,7 +1594,20 @@ const SearchTab = ({
                   </div>
                 )}
                 <div className="text-left">
-                  <div className="text-white">{token.name}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-white">{token.name}</span>
+                    {/* Chain badges */}
+                    {token.contracts && token.contracts.length > 0 && (
+                      <div className="flex gap-1">
+                        {token.contracts.slice(0, 2).map((c, i) => (
+                          <ChainBadge key={i} blockchain={c.blockchain} />
+                        ))}
+                        {token.contracts.length > 2 && (
+                          <span className="text-gray-500 text-[10px]">+{token.contracts.length - 2}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <div className="text-gray-500 text-sm uppercase">{token.symbol}</div>
                 </div>
               </div>
