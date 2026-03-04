@@ -21,6 +21,55 @@ import SwapModal from "./components/SwapModal";
 // Mobula API for token search
 const MOBULA_API_KEY = "a8e6a174-9dfd-4929-b0e0-9f6ece767923";
 
+// Mobula wallet balance response type
+interface MobulaAsset {
+  asset: {
+    name: string;
+    symbol: string;
+    logo?: string;
+    contracts?: string[];
+    blockchains?: string[];
+  };
+  token_balance: number;
+  price: number;
+  price_change_24h?: number;
+  estimated_balance: number;
+  cross_chain_balances?: Record<string, { 
+    address: string; 
+    balance: number; 
+    balanceRaw: string;
+    chainId: number;
+  }>;
+}
+
+// Fetch wallet balances from Mobula API
+async function fetchMobulaWalletBalances(address: string): Promise<MobulaAsset[]> {
+  try {
+    const response = await fetch(
+      `https://api.mobula.io/api/1/wallet/portfolio?wallet=${address}&blockchains=base,ethereum,arbitrum,optimism,polygon`,
+      {
+        headers: {
+          "Authorization": MOBULA_API_KEY,
+        },
+      }
+    );
+    
+    if (!response.ok) {
+      console.error("[Mobula] Wallet fetch failed:", response.status);
+      return [];
+    }
+    
+    const data = await response.json();
+    console.log("[Mobula] Wallet balances:", data);
+    
+    // Return assets array
+    return data.data?.assets || [];
+  } catch (error) {
+    console.error("[Mobula] Error fetching wallet:", error);
+    return [];
+  }
+}
+
 // Splash Screen - shows briefly on app start
 const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
   useEffect(() => {
@@ -1211,6 +1260,8 @@ const HomeTab = ({
     balance: typeof asset.amount === 'string' ? parseFloat(asset.amount) : (asset.amount || 0),
     amountInUSD: asset.amountInUSD || 0,
     price: asset.price || 0,
+    logo: asset.logo, // External assets may have logo
+    isExternal: asset.isExternal || false, // Flag for Mobula-sourced assets
     // Chain breakdown from chainAggregation
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     chainBreakdown: asset.chainAggregation?.map((chain: any) => ({
@@ -1279,6 +1330,8 @@ const HomeTab = ({
               balance: number; 
               amountInUSD: number; 
               price: number;
+              logo?: string;
+              isExternal?: boolean;
               chainBreakdown: Array<{ chainId: number; chainName: string; amount: number; amountInUSD: number; address: string }>;
             }, i: number) => (
               <div key={i} className="border-b border-gray-800/30">
@@ -1288,10 +1341,28 @@ const HomeTab = ({
                   onClick={() => toggleExpanded(token.symbol)}
                 >
                   <div className="flex items-center gap-3">
-                    {/* Token Logo */}
-                    <TokenLogo symbol={token.symbol} size={40} />
+                    {/* Token Logo - use external logo if available */}
+                    {token.logo ? (
+                      <img 
+                        src={token.logo} 
+                        alt={token.symbol} 
+                        className="w-10 h-10 rounded-full bg-gray-800"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <TokenLogo symbol={token.symbol} size={40} />
+                    )}
                     <div className="text-left">
-                      <div className="text-white font-medium">{token.name}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-white font-medium">{token.name}</span>
+                        {token.isExternal && (
+                          <span className="text-[10px] bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded">
+                            External
+                          </span>
+                        )}
+                      </div>
                       <div className="text-gray-500 text-sm">{token.balance.toFixed(4)} {token.symbol}</div>
                     </div>
                   </div>
@@ -1901,6 +1972,7 @@ const App = () => {
   const [universalAccountInstance, setUniversalAccountInstance] = useState<UniversalAccount | null>(null);
   const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null);
   const [primaryAssets, setPrimaryAssets] = useState<IAssetsResponse | null>(null);
+  const [mobulaAssets, setMobulaAssets] = useState<MobulaAsset[]>([]);
   
   // Modals
   const [showAgentModal, setShowAgentModal] = useState(false);
@@ -1978,6 +2050,69 @@ const App = () => {
     }
   }, [universalAccountInstance]);
 
+  // Fetch Mobula wallet balances for external tokens
+  const fetchMobulaAssets = useCallback(async () => {
+    if (!accountInfo?.evmSmartAccount) return;
+    try {
+      const assets = await fetchMobulaWalletBalances(accountInfo.evmSmartAccount);
+      setMobulaAssets(assets);
+    } catch (error) {
+      console.error("Failed to fetch Mobula assets:", error);
+    }
+  }, [accountInfo?.evmSmartAccount]);
+
+  // Fetch Mobula assets when account info is available
+  useEffect(() => {
+    if (accountInfo?.evmSmartAccount) {
+      fetchMobulaAssets();
+    }
+  }, [accountInfo?.evmSmartAccount, fetchMobulaAssets]);
+
+  // Merge UA primary assets with Mobula external assets
+  const combinedAssets = useMemo(() => {
+    if (!primaryAssets) return null;
+    
+    // Get symbols already in primary assets
+    const primarySymbols = new Set(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      primaryAssets.assets?.map((a: any) => a.symbol?.toUpperCase()) || []
+    );
+    
+    // Filter Mobula assets to only include tokens NOT in primary assets
+    const externalAssets = mobulaAssets
+      .filter(ma => !primarySymbols.has(ma.asset.symbol?.toUpperCase()))
+      .filter(ma => ma.estimated_balance > 0.01) // Only show if worth > $0.01
+      .map(ma => ({
+        symbol: ma.asset.symbol,
+        name: ma.asset.name,
+        amount: ma.token_balance,
+        amountInUSD: ma.estimated_balance,
+        price: ma.price,
+        logo: ma.asset.logo,
+        isExternal: true, // Flag to identify external assets
+        // Build chain aggregation from cross_chain_balances
+        chainAggregation: ma.cross_chain_balances 
+          ? Object.values(ma.cross_chain_balances).map((data) => ({
+              token: { chainId: data.chainId, address: data.address },
+              amount: data.balance,
+              amountInUSD: data.balance * ma.price,
+            }))
+          : [],
+      }));
+    
+    // Merge with primary assets
+    const mergedAssets = [...(primaryAssets.assets || []), ...externalAssets];
+    
+    // Calculate new total
+    const externalTotal = externalAssets.reduce((sum, a) => sum + a.amountInUSD, 0);
+    
+    return {
+      ...primaryAssets,
+      assets: mergedAssets,
+      totalAmountInUSD: (primaryAssets.totalAmountInUSD || 0) + externalTotal,
+    };
+  }, [primaryAssets, mobulaAssets]);
+
   useEffect(() => {
     fetchAssets();
   }, [fetchAssets]);
@@ -2017,7 +2152,7 @@ const App = () => {
       {activeTab === "home" && (
         <HomeTab 
           accountInfo={accountInfo}
-          primaryAssets={primaryAssets}
+          primaryAssets={combinedAssets as IAssetsResponse | null}
           profile={profile}
           onShowProfilePicker={() => setShowProfilePicker(true)}
           onBuy={() => setShowBuyModal(true)}
@@ -2028,7 +2163,7 @@ const App = () => {
       )}
       {activeTab === "search" && (
         <SearchTab 
-          primaryAssets={primaryAssets}
+          primaryAssets={combinedAssets as IAssetsResponse | null}
           universalAccount={universalAccountInstance}
           onSend={() => setShowSendModal(true)}
         />
