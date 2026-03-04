@@ -374,13 +374,18 @@ export const SwapModal = ({
           </button>
         </div>
 
-        {/* Success State */}
+        {/* Success/Pending State */}
         {txResult && (
           <div className="flex-1 flex flex-col items-center justify-center p-8">
-            {/* Status Icon */}
+            {/* Status Icon with animation */}
             <div className="text-6xl mb-4">
-              {txResult.status === "completed" ? "✅" : 
-               txResult.status === "failed" ? "❌" : "⏳"}
+              {txResult.status === "completed" ? (
+                <span className="animate-bounce inline-block">✅</span>
+              ) : txResult.status === "failed" ? (
+                <span>❌</span>
+              ) : (
+                <span className="inline-block animate-pulse">⏳</span>
+              )}
             </div>
             
             {/* Title */}
@@ -409,26 +414,41 @@ export const SwapModal = ({
               )}
             </div>
             
-            {/* Explorer Links */}
-            <div className="flex flex-col gap-2 mb-6">
-              {txResult.explorerUrl && (
+            {/* Explorer Links - prioritize actual tx hash link */}
+            <div className="flex flex-col gap-3 mb-6 w-full max-w-xs">
+              {txResult.explorerUrl ? (
+                <>
+                  {/* Primary: Actual transaction on block explorer */}
+                  <a
+                    href={txResult.explorerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center justify-center gap-2 bg-cyan-500/20 border border-cyan-500/50 text-cyan-400 py-3 px-4 rounded-xl font-medium"
+                  >
+                    <span>View on {getChainName(txResult.chainId || 8453)}</span>
+                    <span>↗</span>
+                  </a>
+                  {/* Secondary: UniversalX details */}
+                  <a
+                    href={`https://universalx.app/activity/details?id=${txResult.txId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-gray-500 underline text-sm text-center"
+                  >
+                    View full details on UniversalX
+                  </a>
+                </>
+              ) : (
+                /* Fallback when no explorer URL yet (still pending) */
                 <a
-                  href={txResult.explorerUrl}
+                  href={`https://universalx.app/activity/details?id=${txResult.txId}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-cyan-400 underline"
+                  className="text-cyan-400 underline text-center"
                 >
-                  View on {getChainName(txResult.chainId || 8453)} Explorer →
+                  View on UniversalX
                 </a>
               )}
-              <a
-                href={`https://universalx.app/activity/details?id=${txResult.txId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-gray-400 underline text-sm"
-              >
-                View on UniversalX
-              </a>
             </div>
             
             <button
