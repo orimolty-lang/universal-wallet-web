@@ -687,14 +687,14 @@ const BottomSheet = ({
         }}
         onClick={e => e.stopPropagation()}
       >
-        {/* Drag Handle */}
+        {/* Drag Handle - larger touch area */}
         <div 
-          className="flex justify-center py-3 cursor-grab active:cursor-grabbing touch-none"
+          className="flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing touch-none"
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          <div className="w-10 h-1 bg-gray-600 rounded-full" />
+          <div className="w-12 h-1.5 bg-gray-500 rounded-full" />
         </div>
         {/* Content */}
         <div className={`overflow-auto ${fullScreen ? 'h-[calc(100%-40px)]' : 'max-h-[calc(90vh-40px)]'}`}>
@@ -1242,6 +1242,7 @@ const HomeTab = ({
   onReceive,
   onSend,
   onConvert,
+  onTokenSelect,
 }: {
   accountInfo: AccountInfo | null;
   primaryAssets: IAssetsResponse | null;
@@ -1251,6 +1252,7 @@ const HomeTab = ({
   onReceive: () => void;
   onSend: () => void;
   onConvert: () => void;
+  onTokenSelect?: (token: { id: string; symbol: string; name: string; logo?: string; price: number; contracts?: Array<{ address: string; blockchain: string }> }) => void;
 }) => {
   // Use Set to allow multiple tokens to be expanded simultaneously
   const [expandedTokens, setExpandedTokens] = useState<Set<string>>(new Set());
@@ -1377,8 +1379,15 @@ const HomeTab = ({
                   className="w-full flex items-center justify-between py-4"
                   onClick={() => {
                     if (token.isExternal) {
-                      // External tokens: open swap modal directly
-                      onConvert();
+                      // External tokens: open token detail modal
+                      onTokenSelect?.({
+                        id: token.symbol.toLowerCase(),
+                        symbol: token.symbol,
+                        name: token.name,
+                        logo: token.logo,
+                        price: token.price,
+                        contracts: token.contracts,
+                      });
                     } else {
                       // Primary UA tokens: toggle expansion
                       toggleExpanded(token.symbol);
@@ -2218,6 +2227,8 @@ const App = () => {
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showAppLockModal, setShowAppLockModal] = useState(false);
+  const [homeSelectedToken, setHomeSelectedToken] = useState<{ id: string; symbol: string; name: string; logo?: string; price: number; contracts?: Array<{ address: string; blockchain: string }> } | null>(null);
+  const [showHomeSwapModal, setShowHomeSwapModal] = useState(false);
   // Sell is handled by SwapModal with direction flip
 
   // Profile settings (persisted to localStorage)
@@ -2411,6 +2422,7 @@ const App = () => {
           onReceive={() => setShowReceiveModal(true)}
           onSend={() => setShowSendModal(true)}
           onConvert={() => setShowConvertModal(true)}
+          onTokenSelect={(token) => setHomeSelectedToken(token)}
         />
       )}
       {activeTab === "search" && (
@@ -2494,6 +2506,30 @@ const App = () => {
       <AppLockModal
         isOpen={showAppLockModal}
         onClose={() => setShowAppLockModal(false)}
+      />
+      
+      {/* Token Detail Modal for Home Tab external tokens */}
+      <TokenDetailModal 
+        token={homeSelectedToken} 
+        userBalance={homeSelectedToken ? {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          amount: combinedAssets?.assets?.find((a: any) => a.symbol?.toUpperCase() === homeSelectedToken.symbol?.toUpperCase())?.amount || 0,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          amountInUSD: combinedAssets?.assets?.find((a: any) => a.symbol?.toUpperCase() === homeSelectedToken.symbol?.toUpperCase())?.amountInUSD || 0,
+        } : undefined}
+        onClose={() => setHomeSelectedToken(null)} 
+        onSwap={() => {
+          setShowHomeSwapModal(true);
+        }}
+        onSend={() => { setHomeSelectedToken(null); setShowSendModal(true); }}
+      />
+      
+      <SwapModal
+        isOpen={showHomeSwapModal}
+        onClose={() => setShowHomeSwapModal(false)}
+        targetToken={homeSelectedToken}
+        primaryAssets={combinedAssets as IAssetsResponse | null}
+        universalAccount={universalAccountInstance}
       />
     </div>
   );
