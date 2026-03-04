@@ -249,7 +249,15 @@ export const SwapModal = ({
         // Calculate token amount to sell based on slider percentage
         const tokenAmountToSell = tokenBalance * sliderValue / 100;
         const decimals = targetToken.decimals || 18;
-        const amountRaw = String(Math.floor(tokenAmountToSell * Math.pow(10, decimals)));
+        
+        // Format amount without scientific notation
+        // Split into integer and decimal parts, then pad with zeros
+        const amountStr = tokenAmountToSell.toFixed(decimals);
+        const [intPart, decPart = ""] = amountStr.split(".");
+        const paddedDec = (decPart + "0".repeat(decimals)).slice(0, decimals);
+        const amountRaw = (intPart + paddedDec).replace(/^0+/, "") || "0";
+        
+        console.log("[Sell] Amount calc:", { tokenAmountToSell, decimals, amountRaw });
         
         result = await executeSell({
           ua: universalAccount,
