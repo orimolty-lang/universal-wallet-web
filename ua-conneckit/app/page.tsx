@@ -1254,7 +1254,21 @@ const HomeTab = ({
   onConvert: () => void;
   onTokenSelect?: (token: { id: string; symbol: string; name: string; logo?: string; price: number; contracts?: Array<{ address: string; blockchain: string }> }) => void;
 }) => {
+  // Use Set to allow multiple tokens to be expanded simultaneously
+  const [expandedTokens, setExpandedTokens] = useState<Set<string>>(new Set());
   const [hideSmallBalances, setHideSmallBalances] = useState(true); // Hide <$0.10 by default
+  
+  const toggleExpanded = (symbol: string) => {
+    setExpandedTokens(prev => {
+      const next = new Set(prev);
+      if (next.has(symbol)) {
+        next.delete(symbol);
+      } else {
+        next.add(symbol);
+      }
+      return next;
+    });
+  };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allTokens = primaryAssets?.assets?.map((asset: any) => {
@@ -1386,33 +1400,38 @@ const HomeTab = ({
                 <button 
                   className="w-full flex items-center justify-between py-4"
                   onClick={() => {
-                    // All tokens: open token detail modal for buy/sell
-                    let contracts = token.contracts || [];
-                    
-                    // Fallback: extract from chainBreakdown if contracts is empty
-                    if (contracts.length === 0 && token.chainBreakdown?.length > 0) {
-                      const chainIdToName: Record<number, string> = {
-                        1: "ethereum", 8453: "base", 42161: "arbitrum", 
-                        10: "optimism", 137: "polygon", 56: "bsc", 101: "solana",
-                      };
-                      contracts = token.chainBreakdown
-                        .filter((c: { address?: string; chainId?: number }) => c.address)
-                        .map((c: { address: string; chainId: number }) => ({
-                          address: c.address,
-                          blockchain: chainIdToName[c.chainId] || `chain-${c.chainId}`,
-                        }));
+                    if (token.isExternal) {
+                      // External tokens: open token detail modal for swap
+                      let contracts = token.contracts || [];
+                      
+                      // Fallback: extract from chainBreakdown if contracts is empty
+                      if (contracts.length === 0 && token.chainBreakdown?.length > 0) {
+                        const chainIdToName: Record<number, string> = {
+                          1: "ethereum", 8453: "base", 42161: "arbitrum", 
+                          10: "optimism", 137: "polygon", 56: "bsc", 101: "solana",
+                        };
+                        contracts = token.chainBreakdown
+                          .filter((c: { address?: string; chainId?: number }) => c.address)
+                          .map((c: { address: string; chainId: number }) => ({
+                            address: c.address,
+                            blockchain: chainIdToName[c.chainId] || `chain-${c.chainId}`,
+                          }));
+                      }
+                      
+                      console.log("[HomeTab] External token selected:", token.symbol, "contracts:", contracts);
+                      
+                      onTokenSelect?.({
+                        id: token.symbol.toLowerCase(),
+                        symbol: token.symbol,
+                        name: token.name,
+                        logo: token.logo,
+                        price: token.price,
+                        contracts,
+                      });
+                    } else {
+                      // Primary UA tokens: toggle chain breakdown expansion
+                      toggleExpanded(token.symbol);
                     }
-                    
-                    console.log("[HomeTab] Token selected:", token.symbol, "isExternal:", token.isExternal, "contracts:", contracts);
-                    
-                    onTokenSelect?.({
-                      id: token.symbol.toLowerCase(),
-                      symbol: token.symbol,
-                      name: token.name,
-                      logo: token.logo,
-                      price: token.price,
-                      contracts,
-                    });
                   }}
                 >
                   <div className="flex items-center gap-3">
@@ -1447,20 +1466,40 @@ const HomeTab = ({
                   <div className="flex items-center gap-2">
                     <div className="text-right">
                       <div className="text-white">${token.amountInUSD.toFixed(2)}</div>
+                      {!token.isExternal && token.chainBreakdown.length > 1 && (
+                        <div className="text-gray-500 text-xs">{token.chainBreakdown.length} chains</div>
+                      )}
                     </div>
-                    {/* Show chain logos for multi-chain tokens */}
-                    {token.chainBreakdown.length > 1 && (
-                      <div className="flex gap-1">
-                        {token.chainBreakdown.slice(0, 3).map((chain, j) => (
-                          <ChainLogo key={j} chainName={chain.chainName} size={14} />
-                        ))}
-                        {token.chainBreakdown.length > 3 && (
-                          <span className="text-gray-500 text-xs">+{token.chainBreakdown.length - 3}</span>
-                        )}
-                      </div>
+                    {/* Show expand arrow for primary tokens with chain breakdown */}
+                    {!token.isExternal && token.chainBreakdown.length > 0 && (
+                      <span className={`text-gray-500 text-sm transition-transform ${expandedTokens.has(token.symbol) ? 'rotate-180' : ''}`}>
+                        ▼
+                      </span>
                     )}
                   </div>
                 </button>
+                
+                {/* Chain Breakdown (Expanded) - only for primary UA tokens */}
+                {!token.isExternal && expandedTokens.has(token.symbol) && (
+                  <div className="pl-14 pb-4">
+                    {token.chainBreakdown.length > 0 && (
+                      <div className="space-y-2 mb-3">
+                        {token.chainBreakdown.map((chain, j) => (
+                          <div key={j} className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-2">
+                              <ChainLogo chainName={chain.chainName} size={16} />
+                              <span className="text-gray-400">{chain.chainName}</span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-gray-300">{chain.amount.toFixed(4)} {token.symbol}</span>
+                              <span className="text-gray-500 ml-2">(${chain.amountInUSD.toFixed(2)})</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               );
             })}
