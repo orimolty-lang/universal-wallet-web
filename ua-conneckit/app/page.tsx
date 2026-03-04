@@ -1884,8 +1884,59 @@ const ActivityModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => vo
 );
 
 // App Lock Modal
+// Declare global type for native biometrics bridge
+declare global {
+  interface Window {
+    nativeBiometrics?: {
+      getStatus: () => Promise<{ enabled: boolean; available: boolean; type: string }>;
+      enable: () => Promise<{ success: boolean; enabled: boolean }>;
+      disable: () => Promise<{ success: boolean; enabled: boolean }>;
+    };
+  }
+}
+
 const AppLockModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
   const [biometricsEnabled, setBiometricsEnabled] = useState(false);
+  const [biometricsAvailable, setBiometricsAvailable] = useState(false);
+  const [biometricType, setBiometricType] = useState("Biometrics");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isNativeApp, setIsNativeApp] = useState(false);
+  
+  // Check biometrics status on mount
+  useEffect(() => {
+    const checkStatus = async () => {
+      if (window.nativeBiometrics) {
+        setIsNativeApp(true);
+        try {
+          const status = await window.nativeBiometrics.getStatus();
+          setBiometricsEnabled(status.enabled);
+          setBiometricsAvailable(status.available);
+          setBiometricType(status.type);
+        } catch (e) {
+          console.error("Failed to get biometrics status:", e);
+        }
+      }
+    };
+    if (isOpen) checkStatus();
+  }, [isOpen]);
+  
+  const handleToggle = async () => {
+    if (!window.nativeBiometrics) return;
+    
+    setIsLoading(true);
+    try {
+      if (biometricsEnabled) {
+        const result = await window.nativeBiometrics.disable();
+        setBiometricsEnabled(result.enabled);
+      } else {
+        const result = await window.nativeBiometrics.enable();
+        setBiometricsEnabled(result.enabled);
+      }
+    } catch (e) {
+      console.error("Failed to toggle biometrics:", e);
+    }
+    setIsLoading(false);
+  };
   
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose}>
@@ -1903,24 +1954,39 @@ const AppLockModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
           App Lock uses biometric data to unlock your OMNI account. Enable an unlock method below.
         </p>
         
-        <div className="flex items-center justify-between py-4 border-b border-gray-800">
-          <div className="flex items-center gap-3">
-            <svg className="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7.864 4.243A7.5 7.5 0 0119.5 10.5c0 2.92-.556 5.709-1.568 8.268M5.742 6.364A7.465 7.465 0 004.5 10.5a7.464 7.464 0 01-1.15 3.993m1.989 3.559A11.209 11.209 0 008.25 10.5a3.75 3.75 0 117.5 0c0 .527-.021 1.049-.064 1.565M12 10.5a14.94 14.94 0 01-3.6 9.75m6.633-4.596a18.666 18.666 0 01-2.485 5.33"/>
-            </svg>
-            <span className="text-white">Biometrics</span>
+        {!isNativeApp ? (
+          <div className="bg-gray-800/50 rounded-lg p-4">
+            <p className="text-gray-400 text-sm">
+              App Lock requires the native OMNI app. This feature is not available in the web browser.
+            </p>
           </div>
-          <button
-            onClick={() => setBiometricsEnabled(!biometricsEnabled)}
-            className={`w-12 h-7 rounded-full transition-colors ${biometricsEnabled ? 'bg-purple-500' : 'bg-gray-600'}`}
-          >
-            <div className={`w-5 h-5 bg-white rounded-full transition-transform ${biometricsEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-          </button>
-        </div>
+        ) : !biometricsAvailable ? (
+          <div className="bg-gray-800/50 rounded-lg p-4">
+            <p className="text-gray-400 text-sm">
+              Biometrics are not available on this device. Please ensure Face ID or Touch ID is set up in your device settings.
+            </p>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between py-4 border-b border-gray-800">
+            <div className="flex items-center gap-3">
+              <svg className="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7.864 4.243A7.5 7.5 0 0119.5 10.5c0 2.92-.556 5.709-1.568 8.268M5.742 6.364A7.465 7.465 0 004.5 10.5a7.464 7.464 0 01-1.15 3.993m1.989 3.559A11.209 11.209 0 008.25 10.5a3.75 3.75 0 117.5 0c0 .527-.021 1.049-.064 1.565M12 10.5a14.94 14.94 0 01-3.6 9.75m6.633-4.596a18.666 18.666 0 01-2.485 5.33"/>
+              </svg>
+              <span className="text-white">{biometricType}</span>
+            </div>
+            <button
+              onClick={handleToggle}
+              disabled={isLoading}
+              className={`w-12 h-7 rounded-full transition-colors ${biometricsEnabled ? 'bg-purple-500' : 'bg-gray-600'} ${isLoading ? 'opacity-50' : ''}`}
+            >
+              <div className={`w-5 h-5 bg-white rounded-full transition-transform ${biometricsEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+            </button>
+          </div>
+        )}
         
         {biometricsEnabled && (
-          <p className="text-yellow-500 text-xs mt-4">
-            ⚠️ Biometric lock requires native app support. This setting will be saved but may not take effect until the next app update.
+          <p className="text-green-500 text-xs mt-4">
+            ✓ App Lock is enabled. You&apos;ll need to authenticate with {biometricType} when opening OMNI.
           </p>
         )}
       </div>
