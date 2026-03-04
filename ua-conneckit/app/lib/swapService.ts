@@ -8,7 +8,10 @@ import { UniversalAccount, CHAIN_ID, SUPPORTED_TOKEN_TYPE } from "@particle-netw
 
 // ============ CONSTANTS ============
 
-// 0x API
+// Li.Fi API (better CORS support for browser)
+const LIFI_API_BASE = "https://li.quest/v1";
+
+// 0x API (backup)
 const ZEROX_API_KEY = process.env.NEXT_PUBLIC_ZEROX_API_KEY || "5673a1cb-0778-485d-9523-b98ee680ab97";
 const ZEROX_BASE_URL = "https://api.0x.org";
 
@@ -91,7 +94,79 @@ interface SwapParams {
   slippageBps?: number;
 }
 
-// ============ 0x API FUNCTIONS ============
+// ============ LI.FI API FUNCTIONS ============
+
+/**
+ * Get Li.Fi swap quote (better CORS support for browsers)
+ */
+export async function getLifiSwapQuote(
+  fromAddress: string,
+  fromChainId: number,
+  toChainId: number,
+  fromToken: string,
+  toToken: string,
+  fromAmount: string,
+  slippageBps: number = 100
+): Promise<SwapQuote> {
+  try {
+    const slippage = slippageBps / 10000;
+    
+    const url = new URL(`${LIFI_API_BASE}/quote`);
+    url.searchParams.set("fromChain", String(fromChainId));
+    url.searchParams.set("toChain", String(toChainId));
+    url.searchParams.set("fromToken", fromToken);
+    url.searchParams.set("toToken", toToken);
+    url.searchParams.set("fromAmount", fromAmount);
+    url.searchParams.set("fromAddress", fromAddress);
+    url.searchParams.set("slippage", String(slippage));
+    url.searchParams.set("integrator", "universal-wallet");
+
+    console.log("[Li.Fi] Fetching quote:", url.toString());
+
+    const response = await fetch(url.toString(), {
+      headers: { "Accept": "application/json" },
+    });
+
+    const data = await response.json();
+    console.log("[Li.Fi] Response:", response.status, data);
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: data.message || data.error || `Li.Fi error: ${response.status}`,
+      };
+    }
+
+    // Extract transaction data
+    const txData = data.transactionRequest;
+    if (!txData) {
+      return { success: false, error: "No transaction data from Li.Fi" };
+    }
+
+    return {
+      success: true,
+      inputAmount: data.estimate?.fromAmount,
+      outputAmount: data.estimate?.toAmount,
+      rate: data.estimate?.toAmount && data.estimate?.fromAmount 
+        ? parseFloat(data.estimate.toAmount) / parseFloat(data.estimate.fromAmount) 
+        : undefined,
+      transaction: {
+        to: txData.to,
+        data: txData.data,
+        value: txData.value || "0",
+      },
+      allowanceTarget: data.estimate?.approvalAddress,
+    };
+  } catch (error) {
+    console.error("[Li.Fi] Error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to get Li.Fi quote",
+    };
+  }
+}
+
+// ============ 0x API FUNCTIONS (backup) ============
 
 /**
  * Get chain-specific 0x API URL
@@ -99,12 +174,12 @@ interface SwapParams {
 function get0xApiUrl(chainId: number): string {
   const chainUrls: Record<number, string> = {
     1: "https://api.0x.org",
-    8453: "https://base.api.0x.org",
-    10: "https://optimism.api.0x.org",
-    42161: "https://arbitrum.api.0x.org",
-    137: "https://polygon.api.0x.org",
-    56: "https://bsc.api.0x.org",
-    43114: "https://avalanche.api.0x.org",
+    8453: "https://api.0x.org",
+    10: "https://api.0x.org",
+    42161: "https://api.0x.org",
+    137: "https://api.0x.org",
+    56: "https://api.0x.org",
+    43114: "https://api.0x.org",
   };
   return chainUrls[chainId] || ZEROX_BASE_URL;
 }
@@ -423,13 +498,14 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
         requiresSignature: true,
       };
     } else {
-      // ========== EVM SWAP VIA 0x ==========
-      console.log("[Swap] EVM swap via 0x, chain:", toTokenChainId);
+      // ========== EVM SWAP VIA LI.FI ==========
+      console.log("[Swap] EVM swap via Li.Fi, chain:", toTokenChainId);
       
-      // Determine sell token - always use USDC on the target chain
-      const sellToken = USDC_ADDRESSES[toTokenChainId] || USDC_ADDRESSES[RELAY_CHAIN_IDS.BASE];
+      // Determine sell token - always use USDC on Base (UA will aggregate)
+      const sourceChainId = RELAY_CHAIN_IDS.BASE;
+      const sellToken = USDC_ADDRESSES[sourceChainId];
       if (!sellToken) {
-        return { success: false, error: `USDC not available on chain ${toTokenChainId}` };
+        return { success: false, error: "USDC not available" };
       }
 
       // Convert USD to USDC units (6 decimals)
@@ -439,30 +515,32 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
         sellToken, 
         buyToken: toTokenAddress, 
         sellAmount, 
-        chainId: toTokenChainId 
+        fromChain: sourceChainId,
+        toChain: toTokenChainId 
       });
 
-      // Get 0x quote
+      // Get Li.Fi quote
       let quote;
       try {
-        quote = await get0xSwapQuote(
+        quote = await getLifiSwapQuote(
           evmSmartAccount,
+          sourceChainId,
+          toTokenChainId,
           sellToken,
           toTokenAddress,
           sellAmount,
-          toTokenChainId,
           slippageBps
         );
       } catch (e) {
-        console.error("[Swap] 0x quote failed:", e);
+        console.error("[Swap] Li.Fi quote failed:", e);
         return { success: false, error: "Failed to get swap quote - token may not be supported" };
       }
 
-      console.log("[Swap] 0x quote result:", quote);
+      console.log("[Swap] Li.Fi quote result:", quote);
 
       if (!quote.success) {
         // Provide user-friendly error
-        if (quote.error?.includes("liquidity")) {
+        if (quote.error?.includes("liquidity") || quote.error?.includes("No available")) {
           return { success: false, error: "No liquidity available for this token" };
         }
         return { success: false, error: quote.error || "Token not available for swap" };
@@ -489,7 +567,7 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
       transactions.push({
         to: quote.transaction.to,
         data: quote.transaction.data,
-        value: quote.transaction.value || sellAmount,
+        value: quote.transaction.value || "0",
       });
 
       // Build expectTokens for UA balance aggregation
