@@ -1300,9 +1300,11 @@ const HomeTab = ({
 // Search Tab with Mobula API
 const SearchTab = ({ 
   primaryAssets,
+  universalAccount,
   onSend,
 }: { 
   primaryAssets: IAssetsResponse | null;
+  universalAccount: UniversalAccount | null;
   onSend?: () => void;
 }) => {
   const [query, setQuery] = useState("");
@@ -1577,11 +1579,12 @@ const SearchTab = ({
           name: swapTargetToken.name,
           logo: swapTargetToken.logo,
           price: swapTargetToken.price,
+          contracts: swapTargetToken.contracts,
         } : null}
         primaryAssets={primaryAssets}
-        onSwapExecute={async (params) => {
-          console.log("Executing swap:", params);
-          // TODO: Integrate 0x swap logic
+        universalAccount={universalAccount}
+        onSwapSuccess={(txId) => {
+          console.log("Swap success:", txId);
         }}
       />
     </div>
@@ -1954,6 +1957,7 @@ const App = () => {
       {activeTab === "search" && (
         <SearchTab 
           primaryAssets={primaryAssets}
+          universalAccount={universalAccountInstance}
           onSend={() => setShowSendModal(true)}
         />
       )}
