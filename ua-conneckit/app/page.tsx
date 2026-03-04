@@ -2343,23 +2343,55 @@ const App = () => {
     const externalAssets = mobulaAssets
       .filter(ma => !primarySymbols.has(ma.asset.symbol?.toUpperCase()))
       .filter(ma => ma.token_balance > 0) // Show any token with balance
-      .map(ma => ({
-        symbol: ma.asset.symbol,
-        name: ma.asset.name,
-        amount: ma.token_balance,
-        amountInUSD: ma.estimated_balance,
-        price: ma.price,
-        logo: ma.asset.logo,
-        isExternal: true, // Flag to identify external assets
-        // Build chain aggregation from cross_chain_balances
-        chainAggregation: ma.cross_chain_balances 
-          ? Object.values(ma.cross_chain_balances).map((data) => ({
-              token: { chainId: data.chainId, address: data.address },
-              amount: data.balance,
-              amountInUSD: data.balance * ma.price,
-            }))
-          : [],
-      }));
+      .map(ma => {
+        // Build contracts array from Mobula asset data or cross_chain_balances
+        const contracts: Array<{ address: string; blockchain: string }> = [];
+        
+        // First try: use asset.contracts + asset.blockchains arrays
+        if (ma.asset.contracts && ma.asset.blockchains) {
+          for (let i = 0; i < ma.asset.contracts.length; i++) {
+            contracts.push({
+              address: ma.asset.contracts[i],
+              blockchain: ma.asset.blockchains[i] || "unknown",
+            });
+          }
+        }
+        
+        // Fallback: extract from cross_chain_balances if available
+        if (contracts.length === 0 && ma.cross_chain_balances) {
+          const chainIdToName: Record<number, string> = {
+            1: "ethereum", 8453: "base", 42161: "arbitrum", 
+            10: "optimism", 137: "polygon", 56: "bsc",
+          };
+          Object.values(ma.cross_chain_balances).forEach((data) => {
+            if (data.address && data.chainId) {
+              contracts.push({
+                address: data.address,
+                blockchain: chainIdToName[data.chainId] || `chain-${data.chainId}`,
+              });
+            }
+          });
+        }
+        
+        return {
+          symbol: ma.asset.symbol,
+          name: ma.asset.name,
+          amount: ma.token_balance,
+          amountInUSD: ma.estimated_balance,
+          price: ma.price,
+          logo: ma.asset.logo,
+          isExternal: true, // Flag to identify external assets
+          contracts, // Now properly populated
+          // Build chain aggregation from cross_chain_balances
+          chainAggregation: ma.cross_chain_balances 
+            ? Object.values(ma.cross_chain_balances).map((data) => ({
+                token: { chainId: data.chainId, address: data.address },
+                amount: data.balance,
+                amountInUSD: data.balance * ma.price,
+              }))
+            : [],
+        };
+      });
     
     // Merge with primary assets
     const mergedAssets = [...(primaryAssets.assets || []), ...externalAssets];
