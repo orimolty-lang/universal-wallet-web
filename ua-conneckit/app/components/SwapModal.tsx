@@ -170,14 +170,20 @@ export const SwapModal = ({
 
   // Get token address and chain ID
   const getTokenAddressAndChain = useCallback(() => {
-    if (!targetToken) return { address: "", chainId: 8453 };
+    if (!targetToken) {
+      console.log("[SwapModal] No target token");
+      return { address: "", chainId: 8453 };
+    }
+    
+    console.log("[SwapModal] getTokenAddressAndChain for:", targetToken.symbol, "contracts:", targetToken.contracts);
     
     // If token has direct address/chainId
     if (targetToken.address && targetToken.chainId) {
+      console.log("[SwapModal] Using direct address:", targetToken.address);
       return { address: targetToken.address, chainId: targetToken.chainId };
     }
     
-    // If token has contracts array (from Mobula search)
+    // If token has contracts array (from Mobula search or external assets)
     if (targetToken.contracts && targetToken.contracts.length > 0) {
       // Prefer Base, then Ethereum, then first available
       const baseContract = targetToken.contracts.find(c => 
@@ -191,25 +197,52 @@ export const SwapModal = ({
       );
       
       if (baseContract) {
+        console.log("[SwapModal] Using Base contract:", baseContract.address);
         return { address: baseContract.address, chainId: 8453 };
       }
       if (ethContract) {
+        console.log("[SwapModal] Using Ethereum contract:", ethContract.address);
         return { address: ethContract.address, chainId: 1 };
       }
       if (solContract) {
+        console.log("[SwapModal] Using Solana contract:", solContract.address);
         return { address: solContract.address, chainId: 101 };
       }
       
       // Use first contract
       const first = targetToken.contracts[0];
+      console.log("[SwapModal] Using first contract:", first.address, first.blockchain);
       return { 
         address: first.address, 
         chainId: getChainIdFromBlockchain(first.blockchain) 
       };
     }
     
+    // Fallback: try to find from primaryAssets if we have access
+    // This helps when external tokens have chainAggregation but no contracts
+    if (primaryAssets?.assets) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const matchingAsset = primaryAssets.assets.find((a: any) => 
+        a.symbol?.toUpperCase() === targetToken.symbol?.toUpperCase()
+      );
+      if (matchingAsset?.chainAggregation) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const chainData = matchingAsset.chainAggregation.find((c: any) => 
+          c.token?.address && c.token?.chainId
+        );
+        if (chainData?.token?.address) {
+          console.log("[SwapModal] Using chainAggregation address:", chainData.token.address);
+          return { 
+            address: chainData.token.address, 
+            chainId: chainData.token.chainId || 8453 
+          };
+        }
+      }
+    }
+    
+    console.log("[SwapModal] No address found for token:", targetToken.symbol);
     return { address: "", chainId: 8453 };
-  }, [targetToken]);
+  }, [targetToken, primaryAssets]);
 
   // Get wallet for signing
   const [primaryWallet] = useWallets();

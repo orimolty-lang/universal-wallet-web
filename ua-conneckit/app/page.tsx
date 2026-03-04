@@ -1380,13 +1380,32 @@ const HomeTab = ({
                   onClick={() => {
                     if (token.isExternal) {
                       // External tokens: open token detail modal
+                      // Build contracts from multiple sources
+                      let contracts = token.contracts || [];
+                      
+                      // Fallback: extract from chainBreakdown if contracts is empty
+                      if (contracts.length === 0 && token.chainBreakdown?.length > 0) {
+                        const chainIdToName: Record<number, string> = {
+                          1: "ethereum", 8453: "base", 42161: "arbitrum", 
+                          10: "optimism", 137: "polygon", 56: "bsc",
+                        };
+                        contracts = token.chainBreakdown
+                          .filter((c: { address?: string; chainId?: number }) => c.address)
+                          .map((c: { address: string; chainId: number }) => ({
+                            address: c.address,
+                            blockchain: chainIdToName[c.chainId] || `chain-${c.chainId}`,
+                          }));
+                      }
+                      
+                      console.log("[HomeTab] External token selected:", token.symbol, "contracts:", contracts);
+                      
                       onTokenSelect?.({
                         id: token.symbol.toLowerCase(),
                         symbol: token.symbol,
                         name: token.name,
                         logo: token.logo,
                         price: token.price,
-                        contracts: token.contracts,
+                        contracts,
                       });
                     } else {
                       // Primary UA tokens: toggle expansion
@@ -2333,15 +2352,25 @@ const App = () => {
     console.log("[CombinedAssets] mobulaAssets:", mobulaAssets?.length || 0);
     if (!primaryAssets) return null;
     
-    // Get symbols already in primary assets
+    // Get symbols already in primary assets (case-insensitive)
     const primarySymbols = new Set(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       primaryAssets.assets?.map((a: any) => a.symbol?.toUpperCase()) || []
     );
     
+    // Also track common stablecoins/tokens to avoid dupes
+    const commonTokens = new Set(["USDC", "USDT", "DAI", "ETH", "WETH", "SOL", "WSOL"]);
+    
     // Filter Mobula assets to only include tokens NOT in primary assets
     const externalAssets = mobulaAssets
-      .filter(ma => !primarySymbols.has(ma.asset.symbol?.toUpperCase()))
+      .filter(ma => {
+        const symbolUpper = ma.asset.symbol?.toUpperCase();
+        // Skip if already in primary assets
+        if (primarySymbols.has(symbolUpper)) return false;
+        // Skip common tokens that might be duped with slight naming differences
+        if (commonTokens.has(symbolUpper)) return false;
+        return true;
+      })
       .filter(ma => ma.token_balance > 0) // Show any token with balance
       .map(ma => {
         // Build contracts array from Mobula asset data or cross_chain_balances
@@ -2373,6 +2402,8 @@ const App = () => {
           });
         }
         
+        console.log("[CombinedAssets] External token:", ma.asset.symbol, "contracts:", contracts);
+        
         return {
           symbol: ma.asset.symbol,
           name: ma.asset.name,
@@ -2393,8 +2424,17 @@ const App = () => {
         };
       });
     
-    // Merge with primary assets
-    const mergedAssets = [...(primaryAssets.assets || []), ...externalAssets];
+    // Merge with primary assets, but dedupe by symbol (case-insensitive)
+    const seenSymbols = new Set<string>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const dedupedPrimary = (primaryAssets.assets || []).filter((a: any) => {
+      const sym = a.symbol?.toUpperCase();
+      if (seenSymbols.has(sym)) return false;
+      seenSymbols.add(sym);
+      return true;
+    });
+    
+    const mergedAssets = [...dedupedPrimary, ...externalAssets];
     
     // Calculate new total
     const externalTotal = externalAssets.reduce((sum, a) => sum + a.amountInUSD, 0);
