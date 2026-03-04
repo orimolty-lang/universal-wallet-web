@@ -17,7 +17,6 @@ import DepositDialog from "./components/DepositDialog";
 import AssetBreakdownDialog from "./components/AssetBreakdownDialog";
 import TokenDetailModal from "./components/TokenDetailModal";
 import SwapModal from "./components/SwapModal";
-import SellModal from "./components/SellModal";
 
 // Mobula API for token search
 const MOBULA_API_KEY = "a8e6a174-9dfd-4929-b0e0-9f6ece767923";
@@ -53,8 +52,8 @@ async function fetchMobulaWalletBalances(address: string): Promise<MobulaAsset[]
   }
   
   try {
-    // Use the multi-wallet endpoint to get all holdings
-    const url = `https://api.mobula.io/api/1/wallet/multi-portfolio?wallets=${address}&blockchains=Base,Ethereum,Arbitrum,Optimism,Polygon`;
+    // Use standard portfolio endpoint
+    const url = `https://api.mobula.io/api/1/wallet/portfolio?wallet=${address}&blockchains=Base,Ethereum,Arbitrum,Optimism,Polygon`;
     console.log("[Mobula] URL:", url);
     
     const response = await fetch(url, {
@@ -72,10 +71,8 @@ async function fetchMobulaWalletBalances(address: string): Promise<MobulaAsset[]
     const data = await response.json();
     console.log("[Mobula] Wallet response:", JSON.stringify(data).slice(0, 500));
     
-    // Handle multi-wallet response format
-    // It returns { data: { walletAddress: { assets: [...] } } }
-    const walletData = data.data?.[address] || data.data?.[address.toLowerCase()] || {};
-    const assets = walletData.assets || data.data?.assets || [];
+    // Standard portfolio returns { data: { assets: [...] } }
+    const assets = data.data?.assets || [];
     
     console.log("[Mobula] Found assets:", assets.length);
     return assets;
@@ -1243,7 +1240,6 @@ const HomeTab = ({
   onReceive,
   onSend,
   onConvert,
-  onSell,
 }: {
   accountInfo: AccountInfo | null;
   primaryAssets: IAssetsResponse | null;
@@ -1253,7 +1249,6 @@ const HomeTab = ({
   onReceive: () => void;
   onSend: () => void;
   onConvert: () => void;
-  onSell: (token: { symbol: string; name: string; balance: number; amountInUSD: number; price: number; logo?: string }) => void;
 }) => {
   // Use Set to allow multiple tokens to be expanded simultaneously
   const [expandedTokens, setExpandedTokens] = useState<Set<string>>(new Set());
@@ -1419,19 +1414,12 @@ const HomeTab = ({
                       </div>
                     )}
                     
-                    {/* Sell button - only show for non-stablecoin tokens */}
+                    {/* Sell button - opens Convert modal */}
                     {!["USDC", "USDT", "DAI", "BUSD"].includes(token.symbol.toUpperCase()) && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          onSell({
-                            symbol: token.symbol,
-                            name: token.name,
-                            balance: token.balance,
-                            amountInUSD: token.amountInUSD,
-                            price: token.price,
-                            logo: token.logo,
-                          });
+                          onConvert(); // Convert modal will handle sell
                         }}
                         className="w-full bg-red-500/20 text-red-400 py-2 rounded-lg font-medium hover:bg-red-500/30 transition-colors"
                       >
@@ -2027,15 +2015,7 @@ const App = () => {
   const [showAssetBreakdown, setShowAssetBreakdown] = useState(false);
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [showSellModal, setShowSellModal] = useState(false);
-  const [sellToken, setSellToken] = useState<{
-    symbol: string;
-    name: string;
-    balance: number;
-    amountInUSD: number;
-    price: number;
-    logo?: string;
-  } | null>(null);
+  // Sell is handled by SwapModal with direction flip
 
   // Profile settings (persisted to localStorage)
   const [profile, setProfile] = useState<ProfileSettings>(() => {
@@ -2101,47 +2081,25 @@ const App = () => {
     }
   }, [universalAccountInstance]);
 
-  // Fetch Mobula wallet balances for external tokens
-  // Try both smart account AND owner address since tokens might be on either
+  // Fetch Mobula wallet balances for external tokens (UA smart accounts only)
   const fetchMobulaAssets = useCallback(async () => {
-    if (!accountInfo?.evmSmartAccount && !accountInfo?.ownerAddress) return;
+    if (!accountInfo?.evmSmartAccount) return;
     try {
-      // Fetch for both addresses and combine
-      const addresses = [
-        accountInfo.evmSmartAccount,
-        accountInfo.ownerAddress,
-      ].filter(Boolean);
-      
-      console.log("[Mobula] Fetching for addresses:", addresses);
-      
-      const allAssets: MobulaAsset[] = [];
-      const seenSymbols = new Set<string>();
-      
-      for (const addr of addresses) {
-        if (!addr) continue;
-        const assets = await fetchMobulaWalletBalances(addr);
-        for (const asset of assets) {
-          // Avoid duplicates
-          if (!seenSymbols.has(asset.asset.symbol)) {
-            seenSymbols.add(asset.asset.symbol);
-            allAssets.push(asset);
-          }
-        }
-      }
-      
-      console.log("[Mobula] Total unique assets:", allAssets.length);
-      setMobulaAssets(allAssets);
+      console.log("[Mobula] Fetching for UA smart account:", accountInfo.evmSmartAccount);
+      const assets = await fetchMobulaWalletBalances(accountInfo.evmSmartAccount);
+      console.log("[Mobula] Found assets:", assets.length);
+      setMobulaAssets(assets);
     } catch (error) {
       console.error("Failed to fetch Mobula assets:", error);
     }
-  }, [accountInfo?.evmSmartAccount, accountInfo?.ownerAddress]);
+  }, [accountInfo?.evmSmartAccount]);
 
   // Fetch Mobula assets when account info is available
   useEffect(() => {
-    if (accountInfo?.evmSmartAccount || accountInfo?.ownerAddress) {
+    if (accountInfo?.evmSmartAccount) {
       fetchMobulaAssets();
     }
-  }, [accountInfo?.evmSmartAccount, accountInfo?.ownerAddress, fetchMobulaAssets]);
+  }, [accountInfo?.evmSmartAccount, fetchMobulaAssets]);
 
   // Merge UA primary assets with Mobula external assets
   const combinedAssets = useMemo(() => {
@@ -2234,10 +2192,6 @@ const App = () => {
           onReceive={() => setShowReceiveModal(true)}
           onSend={() => setShowSendModal(true)}
           onConvert={() => setShowConvertModal(true)}
-          onSell={(token) => {
-            setSellToken(token);
-            setShowSellModal(true);
-          }}
         />
       )}
       {activeTab === "search" && (
@@ -2287,20 +2241,7 @@ const App = () => {
         assets={primaryAssets}
       />
 
-      <SellModal
-        isOpen={showSellModal}
-        onClose={() => {
-          setShowSellModal(false);
-          setSellToken(null);
-        }}
-        token={sellToken}
-        universalAccount={universalAccountInstance}
-        onSellSuccess={(txId) => {
-          console.log("Sell success:", txId);
-          fetchAssets(); // Refresh balances
-          fetchMobulaAssets();
-        }}
-      />
+      {/* Sell is handled by SwapModal with direction flip */}
 
       {accountInfo && (
         <DepositDialog

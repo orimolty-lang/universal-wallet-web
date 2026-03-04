@@ -195,6 +195,14 @@ interface SwapParams {
   slippageBps?: number;
 }
 
+interface SellParams {
+  ua: UniversalAccount;
+  tokenAddress: string;
+  tokenChainId: number;
+  amountRaw: string; // Raw token amount (with decimals)
+  slippagePct?: number;
+}
+
 // ============ LI.FI API FUNCTIONS ============
 
 /**
@@ -744,6 +752,60 @@ export function getChainIdFromBlockchain(blockchain: string): number {
     solana: 101,
   };
   return mapping[blockchain.toLowerCase()] || 8453; // Default to Base
+}
+
+/**
+ * Execute SELL using UA SDK's native createSellTransaction
+ * Sells token → USDC/stablecoin
+ */
+export async function executeSell(params: SellParams): Promise<SwapResult> {
+  const { ua, tokenAddress, tokenChainId, amountRaw, slippagePct = 25 } = params;
+
+  console.log("[Sell] Starting sell:", { tokenAddress, tokenChainId, amountRaw });
+
+  try {
+    // Map chain ID to UA CHAIN_ID
+    let uaChainId = tokenChainId;
+    if (tokenChainId === 8453) uaChainId = CHAIN_ID.BASE_MAINNET;
+    if (tokenChainId === 1) uaChainId = CHAIN_ID.ETHEREUM_MAINNET;
+    if (tokenChainId === 42161) uaChainId = CHAIN_ID.ARBITRUM_MAINNET_ONE;
+    if (tokenChainId === 10) uaChainId = CHAIN_ID.OPTIMISM_MAINNET;
+    if (tokenChainId === 137) uaChainId = CHAIN_ID.POLYGON_MAINNET;
+    if (tokenChainId === 101) uaChainId = CHAIN_ID.SOLANA_MAINNET;
+
+    console.log("[Sell] Creating sell transaction, UA chainId:", uaChainId);
+
+    // Use UA SDK's native createSellTransaction
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sellTx = await (ua as any).createSellTransaction({
+      token: {
+        chainId: uaChainId,
+        address: tokenAddress,
+      },
+      amount: amountRaw,
+      slippageTolerance: String(slippagePct),
+      maxSlippage: String(slippagePct),
+    });
+
+    if (!sellTx?.rootHash) {
+      return { success: false, error: "Failed to create sell transaction" };
+    }
+
+    console.log("[Sell] Sell transaction created, rootHash:", sellTx.rootHash);
+
+    return {
+      success: true,
+      transaction: sellTx,
+      rootHash: sellTx.rootHash,
+      requiresSignature: true,
+    };
+  } catch (error) {
+    console.error("[Sell] Error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Sell failed",
+    };
+  }
 }
 
 export { RELAY_CHAIN_IDS, USDC_ADDRESSES, TOKEN_TYPE };
