@@ -15,9 +15,111 @@ import {
 } from "@particle-network/universal-account-sdk";
 import DepositDialog from "./components/DepositDialog";
 import AssetBreakdownDialog from "./components/AssetBreakdownDialog";
+import TokenDetailModal from "./components/TokenDetailModal";
 
 // Mobula API for token search
 const MOBULA_API_KEY = "a8e6a174-9dfd-4929-b0e0-9f6ece767923";
+
+// Splash Screen - shows briefly on app start
+const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
+  useEffect(() => {
+    const timer = setTimeout(onComplete, 2000); // Show for 2 seconds
+    return () => clearTimeout(timer);
+  }, [onComplete]);
+
+  return (
+    <div className="fixed inset-0 bg-[#0a0a0a] flex items-center justify-center z-[100]">
+      {/* Animated background */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div 
+          className="absolute w-[600px] h-[600px] rounded-full opacity-30"
+          style={{
+            background: 'radial-gradient(circle, rgba(168,85,247,0.4) 0%, rgba(34,211,238,0.2) 50%, transparent 70%)',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            filter: 'blur(80px)',
+            animation: 'splashPulse 2s ease-in-out infinite',
+          }}
+        />
+      </div>
+      
+      {/* Logo */}
+      <div className="relative flex flex-col items-center">
+        <div className="relative mb-6">
+          <img 
+            src="/universal-wallet-web/omni-logo.png" 
+            alt="Omni" 
+            className="w-32 h-32 rounded-2xl"
+            style={{
+              animation: 'splashBreathe 1.5s ease-in-out infinite',
+            }}
+          />
+          {/* Glow rings */}
+          <div 
+            className="absolute -inset-4 rounded-3xl bg-gradient-to-r from-purple-500/50 via-cyan-400/50 to-purple-500/50 blur-2xl -z-10"
+            style={{ animation: 'splashGlow 2s ease-in-out infinite' }}
+          />
+          <div 
+            className="absolute -inset-8 rounded-3xl bg-gradient-to-r from-cyan-400/30 via-purple-500/30 to-cyan-400/30 blur-3xl -z-20"
+            style={{ animation: 'splashGlow 2s ease-in-out infinite reverse' }}
+          />
+        </div>
+        
+        {/* Text fades in */}
+        <div 
+          className="text-white text-4xl font-bold tracking-widest"
+          style={{ animation: 'splashFadeIn 0.8s ease-out 0.3s forwards', opacity: 0 }}
+        >
+          OMNI
+        </div>
+      </div>
+      
+      <style jsx>{`
+        @keyframes splashBreathe {
+          0%, 100% {
+            transform: scale(1) rotate(0deg);
+            filter: brightness(1) saturate(1);
+          }
+          50% {
+            transform: scale(1.15) rotate(5deg);
+            filter: brightness(1.4) saturate(1.3);
+          }
+        }
+        @keyframes splashGlow {
+          0%, 100% {
+            opacity: 0.4;
+            transform: scale(1);
+          }
+          50% {
+            opacity: 0.8;
+            transform: scale(1.2);
+          }
+        }
+        @keyframes splashPulse {
+          0%, 100% {
+            transform: translate(-50%, -50%) scale(1);
+            opacity: 0.3;
+          }
+          50% {
+            transform: translate(-50%, -50%) scale(1.3);
+            opacity: 0.5;
+          }
+        }
+        @keyframes splashFadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
+    </div>
+  );
+};
 
 // Types
 type TabType = "home" | "search" | "activity" | "settings";
@@ -37,6 +139,13 @@ interface TokenResult {
   price_change_24h?: number;
   market_cap?: number;
   contracts?: Array<{ address: string; blockchain: string }>;
+  // Extended Mobula data
+  liquidity?: number;
+  volume?: number;
+  twitter?: string;
+  website?: string;
+  totalSupply?: number;
+  circulatingSupply?: number;
 }
 
 interface ProfileSettings {
@@ -100,20 +209,173 @@ const formatMarketCap = (mc: number): string => {
   return `$${mc.toFixed(2)}`;
 };
 
-// Login Screen
-const LoginScreen = () => (
-  <div className="flex flex-col items-center justify-center min-h-screen bg-[#0a0a0a] p-6">
-    <div className="text-6xl mb-4">🍊</div>
-    <h1 className="text-2xl font-bold text-white mb-1">Universal Wallet</h1>
-    <p className="text-gray-500 text-sm mb-12">One account. Any chain.</p>
-    <div className="w-full max-w-xs">
-      <ConnectButton label="Get Started" />
+// Animated Login Screen - Omni branding
+const LoginScreen = () => {
+  return (
+    <div className="flex flex-col h-screen bg-[#0a0a0a] overflow-hidden relative" style={{ maxHeight: '100dvh' }}>
+      {/* Animated gradient orb background - purple/cyan theme */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div 
+          className="absolute w-[500px] h-[500px] rounded-full opacity-40"
+          style={{
+            background: 'radial-gradient(circle, rgba(168,85,247,0.4) 0%, rgba(34,211,238,0.2) 40%, transparent 70%)',
+            top: '15%',
+            left: '-10%',
+            filter: 'blur(60px)',
+          }}
+        />
+        <div 
+          className="absolute w-[400px] h-[400px] rounded-full opacity-30"
+          style={{
+            background: 'radial-gradient(circle, rgba(34,211,238,0.3) 0%, rgba(168,85,247,0.1) 40%, transparent 60%)',
+            bottom: '20%',
+            right: '-15%',
+            filter: 'blur(80px)',
+          }}
+        />
+        {/* Flowing curved line */}
+        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 400 800" preserveAspectRatio="xMidYMid slice">
+          <defs>
+            <linearGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#a855f7" stopOpacity="0" />
+              <stop offset="30%" stopColor="#a855f7" stopOpacity="0.5" />
+              <stop offset="70%" stopColor="#22d3ee" stopOpacity="0.3" />
+              <stop offset="100%" stopColor="#22d3ee" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <path
+            d="M -50 150 Q 100 200 80 350 Q 60 500 200 550 Q 340 600 300 750"
+            fill="none"
+            stroke="url(#lineGradient)"
+            strokeWidth="2"
+            className="animate-pulse"
+          />
+        </svg>
+      </div>
+
+      {/* Content wrapper - centered vertically */}
+      <div className="flex-1 flex flex-col justify-center px-8">
+        {/* Logo */}
+        <div className="flex items-center justify-center mb-12">
+          <div className="flex items-center gap-1">
+            <div className="relative">
+              <img 
+                src="/universal-wallet-web/omni-logo.png" 
+                alt="O" 
+                className="w-14 h-14 rounded-xl animate-breathe-strong" 
+              />
+              <div className="absolute -inset-2 rounded-2xl bg-gradient-to-r from-purple-500/40 via-cyan-400/40 to-purple-500/40 blur-xl animate-glow-pulse -z-10" />
+            </div>
+            <span className="text-white text-3xl font-bold tracking-wider">MNI</span>
+          </div>
+        </div>
+
+        {/* Taglines */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-4 animate-fadeInLeft" style={{ animationDelay: '0.1s' }}>
+            <span className="px-4 py-2 rounded-lg border-2 border-purple-500 text-purple-400 text-xl font-bold bg-purple-500/10">One</span>
+            <span className="text-white text-2xl font-light">Balance</span>
+          </div>
+          <div className="flex items-center gap-4 ml-6 animate-fadeInLeft" style={{ animationDelay: '0.2s' }}>
+            <span className="px-4 py-2 rounded-lg border-2 border-cyan-500 text-cyan-400 text-xl font-bold bg-cyan-500/10">Any</span>
+            <span className="text-white text-2xl font-light">Chain</span>
+          </div>
+          <div className="flex items-center gap-4 animate-fadeInLeft" style={{ animationDelay: '0.3s' }}>
+            <span className="px-4 py-2 rounded-lg border-2 border-purple-500 text-purple-400 text-xl font-bold bg-purple-500/10">Trade</span>
+            <span className="text-white text-2xl font-light">Tokens & Perps</span>
+          </div>
+          <div className="flex items-center gap-4 ml-6 animate-fadeInLeft" style={{ animationDelay: '0.4s' }}>
+            <span className="px-4 py-2 rounded-lg border-2 border-cyan-500 text-cyan-400 text-xl font-bold bg-cyan-500/10">Call</span>
+            <span className="text-white text-2xl font-light">Contracts</span>
+          </div>
+        </div>
+        
+        {/* Chain logos */}
+        <div className="flex items-center gap-3 mt-8 ml-1">
+          {[CHAIN_LOGOS["Ethereum"], CHAIN_LOGOS["Base"], CHAIN_LOGOS["Solana"], CHAIN_LOGOS["Arbitrum"], CHAIN_LOGOS["BNB Chain"]].map((logo, i) => (
+            <div key={i} className="w-8 h-8 rounded-full bg-gray-800/80 border border-gray-700/50 p-1">
+              <img src={logo} alt="" className="w-full h-full rounded-full" />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Bottom section - CTA */}
+      <div className="px-6 pb-8" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 32px)' }}>
+        <ConnectButton label="Get Started" />
+      </div>
+      
+      {/* CSS for animations */}
+      <style jsx>{`
+        @keyframes fadeInLeft {
+          from {
+            opacity: 0;
+            transform: translateX(-20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+        .animate-fadeInLeft {
+          animation: fadeInLeft 0.6s ease-out forwards;
+          opacity: 0;
+        }
+        @keyframes breatheStrong {
+          0%, 100% {
+            transform: scale(1) rotate(0deg);
+            filter: brightness(1) saturate(1);
+          }
+          25% {
+            transform: scale(1.15) rotate(-5deg);
+            filter: brightness(1.3) saturate(1.2);
+          }
+          50% {
+            transform: scale(1.2) rotate(0deg);
+            filter: brightness(1.4) saturate(1.3);
+          }
+          75% {
+            transform: scale(1.15) rotate(5deg);
+            filter: brightness(1.3) saturate(1.2);
+          }
+        }
+        @keyframes breatheGlow {
+          0%, 100% {
+            opacity: 0.4;
+            transform: scale(1);
+          }
+          50% {
+            opacity: 0.8;
+            transform: scale(1.4);
+          }
+        }
+        @keyframes glowPulse {
+          0%, 100% {
+            opacity: 0.3;
+            transform: scale(1) rotate(0deg);
+          }
+          50% {
+            opacity: 0.7;
+            transform: scale(1.2) rotate(180deg);
+          }
+        }
+        .animate-breathe-strong {
+          animation: breatheStrong 2.5s ease-in-out infinite;
+        }
+        .animate-breathe-glow {
+          animation: breatheGlow 2.5s ease-in-out infinite;
+        }
+        .animate-glow-pulse {
+          animation: glowPulse 4s ease-in-out infinite;
+        }
+      `}</style>
     </div>
-  </div>
-);
+  );
+};
 
 // Chain name mapping
-const CHAIN_NAMES: Record<number, string> = {
+// Chain ID to name mapping (including Solana)
+const CHAIN_NAMES: Record<number | string, string> = {
   1: "Ethereum",
   10: "Optimism", 
   56: "BNB Chain",
@@ -121,9 +383,112 @@ const CHAIN_NAMES: Record<number, string> = {
   8453: "Base",
   42161: "Arbitrum",
   43114: "Avalanche",
+  101: "Solana",
+  // String variants for Particle UA
+  "solana:mainnet": "Solana",
+  "evm:1": "Ethereum",
+  "evm:10": "Optimism",
+  "evm:56": "BNB Chain",
+  "evm:137": "Polygon",
+  "evm:8453": "Base",
+  "evm:42161": "Arbitrum",
 };
 
-const getChainName = (chainId: number) => CHAIN_NAMES[chainId] || `Chain ${chainId}`;
+// Chain logo URLs (actual images)
+const CHAIN_LOGOS: Record<string, string> = {
+  "Ethereum": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png",
+  "Optimism": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/optimism/info/logo.png",
+  "BNB Chain": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/binance/info/logo.png",
+  "Polygon": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png",
+  "Base": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/info/logo.png",
+  "Arbitrum": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png",
+  "Avalanche": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/avalanchec/info/logo.png",
+  "Solana": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png",
+};
+
+// Fallback chain icons (emojis)
+const CHAIN_ICONS: Record<string, string> = {
+  "Ethereum": "⟠",
+  "Optimism": "🔴",
+  "BNB Chain": "💛",
+  "Polygon": "💜",
+  "Base": "🔵",
+  "Arbitrum": "🔷",
+  "Avalanche": "🔺",
+  "Solana": "◎",
+};
+
+// Known token logos (cache)
+const TOKEN_LOGOS: Record<string, string> = {
+  "ETH": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png",
+  "USDC": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png",
+  "USDT": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xdAC17F958D2ee523a2206206994597C13D831ec7/logo.png",
+  "SOL": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png",
+  "BTC": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/bitcoin/info/logo.png",
+  "WBTC": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599/logo.png",
+  "DAI": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x6B175474E89094C44Da98b954EescdeCB5BE3830/logo.png",
+  "MATIC": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png",
+  "BNB": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/binance/info/logo.png",
+  "AVAX": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/avalanchec/info/logo.png",
+  "ARB": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png",
+  "OP": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/optimism/info/logo.png",
+};
+
+const getChainName = (chainId: number | string) => {
+  if (typeof chainId === 'string') {
+    return CHAIN_NAMES[chainId] || chainId;
+  }
+  return CHAIN_NAMES[chainId] || `Chain ${chainId}`;
+};
+
+const getChainIcon = (chainName: string) => CHAIN_ICONS[chainName] || "•";
+
+// Token Logo component with fallback
+const TokenLogo = ({ symbol, size = 40 }: { symbol: string; size?: number }) => {
+  const [imgError, setImgError] = useState(false);
+  const logoUrl = TOKEN_LOGOS[symbol.toUpperCase()];
+  
+  if (!logoUrl || imgError) {
+    return (
+      <div 
+        className="rounded-full bg-gray-800 flex items-center justify-center"
+        style={{ width: size, height: size, fontSize: size * 0.5 }}
+      >
+        {getTokenIcon(symbol)}
+      </div>
+    );
+  }
+  
+  return (
+    <img 
+      src={logoUrl}
+      alt={symbol}
+      className="rounded-full bg-gray-800"
+      style={{ width: size, height: size }}
+      onError={() => setImgError(true)}
+    />
+  );
+};
+
+// Chain Logo component with fallback  
+const ChainLogo = ({ chainName, size = 16 }: { chainName: string; size?: number }) => {
+  const [imgError, setImgError] = useState(false);
+  const logoUrl = CHAIN_LOGOS[chainName];
+  
+  if (!logoUrl || imgError) {
+    return <span style={{ fontSize: size }}>{getChainIcon(chainName)}</span>;
+  }
+  
+  return (
+    <img 
+      src={logoUrl}
+      alt={chainName}
+      className="rounded-full"
+      style={{ width: size, height: size }}
+      onError={() => setImgError(true)}
+    />
+  );
+};
 
 // Bottom Sheet Modal wrapper - proper sliding animation
 const BottomSheet = ({ 
@@ -146,12 +511,23 @@ const BottomSheet = ({
   useEffect(() => {
     if (isOpen) {
       setIsVisible(true);
+      // Prevent body scroll when modal is open
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
       requestAnimationFrame(() => setIsAnimating(true));
     } else {
       setIsAnimating(false);
-      const timer = setTimeout(() => setIsVisible(false), 300);
+      // Restore body scroll when modal closes
+      document.body.style.overflow = '';
+      document.body.style.touchAction = '';
+      const timer = setTimeout(() => setIsVisible(false), 500);
       return () => clearTimeout(timer);
     }
+    // Cleanup on unmount
+    return () => {
+      document.body.style.overflow = '';
+      document.body.style.touchAction = '';
+    };
   }, [isOpen]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -182,18 +558,23 @@ const BottomSheet = ({
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-end justify-center"
+      className="fixed inset-0 z-50 flex items-end justify-center touch-none"
       onClick={onClose}
+      onTouchMove={(e) => e.stopPropagation()}
     >
-      {/* Backdrop */}
+      {/* Backdrop - blocks touch events */}
       <div 
-        className={`absolute inset-0 bg-black transition-opacity duration-300 ${isAnimating ? 'opacity-80' : 'opacity-0'}`}
+        className={`absolute inset-0 bg-black transition-opacity duration-500 ${isAnimating ? 'opacity-80' : 'opacity-0'}`}
+        onTouchMove={(e) => e.preventDefault()}
       />
       {/* Sheet */}
       <div 
         ref={sheetRef}
-        className={`relative bg-[#1a1a1a] ${fullScreen ? 'h-full' : 'max-h-[90vh]'} w-full max-w-md rounded-t-3xl overflow-hidden transition-transform duration-300 ease-out`}
-        style={{ transform: isAnimating ? 'translateY(0)' : 'translateY(100%)' }}
+        className={`relative bg-[#1a1a1a] ${fullScreen ? 'h-full' : 'max-h-[90vh]'} w-full max-w-md rounded-t-3xl overflow-hidden touch-auto`}
+        style={{ 
+          transform: isAnimating ? 'translateY(0)' : 'translateY(100%)',
+          transition: 'transform 0.5s cubic-bezier(0.32, 0.72, 0, 1)'
+        }}
         onClick={e => e.stopPropagation()}
       >
         {/* Drag Handle */}
@@ -358,6 +739,7 @@ const ReceiveModal = ({
   solanaAddress: string;
 }) => {
   const [copied, setCopied] = useState<string | null>(null);
+  const [qrAddress, setQrAddress] = useState<{ chain: string; address: string } | null>(null);
 
   const handleCopy = (addr: string, type: string) => {
     copyToClipboard(addr);
@@ -365,45 +747,90 @@ const ReceiveModal = ({
     setTimeout(() => setCopied(null), 2000);
   };
 
+  const truncateAddr = (addr: string) => addr ? `${addr.slice(0, 4)}...${addr.slice(-3)}` : "";
+
   const chains = [
-    { name: "Ethereum", icon: "⟠", address: evmAddress, type: "evm" },
-    { name: "Base", icon: "🔵", address: evmAddress, type: "evm" },
-    { name: "Arbitrum", icon: "🔷", address: evmAddress, type: "evm" },
-    { name: "Optimism", icon: "🔴", address: evmAddress, type: "evm" },
-    { name: "Polygon", icon: "💜", address: evmAddress, type: "evm" },
-    { name: "Solana", icon: "◎", address: solanaAddress, type: "sol" },
+    { name: "Solana", logo: CHAIN_LOGOS["Solana"], address: solanaAddress },
+    { name: "Ethereum", logo: CHAIN_LOGOS["Ethereum"], address: evmAddress },
+    { name: "Base", logo: CHAIN_LOGOS["Base"], address: evmAddress },
+    { name: "BNB Chain", logo: CHAIN_LOGOS["BNB Chain"], address: evmAddress },
+    { name: "Arbitrum", logo: CHAIN_LOGOS["Arbitrum"], address: evmAddress },
+    { name: "Polygon", logo: CHAIN_LOGOS["Polygon"], address: evmAddress },
+    { name: "Optimism", logo: CHAIN_LOGOS["Optimism"], address: evmAddress },
+    { name: "Avalanche", logo: CHAIN_LOGOS["Avalanche"], address: evmAddress },
   ];
 
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose}>
-      <div className="px-6 pb-8">
-        <h2 className="text-white text-xl font-bold mb-4 text-center">Receive</h2>
+      <div className="px-5 pb-8">
+        <h2 className="text-white text-xl font-bold mb-2">Receive</h2>
         
-        <p className="text-gray-400 text-sm mb-4 text-center">
-          Your Universal Account works across all chains. Use the same address for EVM chains.
+        <p className="text-gray-400 text-sm mb-5">
+          Deposit any token on supported networks. All EVM chains share the same address.
         </p>
 
-        <div className="space-y-3">
+        <p className="text-gray-500 text-xs mb-3 uppercase tracking-wide">Your receive address</p>
+
+        <div className="space-y-2 max-h-[50vh] overflow-y-auto">
           {chains.map((chain) => (
-            <div key={chain.name} className="bg-gray-800 rounded-xl p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">{chain.icon}</span>
-                  <span className="text-white">{chain.name}</span>
-                </div>
+            <div key={chain.name} className="bg-[#252525] rounded-xl px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <img src={chain.logo} alt={chain.name} className="w-9 h-9 rounded-full" />
+                <span className="text-white font-medium">{chain.name}</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-gray-400 text-sm font-mono">{truncateAddr(chain.address)}</span>
                 <button
                   onClick={() => handleCopy(chain.address, chain.name)}
-                  className="bg-gray-700 text-white px-3 py-1 rounded-lg text-sm"
+                  className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                  title="Copy address"
                 >
-                  {copied === chain.name ? "Copied!" : "Copy"}
+                  {copied === chain.name ? (
+                    <svg className="w-5 h-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  )}
                 </button>
-              </div>
-              <div className="text-gray-500 text-xs mt-2 font-mono break-all">
-                {chain.address}
+                <button
+                  onClick={() => setQrAddress({ chain: chain.name, address: chain.address })}
+                  className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                  title="Show QR code"
+                >
+                  <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h4v4H4V4zm0 12h4v4H4v-4zm12-12h4v4h-4V4zm0 12h4v4h-4v-4zm-6-6h4v4h-4v-4z" />
+                  </svg>
+                </button>
               </div>
             </div>
           ))}
         </div>
+
+        {/* QR Code Modal */}
+        {qrAddress && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50" onClick={() => setQrAddress(null)}>
+            <div className="bg-[#1a1a1a] rounded-2xl p-6 mx-4 max-w-sm w-full" onClick={e => e.stopPropagation()}>
+              <h3 className="text-white text-lg font-bold mb-4 text-center">{qrAddress.chain} Address</h3>
+              <div className="bg-white p-4 rounded-xl mb-4 flex items-center justify-center">
+                <img 
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${qrAddress.address}`} 
+                  alt="QR Code" 
+                  className="w-48 h-48"
+                />
+              </div>
+              <p className="text-gray-400 text-xs font-mono text-center break-all mb-4">{qrAddress.address}</p>
+              <button
+                onClick={() => setQrAddress(null)}
+                className="w-full bg-purple-600 text-white py-3 rounded-xl font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </BottomSheet>
   );
@@ -693,67 +1120,7 @@ const AgentModal = ({
   );
 };
 
-// Token Detail Modal
-const TokenDetailModal = ({
-  token,
-  onClose,
-}: {
-  token: TokenResult | null;
-  onClose: () => void;
-}) => {
-  return (
-    <BottomSheet isOpen={!!token} onClose={onClose}>
-      {token && (
-        <div className="px-6 pb-8">
-          <div className="flex items-center justify-center gap-3 mb-6">
-            {token.logo ? (
-              <img src={token.logo} alt={token.symbol} className="w-12 h-12 rounded-full" onError={(e) => {
-                (e.target as HTMLImageElement).style.display = 'none';
-              }} />
-            ) : (
-              <div className="w-12 h-12 rounded-full bg-gray-800 flex items-center justify-center text-2xl">
-                {getTokenIcon(token.symbol)}
-              </div>
-            )}
-            <div>
-              <div className="text-white font-bold text-xl">{token.name}</div>
-              <div className="text-gray-500 uppercase">{token.symbol}</div>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="bg-gray-800 rounded-xl p-4">
-              <div className="text-gray-500 text-sm">Price</div>
-              <div className="text-white text-2xl font-bold">{formatPrice(typeof token.price === 'number' ? token.price : 0)}</div>
-              {typeof token.price_change_24h === 'number' && (
-                <div className={`text-sm ${token.price_change_24h >= 0 ? "text-green-500" : "text-red-500"}`}>
-                  {token.price_change_24h >= 0 ? "+" : ""}{token.price_change_24h.toFixed(2)}% (24h)
-                </div>
-              )}
-            </div>
-
-            <div className="bg-gray-800 rounded-xl p-4">
-              <div className="text-gray-500 text-sm">Market Cap</div>
-              <div className="text-white text-xl font-bold">{formatMarketCap(token.market_cap || 0)}</div>
-            </div>
-
-            {token.contracts && token.contracts.length > 0 && (
-              <div className="bg-gray-800 rounded-xl p-4">
-                <div className="text-gray-500 text-sm mb-2">Contracts</div>
-                {token.contracts.slice(0, 3).map((c, i) => (
-                  <div key={i} className="flex items-center justify-between py-1">
-                    <span className="text-gray-400 text-sm">{c.blockchain}</span>
-                    <span className="text-white text-xs font-mono">{formatAddress(c.address)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </BottomSheet>
-  );
-};
+// TokenDetailModal is now imported from ./components/TokenDetailModal
 
 // Home Tab
 const HomeTab = ({ 
@@ -775,7 +1142,20 @@ const HomeTab = ({
   onSend: () => void;
   onConvert: () => void;
 }) => {
-  const [expandedToken, setExpandedToken] = useState<string | null>(null);
+  // Use Set to allow multiple tokens to be expanded simultaneously
+  const [expandedTokens, setExpandedTokens] = useState<Set<string>>(new Set());
+  
+  const toggleExpanded = (symbol: string) => {
+    setExpandedTokens(prev => {
+      const next = new Set(prev);
+      if (next.has(symbol)) {
+        next.delete(symbol);
+      } else {
+        next.add(symbol);
+      }
+      return next;
+    });
+  };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const tokens = primaryAssets?.assets?.map((asset: any) => ({
@@ -858,12 +1238,11 @@ const HomeTab = ({
                 {/* Main Token Row */}
                 <button 
                   className="w-full flex items-center justify-between py-4"
-                  onClick={() => setExpandedToken(expandedToken === token.symbol ? null : token.symbol)}
+                  onClick={() => toggleExpanded(token.symbol)}
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-lg">
-                      {getTokenIcon(token.symbol)}
-                    </div>
+                    {/* Token Logo */}
+                    <TokenLogo symbol={token.symbol} size={40} />
                     <div className="text-left">
                       <div className="text-white font-medium">{token.name}</div>
                       <div className="text-gray-500 text-sm">{token.balance.toFixed(4)} {token.symbol}</div>
@@ -877,7 +1256,7 @@ const HomeTab = ({
                       )}
                     </div>
                     {token.chainBreakdown.length > 0 && (
-                      <span className={`text-gray-500 text-sm transition-transform ${expandedToken === token.symbol ? 'rotate-180' : ''}`}>
+                      <span className={`text-gray-500 text-sm transition-transform ${expandedTokens.has(token.symbol) ? 'rotate-180' : ''}`}>
                         ▼
                       </span>
                     )}
@@ -885,12 +1264,12 @@ const HomeTab = ({
                 </button>
                 
                 {/* Chain Breakdown (Expanded) */}
-                {expandedToken === token.symbol && token.chainBreakdown.length > 0 && (
+                {expandedTokens.has(token.symbol) && token.chainBreakdown.length > 0 && (
                   <div className="pl-14 pb-4 space-y-2">
                     {token.chainBreakdown.map((chain, j) => (
                       <div key={j} className="flex items-center justify-between text-sm">
                         <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full bg-gray-600" />
+                          <ChainLogo chainName={chain.chainName} size={16} />
                           <span className="text-gray-400">{chain.chainName}</span>
                         </div>
                         <div className="text-right">
@@ -918,13 +1297,55 @@ const HomeTab = ({
 };
 
 // Search Tab with Mobula API
-const SearchTab = () => {
+const SearchTab = ({ 
+  primaryAssets,
+  onSwap,
+  onSend,
+}: { 
+  primaryAssets: IAssetsResponse | null;
+  onSwap?: () => void;
+  onSend?: () => void;
+}) => {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<TokenResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedToken, setSelectedToken] = useState<TokenResult | null>(null);
-  const recentSearches = ["bitcoin", "ethereum", "solana"];
+
+  // Calculate user balance for selected token
+  const getUserBalance = useCallback((token: TokenResult | null) => {
+    if (!token || !primaryAssets?.assets) return null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const userAsset = primaryAssets.assets.find((a: any) => 
+      a.symbol?.toUpperCase() === token.symbol.toUpperCase()
+    );
+    if (!userAsset) return null;
+    return {
+      amount: typeof userAsset.amount === 'string' ? parseFloat(userAsset.amount) : (userAsset.amount || 0),
+      amountInUSD: userAsset.amountInUSD || 0,
+    };
+  }, [primaryAssets]);
+  
+  // Recent searches - persisted to localStorage
+  // Recent searches - store full token data for rich display
+  const [recentTokens, setRecentTokens] = useState<TokenResult[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('recentTokensV2');
+      if (saved) {
+        try { return JSON.parse(saved); } catch { return []; }
+      }
+    }
+    return [];
+  });
+  
+  const addToRecentTokens = (token: TokenResult) => {
+    setRecentTokens(prev => {
+      const filtered = prev.filter(t => t.id !== token.id);
+      const updated = [token, ...filtered].slice(0, 10);
+      localStorage.setItem('recentTokensV2', JSON.stringify(updated));
+      return updated;
+    });
+  };
 
   const searchTokens = async (q: string) => {
     if (!q.trim() || q.length < 2) {
@@ -961,6 +1382,12 @@ const SearchTab = () => {
         market_cap?: number;
         contracts?: string[];
         blockchains?: string[];
+        liquidity?: number;
+        volume?: number;
+        twitter?: string;
+        website?: string;
+        total_supply?: number;
+        circulating_supply?: number;
       }) => {
         // Map contracts and blockchains arrays together
         const contractsList: Array<{ address: string; blockchain: string }> = [];
@@ -982,6 +1409,13 @@ const SearchTab = () => {
           price_change_24h: typeof t.price_change_24h === 'number' ? t.price_change_24h : undefined,
           market_cap: typeof t.market_cap === 'number' ? t.market_cap : undefined,
           contracts: contractsList,
+          // Extended data
+          liquidity: typeof t.liquidity === 'number' ? t.liquidity : undefined,
+          volume: typeof t.volume === 'number' ? t.volume : undefined,
+          twitter: t.twitter || undefined,
+          website: t.website || undefined,
+          totalSupply: typeof t.total_supply === 'number' ? t.total_supply : undefined,
+          circulatingSupply: typeof t.circulating_supply === 'number' ? t.circulating_supply : undefined,
         };
       });
       setResults(tokens);
@@ -1012,16 +1446,61 @@ const SearchTab = () => {
       
       {error && <div className="text-red-500 text-center py-4 text-sm">Error: {error}</div>}
       
-      {!query && (
-        <div className="mb-4">
-          <div className="text-gray-500 text-xs uppercase mb-2">Trending</div>
-          <div className="flex flex-wrap gap-2">
-            {recentSearches.map(s => (
-              <button key={s} onClick={() => setQuery(s)} className="px-3 py-1 bg-gray-800 rounded-full text-white text-sm capitalize">
-                {s}
-              </button>
-            ))}
-          </div>
+      {/* Recent Tokens - DexScreener style list */}
+      {!query && recentTokens.length > 0 && (
+        <div>
+          <div className="text-gray-500 text-xs uppercase mb-3">History</div>
+          {recentTokens.map((token) => (
+            <button 
+              key={token.id} 
+              onClick={() => setSelectedToken(token)}
+              className="w-full py-3 border-b border-gray-800/30 text-left"
+            >
+              {/* Top row: logo, name, price, change */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {token.logo ? (
+                    <img src={token.logo} alt={token.symbol} className="w-9 h-9 rounded-full bg-gray-800" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                  ) : (
+                    <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold">
+                      {token.symbol.slice(0, 2)}
+                    </div>
+                  )}
+                  <div>
+                    <div className="text-white font-medium text-sm">{token.symbol}</div>
+                    <div className="text-gray-500 text-xs truncate max-w-[120px]">{token.name}</div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-white text-sm font-medium">{formatPrice(token.price || 0)}</div>
+                  {typeof token.price_change_24h === 'number' && (
+                    <span className={`text-xs ${token.price_change_24h >= 0 ? "text-green-500" : "text-red-500"}`}>
+                      24H {token.price_change_24h >= 0 ? "+" : ""}{token.price_change_24h.toFixed(1)}%
+                    </span>
+                  )}
+                </div>
+              </div>
+              {/* Bottom row: LIQ, VOL, MCAP */}
+              <div className="flex gap-3 mt-2 ml-12 text-xs">
+                {token.liquidity && token.liquidity > 0 && (
+                  <span className="text-gray-500">LIQ <span className="text-gray-400">{formatMarketCap(token.liquidity)}</span></span>
+                )}
+                {token.volume && token.volume > 0 && (
+                  <span className="text-gray-500">VOL <span className="text-gray-400">{formatMarketCap(token.volume)}</span></span>
+                )}
+                {token.market_cap && token.market_cap > 0 && (
+                  <span className="text-gray-500">MCAP <span className="text-gray-400">{formatMarketCap(token.market_cap)}</span></span>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+      
+      {!query && recentTokens.length === 0 && (
+        <div className="text-center py-8 text-gray-500">
+          <div className="text-2xl mb-2">🔍</div>
+          <div>Search for tokens to build your history</div>
         </div>
       )}
 
@@ -1030,7 +1509,10 @@ const SearchTab = () => {
           {results.map((token) => (
             <button 
               key={token.id} 
-              onClick={() => setSelectedToken(token)}
+              onClick={() => {
+                setSelectedToken(token);
+                addToRecentTokens(token);
+              }}
               className="w-full flex items-center justify-between py-3 border-b border-gray-800/30 hover:bg-gray-900/50 rounded-lg px-2 transition-colors"
             >
               <div className="flex items-center gap-3">
@@ -1071,7 +1553,13 @@ const SearchTab = () => {
         </div>
       )}
 
-      <TokenDetailModal token={selectedToken} onClose={() => setSelectedToken(null)} />
+      <TokenDetailModal 
+        token={selectedToken} 
+        userBalance={getUserBalance(selectedToken)}
+        onClose={() => setSelectedToken(null)} 
+        onSwap={() => { setSelectedToken(null); onSwap?.(); }}
+        onSend={() => { setSelectedToken(null); onSend?.(); }}
+      />
     </div>
   );
 };
@@ -1105,35 +1593,66 @@ const BottomNav = ({
   active: TabType; 
   onChange: (t: TabType) => void;
   onAgentPress: () => void;
-}) => (
-  <div className="fixed bottom-0 left-0 right-0 bg-[#0a0a0a] border-t border-gray-800/50 px-4 pt-2 pb-6">
-    <div className="flex justify-around items-end">
-      <button onClick={() => onChange("home")} className={`flex flex-col items-center py-2 ${active === "home" ? "text-[#f5a623]" : "text-gray-500"}`}>
-        <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
-      </button>
-      <button onClick={() => onChange("search")} className={`flex flex-col items-center py-2 ${active === "search" ? "text-[#f5a623]" : "text-gray-500"}`}>
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-      </button>
-      
-      {/* Agent button - popping out, opens modal */}
-      <button 
-        onClick={onAgentPress} 
-        className="flex flex-col items-center -mt-6"
+}) => {
+  const tabs = [
+    { id: "home" as TabType, icon: (active: boolean) => (
+      <svg className="w-6 h-6" fill={active ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={active ? 0 : 1.5} d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"/>
+      </svg>
+    )},
+    { id: "search" as TabType, icon: () => (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+      </svg>
+    )},
+    { id: "agent" as TabType, icon: () => (
+      <span className="text-xl">🤖</span>
+    ), isAgent: true },
+    { id: "activity" as TabType, icon: () => (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+    )},
+    { id: "settings" as TabType, icon: () => (
+      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"/>
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+      </svg>
+    )},
+  ];
+
+  return (
+    <div className="fixed bottom-6 left-4 right-4 flex justify-center">
+      <div 
+        className="flex items-center gap-2 px-3 py-2 rounded-full border border-white/10"
+        style={{ 
+          background: 'linear-gradient(135deg, rgba(40,40,45,0.9) 0%, rgba(25,25,30,0.95) 100%)',
+          boxShadow: '0 4px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)'
+        }}
       >
-        <div className="w-14 h-14 rounded-full flex items-center justify-center text-2xl shadow-lg bg-gradient-to-br from-purple-600 to-pink-600">
-          🤖
-        </div>
-      </button>
-      
-      <button onClick={() => onChange("activity")} className={`flex flex-col items-center py-2 ${active === "activity" ? "text-[#f5a623]" : "text-gray-500"}`}>
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-      </button>
-      <button onClick={() => onChange("settings")} className={`flex flex-col items-center py-2 ${active === "settings" ? "text-[#f5a623]" : "text-gray-500"}`}>
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-      </button>
+        {tabs.map((tab) => {
+          const isActive = active === tab.id || (tab.isAgent && false);
+          return (
+            <button
+              key={tab.id}
+              onClick={() => tab.isAgent ? onAgentPress() : onChange(tab.id)}
+              className={`relative flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 ${
+                isActive 
+                  ? 'text-[#f5a623]' 
+                  : 'text-gray-400 hover:text-gray-300'
+              }`}
+              style={isActive ? {
+                background: 'rgba(245, 166, 35, 0.15)',
+              } : {}}
+            >
+              {tab.icon(isActive || false)}
+            </button>
+          );
+        })}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 // Main App
 const App = () => {
@@ -1141,6 +1660,7 @@ const App = () => {
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
   
+  const [showSplash, setShowSplash] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>("home");
   const [universalAccountInstance, setUniversalAccountInstance] = useState<UniversalAccount | null>(null);
   const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null);
@@ -1162,7 +1682,7 @@ const App = () => {
       const saved = localStorage.getItem('walletProfile');
       if (saved) return JSON.parse(saved);
     }
-    return { emoji: "🍊", customImage: null, displayName: "", backgroundColor: "#f97316" };
+    return { emoji: "🍊", customImage: null, displayName: "Wallet", backgroundColor: "#f97316" };
   });
 
   const updateProfile = (p: ProfileSettings) => {
@@ -1224,6 +1744,11 @@ const App = () => {
     fetchAssets();
   }, [fetchAssets]);
 
+  // Show splash screen first
+  if (showSplash) {
+    return <SplashScreen onComplete={() => setShowSplash(false)} />;
+  }
+
   if (!isConnected) return <LoginScreen />;
 
   return (
@@ -1240,7 +1765,13 @@ const App = () => {
           onConvert={() => setShowConvertModal(true)}
         />
       )}
-      {activeTab === "search" && <SearchTab />}
+      {activeTab === "search" && (
+        <SearchTab 
+          primaryAssets={primaryAssets}
+          onSwap={() => setShowConvertModal(true)}
+          onSend={() => setShowSendModal(true)}
+        />
+      )}
       {activeTab === "activity" && <ActivityTab />}
       {activeTab === "settings" && <SettingsTab onLogout={disconnect} />}
 

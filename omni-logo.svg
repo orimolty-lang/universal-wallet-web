@@ -1,0 +1,35 @@
+<svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="omniGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f97316"/>
+      <stop offset="50%" stop-color="#fb923c"/>
+      <stop offset="100%" stop-color="#fdba74"/>
+    </linearGradient>
+    <linearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#a1a1aa"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- Outer ring - represents "Omni"/universal -->
+  <circle cx="60" cy="60" r="50" stroke="url(#ringGradient)" stroke-width="3" fill="none" opacity="0.9"/>
+  
+  <!-- Inner orbital ring -->
+  <ellipse cx="60" cy="60" rx="35" ry="20" stroke="url(#omniGradient)" stroke-width="2.5" fill="none" transform="rotate(-30 60 60)" opacity="0.8"/>
+  
+  <!-- Second orbital ring -->
+  <ellipse cx="60" cy="60" rx="35" ry="20" stroke="url(#omniGradient)" stroke-width="2.5" fill="none" transform="rotate(30 60 60)" opacity="0.8"/>
+  
+  <!-- Center node -->
+  <circle cx="60" cy="60" r="12" fill="url(#omniGradient)"/>
+  
+  <!-- Orbital nodes -->
+  <circle cx="60" cy="25" r="6" fill="#ffffff"/>
+  <circle cx="90" cy="75" r="6" fill="#ffffff"/>
+  <circle cx="30" cy="75" r="6" fill="#ffffff"/>
+  
+  <!-- Connection dots on orbits -->
+  <circle cx="85" cy="40" r="4" fill="url(#omniGradient)" opacity="0.7"/>
+  <circle cx="35" cy="40" r="4" fill="url(#omniGradient)" opacity="0.7"/>
+  <circle cx="60" cy="95" r="4" fill="url(#omniGradient)" opacity="0.7"/>
+</svg>

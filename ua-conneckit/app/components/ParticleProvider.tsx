@@ -26,13 +26,14 @@ export const ParticleConnectkit = ({ children }: React.PropsWithChildren) => {
     clientKey,
     appId,
     appearance: {
-      splitEmailAndPhone: false, // Optional, displays Email and phone number entry separately
-      collapseWalletList: false, // Optional, hide wallet list behind a button
-      hideContinueButton: true, // Optional, remove "Continue" button underneath Email or phone number entry
-      connectorsOrder: ["social", "wallet", "email", "phone"], //  Optional, sort connection methods (index 0 will be placed at the top)
-      language: "en-US", // Optional, also supported ja-JP, zh-CN, zh-TW, and ko-KR
-      mode: "dark", // Optional, changes theme between light, dark, or auto (which will change it based on system settings)
+      splitEmailAndPhone: false,
+      collapseWalletList: false,
+      hideContinueButton: true,
+      connectorsOrder: ["social", "wallet", "email", "phone"],
+      language: "en-US",
+      mode: "dark",
       recommendedWallets: [{ walletId: "metaMask", label: "Popular" }],
+      logo: "https://orimolty-lang.github.io/universal-wallet-web/omni-logo.png",
     },
     walletConnectors: [
       authWalletConnectors({
