@@ -755,48 +755,92 @@ export function getChainIdFromBlockchain(blockchain: string): number {
 }
 
 /**
- * Execute SELL using UA SDK's native createSellTransaction
- * Sells token → USDC/stablecoin
+ * Execute SELL via Li.Fi/0x - Token → USDC
+ * Same mechanism as buying, just reversed direction
  */
 export async function executeSell(params: SellParams): Promise<SwapResult> {
-  const { ua, tokenAddress, tokenChainId, amountRaw, slippagePct = 25 } = params;
+  const { ua, tokenAddress, tokenChainId, amountRaw, slippagePct = 5 } = params;
 
   console.log("[Sell] Starting sell:", { tokenAddress, tokenChainId, amountRaw });
 
   try {
-    // Map chain ID to UA CHAIN_ID
+    // Get smart account address
+    const smartAccountOptions = await ua.getSmartAccountOptions();
+    const evmSmartAccount = smartAccountOptions.smartAccountAddress;
+
+    if (!evmSmartAccount) {
+      return { success: false, error: "EVM smart account not available" };
+    }
+
+    // Determine the USDC address on this chain (what we're selling TO)
+    const usdcAddress = USDC_ADDRESSES[tokenChainId] || USDC_ADDRESSES[RELAY_CHAIN_IDS.BASE];
+    if (!usdcAddress) {
+      return { success: false, error: "USDC not available on this chain" };
+    }
+
+    console.log("[Sell] Getting Li.Fi quote for Token → USDC");
+
+    // Get Li.Fi quote: Token → USDC (reversed from buy)
+    const quote = await getLifiSwapQuote(
+      evmSmartAccount,
+      tokenChainId,        // Source chain (where token is)
+      tokenChainId,        // Dest chain (same chain for now)
+      tokenAddress,        // Sell this token
+      usdcAddress,         // Buy USDC
+      amountRaw,           // Amount to sell
+      slippagePct * 100    // Convert to bps
+    );
+
+    if (!quote.success || !quote.transaction) {
+      return { success: false, error: quote.error || "Failed to get sell quote" };
+    }
+
+    console.log("[Sell] Li.Fi quote:", quote);
+
+    // Build transactions array (approval + swap)
+    const transactions: Array<{ to: string; data: string; value: string }> = [];
+
+    // Add approval if needed
+    if (quote.allowanceTarget) {
+      const approveData = encodeApprove(quote.allowanceTarget, amountRaw);
+      transactions.push({
+        to: tokenAddress,
+        data: approveData,
+        value: "0",
+      });
+    }
+
+    // Add swap transaction
+    transactions.push({
+      to: quote.transaction.to,
+      data: quote.transaction.data,
+      value: quote.transaction.value || "0",
+    });
+
+    // Map to UA chain ID
     let uaChainId = tokenChainId;
     if (tokenChainId === 8453) uaChainId = CHAIN_ID.BASE_MAINNET;
     if (tokenChainId === 1) uaChainId = CHAIN_ID.ETHEREUM_MAINNET;
     if (tokenChainId === 42161) uaChainId = CHAIN_ID.ARBITRUM_MAINNET_ONE;
-    if (tokenChainId === 10) uaChainId = CHAIN_ID.OPTIMISM_MAINNET;
-    if (tokenChainId === 137) uaChainId = CHAIN_ID.POLYGON_MAINNET;
-    if (tokenChainId === 101) uaChainId = CHAIN_ID.SOLANA_MAINNET;
 
-    console.log("[Sell] Creating sell transaction, UA chainId:", uaChainId);
-
-    // Use UA SDK's native createSellTransaction
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sellTx = await (ua as any).createSellTransaction({
-      token: {
-        chainId: uaChainId,
-        address: tokenAddress,
-      },
-      amount: amountRaw,
-      slippageTolerance: String(slippagePct),
-      maxSlippage: String(slippagePct),
+    // Create UA transaction (no expectTokens needed - we're selling, not buying with unified balance)
+    const uaTx = await ua.createUniversalTransaction({
+      chainId: uaChainId,
+      transactions,
+      expectTokens: [], // Not pulling from other chains
     });
 
-    if (!sellTx?.rootHash) {
-      return { success: false, error: "Failed to create sell transaction" };
+    if (!uaTx?.rootHash) {
+      return { success: false, error: "Failed to create UA transaction" };
     }
 
-    console.log("[Sell] Sell transaction created, rootHash:", sellTx.rootHash);
+    console.log("[Sell] UA transaction created, rootHash:", uaTx.rootHash);
 
     return {
       success: true,
-      transaction: sellTx,
-      rootHash: sellTx.rootHash,
+      transaction: uaTx,
+      rootHash: uaTx.rootHash,
+      outputAmount: quote.outputAmount,
       requiresSignature: true,
     };
   } catch (error) {
