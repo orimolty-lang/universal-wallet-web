@@ -2083,11 +2083,14 @@ const App = () => {
 
   // Fetch Mobula wallet balances for external tokens (UA smart accounts only)
   const fetchMobulaAssets = useCallback(async () => {
-    if (!accountInfo?.evmSmartAccount) return;
+    if (!accountInfo?.evmSmartAccount) {
+      console.log("[Mobula] No EVM smart account yet");
+      return;
+    }
     try {
       console.log("[Mobula] Fetching for UA smart account:", accountInfo.evmSmartAccount);
       const assets = await fetchMobulaWalletBalances(accountInfo.evmSmartAccount);
-      console.log("[Mobula] Found assets:", assets.length);
+      console.log("[Mobula] Found assets:", assets.length, assets.map(a => a.asset?.symbol).slice(0, 10));
       setMobulaAssets(assets);
     } catch (error) {
       console.error("Failed to fetch Mobula assets:", error);
