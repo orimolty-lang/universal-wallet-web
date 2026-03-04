@@ -2,7 +2,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import type { IAssetsResponse, UniversalAccount } from "@particle-network/universal-account-sdk";
-import { executeSwap, getChainIdFromBlockchain, pollTransactionDetails, getChainName } from "../lib/swapService";
+import { executeSwap, executeSell, getChainIdFromBlockchain, pollTransactionDetails, getChainName } from "../lib/swapService";
 import { useWallets } from "@particle-network/connectkit";
 
 // Types
@@ -49,6 +49,7 @@ export const SwapModal = ({
   const [isLoading, setIsLoading] = useState(false);
   const [loadingStatus, setLoadingStatus] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [direction, setDirection] = useState<"buy" | "sell">("buy"); // buy = USD→Token, sell = Token→USD
   const [txResult, setTxResult] = useState<{ 
     txId: string; 
     expectedAmount?: string;
@@ -75,16 +76,38 @@ export const SwapModal = ({
       setSliderValue(50);
       setError(null);
       setTxResult(null);
+      setDirection("buy"); // Default to buy mode
     }
   }, [isOpen]);
 
-  // Update amount based on slider (uses total unified balance)
+  // Get user's token balance (for sell mode)
+  const getTokenBalance = useCallback(() => {
+    if (!targetToken || !primaryAssets?.assets) return 0;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const asset = primaryAssets.assets.find((a: any) => 
+      a.symbol?.toUpperCase() === targetToken.symbol?.toUpperCase()
+    );
+    if (!asset) return 0;
+    return typeof asset.amount === 'string' ? parseFloat(asset.amount) : (asset.amount || 0);
+  }, [primaryAssets, targetToken]);
+
+  const tokenBalance = getTokenBalance();
+
+  // Update amount based on slider
   useEffect(() => {
-    if (totalBalance > 0 && !txResult) {
-      const newAmount = (totalBalance * sliderValue / 100).toFixed(2);
-      setAmount(newAmount);
+    if (!txResult) {
+      if (direction === "buy" && totalBalance > 0) {
+        // Buy mode: slider controls USD amount
+        const newAmount = (totalBalance * sliderValue / 100).toFixed(2);
+        setAmount(newAmount);
+      } else if (direction === "sell" && tokenBalance > 0) {
+        // Sell mode: slider controls token amount (show USD value)
+        const tokenAmt = tokenBalance * sliderValue / 100;
+        const usdValue = tokenAmt * (targetToken?.price || 0);
+        setAmount(usdValue.toFixed(2));
+      }
     }
-  }, [sliderValue, totalBalance, txResult]);
+  }, [sliderValue, totalBalance, tokenBalance, direction, txResult, targetToken?.price]);
 
   // Number pad handler
   const handleNumPad = (key: string) => {
@@ -149,7 +172,7 @@ export const SwapModal = ({
   // Get wallet for signing
   const [primaryWallet] = useWallets();
 
-  // Handle swap execution
+  // Handle swap execution (buy or sell based on direction)
   const handleSwap = async () => {
     if (!targetToken || amountNum <= 0 || !universalAccount) {
       setError("Invalid swap parameters");
@@ -164,17 +187,36 @@ export const SwapModal = ({
     
     setIsLoading(true);
     setError(null);
+    setLoadingStatus(direction === "buy" ? "Preparing buy..." : "Preparing sell...");
     
     try {
-      // Step 1: Prepare transaction
-      const result = await executeSwap({
-        ua: universalAccount,
-        fromToken: "USDC", // UA SDK will aggregate from all available balances
-        toTokenAddress: address,
-        toTokenChainId: chainId,
-        amountUsd: amountUsd,
-        slippageBps: 100, // 1% slippage
-      });
+      let result;
+      
+      if (direction === "buy") {
+        // BUY: USD → Token
+        result = await executeSwap({
+          ua: universalAccount,
+          fromToken: "USDC",
+          toTokenAddress: address,
+          toTokenChainId: chainId,
+          amountUsd: amountUsd,
+          slippageBps: 100,
+        });
+      } else {
+        // SELL: Token → USD
+        // Calculate token amount to sell based on slider percentage
+        const tokenAmountToSell = tokenBalance * sliderValue / 100;
+        const decimals = targetToken.decimals || 18;
+        const amountRaw = String(Math.floor(tokenAmountToSell * Math.pow(10, decimals)));
+        
+        result = await executeSell({
+          ua: universalAccount,
+          tokenAddress: address,
+          tokenChainId: chainId,
+          amountRaw: amountRaw,
+          slippagePct: 5,
+        });
+      }
 
       if (!result.success) {
         setError(result.error || "Failed to prepare swap");
@@ -255,8 +297,9 @@ export const SwapModal = ({
     }
   };
 
-  const hasInsufficientBalance = amountNum > totalBalance;
-  const canSwap = amountNum > 0 && targetToken && universalAccount && !txResult;
+  const hasInsufficientBalance = direction === "buy" ? amountNum > totalBalance : tokenBalance <= 0;
+  const canSwap = sliderValue > 0 && targetToken && universalAccount && !txResult && 
+    (direction === "buy" ? amountNum > 0 : tokenBalance > 0);
 
   if (!isOpen) return null;
 
@@ -358,69 +401,98 @@ export const SwapModal = ({
                 </div>
               )}
 
-              {/* From (USD) Card - Unified Balance */}
+              {/* From Card - USD (buy) or Token (sell) */}
               <div className="bg-[#0f2744] rounded-2xl p-4 mb-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-green-600 flex items-center justify-center text-xl">
-                      💵
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-gray-400 text-2xl">$</span>
-                        <input
-                          type="text"
-                          value={amount}
-                          onChange={(e) => setAmount(e.target.value)}
-                          placeholder="0"
-                          className="bg-transparent text-white text-3xl font-bold w-28 outline-none"
-                          readOnly
-                        />
-                      </div>
-                      <div className="text-gray-400 text-sm">USD Amount</div>
-                    </div>
+                    {direction === "buy" ? (
+                      <>
+                        <div className="w-10 h-10 rounded-full bg-green-600 flex items-center justify-center text-xl">💵</div>
+                        <div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-gray-400 text-2xl">$</span>
+                            <input type="text" value={amount} placeholder="0" className="bg-transparent text-white text-3xl font-bold w-28 outline-none" readOnly />
+                          </div>
+                          <div className="text-gray-400 text-sm">Spend USD</div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {targetToken?.logo ? (
+                          <img src={targetToken.logo} alt={targetToken.symbol} className="w-10 h-10 rounded-full" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-cyan-600 flex items-center justify-center text-white font-bold">
+                            {targetToken?.symbol?.slice(0, 2) || "?"}
+                          </div>
+                        )}
+                        <div>
+                          <div className="text-white text-3xl font-bold">
+                            {formatTokenAmount(tokenBalance * sliderValue / 100)}
+                          </div>
+                          <div className="text-gray-400 text-sm">Sell {targetToken?.symbol}</div>
+                        </div>
+                      </>
+                    )}
                   </div>
                   <div className="text-right">
-                    <div className="bg-green-600 text-white px-3 py-1.5 rounded-full font-medium">
-                      USD
+                    <div className={`${direction === "buy" ? "bg-green-600" : "bg-red-500"} text-white px-3 py-1.5 rounded-full font-medium`}>
+                      {direction === "buy" ? "USD" : targetToken?.symbol}
                     </div>
                     <div className="text-gray-400 text-sm mt-1">
-                      Balance: ${totalBalance.toFixed(2)}
+                      {direction === "buy" 
+                        ? `Balance: $${totalBalance.toFixed(2)}`
+                        : `Balance: ${formatTokenAmount(tokenBalance)}`
+                      }
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Swap Arrow */}
+              {/* Swap Arrow - CLICKABLE to flip direction */}
               <div className="flex justify-center -my-2 relative z-10">
-                <div className="w-10 h-10 rounded-full bg-[#1a3a5c] border-4 border-[#0d1b2a] flex items-center justify-center">
-                  <span className="text-gray-400">↓</span>
-                </div>
+                <button 
+                  onClick={() => setDirection(d => d === "buy" ? "sell" : "buy")}
+                  className="w-10 h-10 rounded-full bg-[#1a3a5c] border-4 border-[#0d1b2a] flex items-center justify-center hover:bg-[#2a4a6c] transition-colors"
+                  title="Flip direction"
+                >
+                  <span className="text-cyan-400 text-lg">⇅</span>
+                </button>
               </div>
 
-              {/* To Token Card */}
+              {/* To Card - Token (buy) or USD (sell) */}
               <div className="bg-[#0f2744] rounded-2xl p-4 mt-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    {targetToken?.logo ? (
-                      <img src={targetToken.logo} alt={targetToken.symbol} className="w-10 h-10 rounded-full" />
+                    {direction === "buy" ? (
+                      <>
+                        {targetToken?.logo ? (
+                          <img src={targetToken.logo} alt={targetToken.symbol} className="w-10 h-10 rounded-full" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-cyan-600 flex items-center justify-center text-white font-bold">
+                            {targetToken?.symbol?.slice(0, 2) || "?"}
+                          </div>
+                        )}
+                        <div>
+                          <div className="text-white text-3xl font-bold">{formatTokenAmount(outputAmount)}</div>
+                          <div className="text-gray-400 text-sm">Receive {targetToken?.symbol}</div>
+                        </div>
+                      </>
                     ) : (
-                      <div className="w-10 h-10 rounded-full bg-cyan-600 flex items-center justify-center text-white font-bold">
-                        {targetToken?.symbol?.slice(0, 2) || "?"}
-                      </div>
+                      <>
+                        <div className="w-10 h-10 rounded-full bg-green-600 flex items-center justify-center text-xl">💵</div>
+                        <div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-gray-400 text-2xl">$</span>
+                            <span className="text-white text-3xl font-bold">{(tokenBalance * sliderValue / 100 * (targetToken?.price || 0) * 0.995).toFixed(2)}</span>
+                          </div>
+                          <div className="text-gray-400 text-sm">Receive USDC</div>
+                        </div>
+                      </>
                     )}
-                    <div>
-                      <div className="text-white text-3xl font-bold">
-                        {formatTokenAmount(outputAmount)}
-                      </div>
-                      <div className="text-gray-400 text-sm">
-                        ~${amountUsd.toFixed(2)}
-                      </div>
-                    </div>
                   </div>
                   <div className="text-right">
-                    <div className="bg-gray-700 text-white px-3 py-1.5 rounded-full font-medium">
-                      {targetToken?.symbol || "Select"}
+                    <div className={`${direction === "sell" ? "bg-green-600" : "bg-gray-700"} text-white px-3 py-1.5 rounded-full font-medium`}>
+                      {direction === "buy" ? targetToken?.symbol || "Select" : "USDC"}
                     </div>
                     <div className="text-gray-400 text-sm mt-1">
                       {getTokenAddressAndChain().chainId === 101 ? "Solana" : 
@@ -434,10 +506,13 @@ export const SwapModal = ({
               {/* Rate Display */}
               <div className="flex items-center justify-between mt-3 text-sm">
                 <span className="text-gray-400">
-                  $1 ≈ {formatTokenAmount(rate)} {targetToken?.symbol || "???"}
+                  {direction === "buy" 
+                    ? `$1 ≈ ${formatTokenAmount(rate)} ${targetToken?.symbol || "???"}`
+                    : `1 ${targetToken?.symbol} ≈ $${(targetToken?.price || 0).toFixed(6)}`
+                  }
                 </span>
-                <span className="text-gray-500 text-xs">
-                  via {getTokenAddressAndChain().chainId === 101 ? "Relay" : "0x"} • UA Unified
+                <span className={`text-xs px-2 py-0.5 rounded ${direction === "buy" ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>
+                  {direction === "buy" ? "BUY" : "SELL"}
                 </span>
               </div>
 
@@ -445,8 +520,10 @@ export const SwapModal = ({
               <div className="mt-8">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-gray-400">💵</span>
-                    <span className="text-white font-medium">Swap {sliderValue}%</span>
+                    <span className="text-gray-400">{direction === "buy" ? "💵" : "📉"}</span>
+                    <span className="text-white font-medium">
+                      {direction === "buy" ? `Buy ${sliderValue}%` : `Sell ${sliderValue}%`}
+                    </span>
                   </div>
                   <button 
                     onClick={() => setSliderValue(100)}
@@ -461,7 +538,7 @@ export const SwapModal = ({
                   max="100"
                   value={sliderValue}
                   onChange={(e) => setSliderValue(parseInt(e.target.value))}
-                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                  className={`w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer ${direction === "buy" ? "accent-cyan-500" : "accent-red-500"}`}
                 />
               </div>
 
@@ -496,19 +573,23 @@ export const SwapModal = ({
                 disabled={!canSwap || isLoading}
                 className={`w-full py-4 rounded-xl font-bold text-lg ${
                   canSwap && !isLoading
-                    ? "bg-cyan-500 text-white"
+                    ? direction === "buy" ? "bg-cyan-500 text-white" : "bg-red-500 text-white"
                     : "bg-gray-700 text-gray-400"
                 }`}
               >
                 {isLoading 
-                  ? loadingStatus || "Swapping..." 
-                  : hasInsufficientBalance 
-                    ? "Insufficient Balance"
-                    : !universalAccount
-                      ? "Connect Wallet"
-                      : amountNum <= 0
-                        ? "Enter Amount"
-                        : "Swap"
+                  ? loadingStatus || (direction === "buy" ? "Buying..." : "Selling...")
+                  : direction === "sell" && tokenBalance <= 0
+                    ? "No tokens to sell"
+                    : hasInsufficientBalance && direction === "buy"
+                      ? "Insufficient Balance"
+                      : !universalAccount
+                        ? "Connect Wallet"
+                        : sliderValue <= 0
+                          ? "Enter Amount"
+                          : direction === "buy" 
+                            ? `Buy ${targetToken?.symbol}`
+                            : `Sell ${targetToken?.symbol}`
                 }
               </button>
             </div>

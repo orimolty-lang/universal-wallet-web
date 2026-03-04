@@ -8,8 +8,9 @@ import { UniversalAccount, CHAIN_ID, SUPPORTED_TOKEN_TYPE } from "@particle-netw
 
 // ============ CONSTANTS ============
 
-// Li.Fi API (better CORS support for browser)
+// Li.Fi API
 const LIFI_API_BASE = "https://li.quest/v1";
+const LIFI_API_KEY = "2b4e6e02-1730-419e-8523-117888811070.bf866046-5ed6-40fd-b3b0-3cc53335324c";
 
 // 0x API (backup)
 const ZEROX_API_KEY = process.env.NEXT_PUBLIC_ZEROX_API_KEY || "5673a1cb-0778-485d-9523-b98ee680ab97";
@@ -237,7 +238,10 @@ export async function getLifiSwapQuote(
     console.log("[Li.Fi] Fetching quote:", url.toString());
 
     const response = await fetch(url.toString(), {
-      headers: { "Accept": "application/json" },
+      headers: { 
+        "Accept": "application/json",
+        "x-lifi-api-key": LIFI_API_KEY,
+      },
     });
 
     const data = await response.json();
