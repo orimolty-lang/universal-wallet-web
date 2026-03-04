@@ -254,11 +254,13 @@ export const SwapModal = ({
       return;
     }
 
-    const { address, chainId } = getTokenAddressAndChain();
+    const { address, chainId: targetChainId } = getTokenAddressAndChain();
     if (!address) {
       setError("Token address not found");
       return;
     }
+    
+    console.log("[SwapModal] handleSwap - target chain:", targetChainId, "address:", address);
     
     setIsLoading(true);
     setError(null);
@@ -273,7 +275,7 @@ export const SwapModal = ({
           ua: universalAccount,
           fromToken: "USDC",
           toTokenAddress: address,
-          toTokenChainId: chainId,
+          toTokenChainId: targetChainId,
           amountUsd: amountUsd,
           slippageBps: 100,
         });
@@ -295,7 +297,7 @@ export const SwapModal = ({
         result = await executeSell({
           ua: universalAccount,
           tokenAddress: address,
-          tokenChainId: chainId,
+          tokenChainId: targetChainId,
           amountRaw: amountRaw,
           slippagePct: 5,
         });
@@ -328,19 +330,19 @@ export const SwapModal = ({
               ? formatTokenAmount(parseFloat(result.outputAmount) / Math.pow(10, targetToken?.decimals || 18))
               : undefined;
             
-            // Show pending state
+            // Show pending state with TARGET chain (not source chain)
             setTxResult({
               txId: sendResult.transactionId,
               expectedAmount: expectedFormatted,
               status: "pending",
-              chainId: chainId,
+              chainId: targetChainId, // Use target chain ID for display
             });
             onSwapSuccess?.(sendResult.transactionId);
             setIsLoading(false);
             
             // Poll for actual transaction details
             setLoadingStatus("Confirming...");
-            const txDetails = await pollTransactionDetails(universalAccount, sendResult.transactionId);
+            const txDetails = await pollTransactionDetails(universalAccount, sendResult.transactionId, targetChainId);
             
             if (txDetails.status === "completed") {
               setTxResult(prev => prev ? {
@@ -348,7 +350,7 @@ export const SwapModal = ({
                 status: "completed",
                 actualAmount: txDetails.receivedAmount,
                 explorerUrl: txDetails.explorerUrl,
-                chainId: txDetails.chainId,
+                chainId: txDetails.chainId || targetChainId, // Fallback to target chain
               } : null);
             } else if (txDetails.status === "failed") {
               setTxResult(prev => prev ? { ...prev, status: "failed" } : null);
@@ -366,6 +368,7 @@ export const SwapModal = ({
           txId: result.transactionId,
           expectedAmount: result.outputAmount,
           status: "pending",
+          chainId: targetChainId,
         });
         onSwapSuccess?.(result.transactionId);
       } else {

@@ -1254,43 +1254,51 @@ const HomeTab = ({
   onConvert: () => void;
   onTokenSelect?: (token: { id: string; symbol: string; name: string; logo?: string; price: number; contracts?: Array<{ address: string; blockchain: string }> }) => void;
 }) => {
-  // Use Set to allow multiple tokens to be expanded simultaneously
-  const [expandedTokens, setExpandedTokens] = useState<Set<string>>(new Set());
   const [hideSmallBalances, setHideSmallBalances] = useState(true); // Hide <$0.10 by default
-  
-  const toggleExpanded = (symbol: string) => {
-    setExpandedTokens(prev => {
-      const next = new Set(prev);
-      if (next.has(symbol)) {
-        next.delete(symbol);
-      } else {
-        next.add(symbol);
-      }
-      return next;
-    });
-  };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const allTokens = primaryAssets?.assets?.map((asset: any) => ({
-    symbol: asset.symbol || asset.tokenType?.toUpperCase() || "???",
-    name: asset.name || asset.symbol || asset.tokenType || "Token",
-    balance: typeof asset.amount === 'string' ? parseFloat(asset.amount) : (asset.amount || 0),
-    amountInUSD: asset.amountInUSD || 0,
-    price: asset.price || 0,
-    logo: asset.logo,
-    isExternal: asset.isExternal || false,
-    contracts: asset.contracts || [],
-    // Chain breakdown from chainAggregation
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    chainBreakdown: asset.chainAggregation?.map((chain: any) => ({
-      chainId: chain.token?.chainId,
-      chainName: getChainName(chain.token?.chainId) || chain.token?.chainId,
-      amount: typeof chain.amount === 'string' ? parseFloat(chain.amount) : (chain.amount || 0),
-      amountInUSD: chain.amountInUSD || 0,
-      address: chain.token?.address,
+  const allTokens = primaryAssets?.assets?.map((asset: any) => {
+    // Build contracts from chainAggregation if not present
+    let contracts = asset.contracts || [];
+    
+    // For primary UA assets, extract contracts from chainAggregation
+    if (contracts.length === 0 && asset.chainAggregation) {
+      const chainIdToName: Record<number, string> = {
+        1: "ethereum", 8453: "base", 42161: "arbitrum", 
+        10: "optimism", 137: "polygon", 56: "bsc", 101: "solana",
+      };
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    })).filter((c: any) => c.amount > 0.0001) || [],
-  })).filter((t: { balance: number }) => t.balance > 0.0001) || [];
+      contracts = asset.chainAggregation
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .filter((c: any) => c.token?.address)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .map((c: any) => ({
+          address: c.token.address,
+          blockchain: chainIdToName[c.token.chainId] || `chain-${c.token.chainId}`,
+        }));
+    }
+    
+    return {
+      symbol: asset.symbol || asset.tokenType?.toUpperCase() || "???",
+      name: asset.name || asset.symbol || asset.tokenType || "Token",
+      balance: typeof asset.amount === 'string' ? parseFloat(asset.amount) : (asset.amount || 0),
+      amountInUSD: asset.amountInUSD || 0,
+      price: asset.price || 0,
+      logo: asset.logo,
+      isExternal: asset.isExternal || false,
+      contracts,
+      // Chain breakdown from chainAggregation
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      chainBreakdown: asset.chainAggregation?.map((chain: any) => ({
+        chainId: chain.token?.chainId,
+        chainName: getChainName(chain.token?.chainId) || chain.token?.chainId,
+        amount: typeof chain.amount === 'string' ? parseFloat(chain.amount) : (chain.amount || 0),
+        amountInUSD: chain.amountInUSD || 0,
+        address: chain.token?.address,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      })).filter((c: any) => c.amount > 0.0001) || [],
+    };
+  }).filter((t: { balance: number }) => t.balance > 0.0001) || [];
   
   // Filter based on hide small balances toggle
   const tokens = hideSmallBalances 
@@ -1378,39 +1386,33 @@ const HomeTab = ({
                 <button 
                   className="w-full flex items-center justify-between py-4"
                   onClick={() => {
-                    if (token.isExternal) {
-                      // External tokens: open token detail modal
-                      // Build contracts from multiple sources
-                      let contracts = token.contracts || [];
-                      
-                      // Fallback: extract from chainBreakdown if contracts is empty
-                      if (contracts.length === 0 && token.chainBreakdown?.length > 0) {
-                        const chainIdToName: Record<number, string> = {
-                          1: "ethereum", 8453: "base", 42161: "arbitrum", 
-                          10: "optimism", 137: "polygon", 56: "bsc",
-                        };
-                        contracts = token.chainBreakdown
-                          .filter((c: { address?: string; chainId?: number }) => c.address)
-                          .map((c: { address: string; chainId: number }) => ({
-                            address: c.address,
-                            blockchain: chainIdToName[c.chainId] || `chain-${c.chainId}`,
-                          }));
-                      }
-                      
-                      console.log("[HomeTab] External token selected:", token.symbol, "contracts:", contracts);
-                      
-                      onTokenSelect?.({
-                        id: token.symbol.toLowerCase(),
-                        symbol: token.symbol,
-                        name: token.name,
-                        logo: token.logo,
-                        price: token.price,
-                        contracts,
-                      });
-                    } else {
-                      // Primary UA tokens: toggle expansion
-                      toggleExpanded(token.symbol);
+                    // All tokens: open token detail modal for buy/sell
+                    let contracts = token.contracts || [];
+                    
+                    // Fallback: extract from chainBreakdown if contracts is empty
+                    if (contracts.length === 0 && token.chainBreakdown?.length > 0) {
+                      const chainIdToName: Record<number, string> = {
+                        1: "ethereum", 8453: "base", 42161: "arbitrum", 
+                        10: "optimism", 137: "polygon", 56: "bsc", 101: "solana",
+                      };
+                      contracts = token.chainBreakdown
+                        .filter((c: { address?: string; chainId?: number }) => c.address)
+                        .map((c: { address: string; chainId: number }) => ({
+                          address: c.address,
+                          blockchain: chainIdToName[c.chainId] || `chain-${c.chainId}`,
+                        }));
                     }
+                    
+                    console.log("[HomeTab] Token selected:", token.symbol, "isExternal:", token.isExternal, "contracts:", contracts);
+                    
+                    onTokenSelect?.({
+                      id: token.symbol.toLowerCase(),
+                      symbol: token.symbol,
+                      name: token.name,
+                      logo: token.logo,
+                      price: token.price,
+                      contracts,
+                    });
                   }}
                 >
                   <div className="flex items-center gap-3">
@@ -1445,40 +1447,20 @@ const HomeTab = ({
                   <div className="flex items-center gap-2">
                     <div className="text-right">
                       <div className="text-white">${token.amountInUSD.toFixed(2)}</div>
-                      {!token.isExternal && token.chainBreakdown.length > 1 && (
-                        <div className="text-gray-500 text-xs">{token.chainBreakdown.length} chains</div>
-                      )}
                     </div>
-                    {/* Only show expand arrow for non-external tokens with chain breakdown */}
-                    {!token.isExternal && token.chainBreakdown.length > 0 && (
-                      <span className={`text-gray-500 text-sm transition-transform ${expandedTokens.has(token.symbol) ? 'rotate-180' : ''}`}>
-                        ▼
-                      </span>
-                    )}
-                  </div>
-                </button>
-                
-                {/* Chain Breakdown (Expanded) - only for non-external tokens */}
-                {!token.isExternal && expandedTokens.has(token.symbol) && (
-                  <div className="pl-14 pb-4">
-                    {token.chainBreakdown.length > 0 && (
-                      <div className="space-y-2 mb-3">
-                        {token.chainBreakdown.map((chain, j) => (
-                          <div key={j} className="flex items-center justify-between text-sm">
-                            <div className="flex items-center gap-2">
-                              <ChainLogo chainName={chain.chainName} size={16} />
-                              <span className="text-gray-400">{chain.chainName}</span>
-                            </div>
-                            <div className="text-right">
-                              <span className="text-gray-300">{chain.amount.toFixed(4)} {token.symbol}</span>
-                              <span className="text-gray-500 ml-2">(${chain.amountInUSD.toFixed(2)})</span>
-                            </div>
-                          </div>
+                    {/* Show chain logos for multi-chain tokens */}
+                    {token.chainBreakdown.length > 1 && (
+                      <div className="flex gap-1">
+                        {token.chainBreakdown.slice(0, 3).map((chain, j) => (
+                          <ChainLogo key={j} chainName={chain.chainName} size={14} />
                         ))}
+                        {token.chainBreakdown.length > 3 && (
+                          <span className="text-gray-500 text-xs">+{token.chainBreakdown.length - 3}</span>
+                        )}
                       </div>
                     )}
                   </div>
-                )}
+                </button>
               </div>
               );
             })}
@@ -2352,23 +2334,43 @@ const App = () => {
     console.log("[CombinedAssets] mobulaAssets:", mobulaAssets?.length || 0);
     if (!primaryAssets) return null;
     
-    // Get symbols already in primary assets (case-insensitive)
+    // Get symbols already in primary assets (case-insensitive, trimmed)
+    // Also track common tokens that UA handles (avoid duplicates from Mobula)
     const primarySymbols = new Set(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      primaryAssets.assets?.map((a: any) => a.symbol?.toUpperCase()) || []
+      (primaryAssets.assets?.map((a: any) => a.symbol?.toUpperCase()?.trim()) || [])
+        .filter((s: string | undefined) => s) // Remove empty/null
     );
+    
+    // Common stablecoins and major tokens - these are almost always in UA primary
+    // Don't allow Mobula to add duplicates of these
+    const commonTokens = new Set([
+      'USDC', 'USDT', 'DAI', 'ETH', 'WETH', 'WBTC', 'BTC', 
+      'SOL', 'WSOL', 'MATIC', 'WMATIC', 'BNB', 'WBNB',
+      'ARB', 'OP', 'AVAX', 'WAVAX'
+    ]);
     
     console.log("[CombinedAssets] primarySymbols:", Array.from(primarySymbols));
     
     // Filter Mobula assets to only include tokens NOT in primary assets
     const externalAssets = mobulaAssets
       .filter(ma => {
-        const symbolUpper = ma.asset.symbol?.toUpperCase();
+        const symbolUpper = ma.asset.symbol?.toUpperCase()?.trim();
+        if (!symbolUpper) return false;
+        
         // Skip if already in primary assets (case-insensitive)
         if (primarySymbols.has(symbolUpper)) {
-          console.log("[CombinedAssets] Skipping dupe:", ma.asset.symbol);
+          console.log("[CombinedAssets] Skipping dupe (in primary):", ma.asset.symbol);
           return false;
         }
+        
+        // Also skip common tokens that UA should handle
+        // (in case UA hasn't reported them yet but they exist)
+        if (commonTokens.has(symbolUpper)) {
+          console.log("[CombinedAssets] Skipping common token:", ma.asset.symbol);
+          return false;
+        }
+        
         return true;
       })
       .filter(ma => ma.token_balance > 0) // Show any token with balance
@@ -2427,7 +2429,7 @@ const App = () => {
     // Simply merge - no dedup on primary (UA handles that)
     const mergedAssets = [...(primaryAssets.assets || []), ...externalAssets];
     
-    console.log("[CombinedAssets] Final:", mergedAssets.length, "assets");
+    console.log("[CombinedAssets] Final:", mergedAssets.length, "assets (", externalAssets.length, "external)");
     
     // Calculate new total
     const externalTotal = externalAssets.reduce((sum, a) => sum + a.amountInUSD, 0);

@@ -54,6 +54,7 @@ const CHAIN_EXPLORERS: Record<number, string> = {
   137: "https://polygonscan.com",
   56: "https://bscscan.com",
   43114: "https://snowtrace.io",
+  101: "https://solscan.io", // Solana
 };
 
 // Chain logos
@@ -75,6 +76,12 @@ export const CHAIN_LOGOS: Record<string, string> = {
 export function getExplorerTxUrl(chainId: number, txHash: string): string {
   const explorer = CHAIN_EXPLORERS[chainId];
   if (!explorer) return `https://basescan.org/tx/${txHash}`;
+  
+  // Solana uses different URL format
+  if (chainId === 101) {
+    return `${explorer}/tx/${txHash}`;
+  }
+  
   return `${explorer}/tx/${txHash}`;
 }
 
@@ -91,6 +98,7 @@ export function getChainName(chainId: number): string {
     56: "BNB Chain",
     43114: "Avalanche",
     101: "Solana",
+    792703809: "Solana", // Relay's Solana chain ID
   };
   return names[chainId] || `Chain ${chainId}`;
 }
@@ -116,10 +124,16 @@ const UA_STATUS = {
 
 /**
  * Poll transaction details to get actual received amounts and tx hash
+ * @param ua UniversalAccount instance
+ * @param transactionId UA transaction ID
+ * @param targetChainId The target chain for the swap (used as fallback)
+ * @param maxAttempts Max polling attempts
+ * @param delayMs Delay between attempts
  */
 export async function pollTransactionDetails(
   ua: UniversalAccount,
   transactionId: string,
+  targetChainId: number = 8453,
   maxAttempts: number = 20,
   delayMs: number = 2000
 ): Promise<{
@@ -130,6 +144,8 @@ export async function pollTransactionDetails(
   chainId?: number;
   explorerUrl?: string;
 }> {
+  console.log("[TxDetails] Starting poll for:", transactionId, "targetChain:", targetChainId);
+  
   for (let i = 0; i < maxAttempts; i++) {
     try {
       const details = await ua.getTransaction(transactionId);
@@ -150,28 +166,61 @@ export async function pollTransactionDetails(
           details.txHash || 
           details.hash ||
           details.targetHash ||
-          details.finalTxHash;
+          details.finalTxHash ||
+          details.outputTxHash ||
+          details.swapTxHash;
         
         // Check nested structures - execution might have the hash
         if (!txHash && details.execution) {
-          txHash = details.execution.txHash || details.execution.hash;
+          txHash = details.execution.txHash || 
+                   details.execution.hash || 
+                   details.execution.targetTxHash ||
+                   details.execution.transactionHash;
         }
         
-        // Check transactions array
-        if (!txHash && details.transactions) {
+        // Check output/destination nested object
+        if (!txHash && details.output) {
+          txHash = details.output.txHash || details.output.hash || details.output.transactionHash;
+        }
+        if (!txHash && details.destination) {
+          txHash = details.destination.txHash || details.destination.hash || details.destination.transactionHash;
+        }
+        
+        // Check transactions array - look for target chain first, then last tx
+        if (!txHash && details.transactions && Array.isArray(details.transactions)) {
+          // Try to find tx on target chain
           const targetTx = details.transactions.find((t: { chainId?: number }) => 
-            t.chainId === 8453
-          ) || details.transactions[details.transactions.length - 1];
-          txHash = targetTx?.hash || targetTx?.txHash;
+            t.chainId === targetChainId
+          );
+          // Or just use the last transaction (usually the output)
+          const lastTx = details.transactions[details.transactions.length - 1];
+          const useTx = targetTx || lastTx;
+          txHash = useTx?.hash || useTx?.txHash || useTx?.transactionHash;
         }
         
-        // Check for target chain info
+        // Check steps array (for Relay-style responses)
+        if (!txHash && details.steps && Array.isArray(details.steps)) {
+          const lastStep = details.steps[details.steps.length - 1];
+          txHash = lastStep?.txHash || lastStep?.hash || lastStep?.transactionHash;
+          if (!txHash && lastStep?.items && Array.isArray(lastStep.items)) {
+            const lastItem = lastStep.items[lastStep.items.length - 1];
+            txHash = lastItem?.txHash || lastItem?.hash || lastItem?.transactionHash;
+          }
+        }
+        
+        // For Solana, check for signature field
+        if (!txHash && (targetChainId === 101 || targetChainId === 792703809)) {
+          txHash = details.signature || details.solanaSignature || details.solanaTxHash;
+        }
+        
+        // Determine chain ID - use target chain as fallback
         const chainId = 
           details.targetChainId ||
           details.execution?.chainId ||
           details.destinationChainId || 
+          details.output?.chainId ||
           details.chainId || 
-          8453;
+          targetChainId; // Use the provided target chain as fallback
         
         console.log("[TxDetails] FINISHED! txHash:", txHash, "chainId:", chainId);
         
