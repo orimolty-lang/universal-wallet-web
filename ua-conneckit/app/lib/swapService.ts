@@ -96,6 +96,25 @@ export function getChainName(chainId: number): string {
 }
 
 /**
+ * UA Transaction Status enum (from SDK)
+ * FINISHED = 7 means completed successfully
+ */
+const UA_STATUS = {
+  INITIALIZING: 0,
+  DEPOSIT_LOCAL: 1,
+  DEPOSIT_PENDING: 2,
+  WAIT_TO_REFUND: 3,
+  EXECUTION_LOCAL: 4,
+  EXECUTION_PENDING: 5,
+  EXECUTION_FAILED: 6,
+  FINISHED: 7,
+  REFUND_LOCAL: 8,
+  REFUND_PENDING: 9,
+  REFUND_FAILED: 10,
+  REFUND_FINISHED: 11,
+};
+
+/**
  * Poll transaction details to get actual received amounts and tx hash
  */
 export async function pollTransactionDetails(
@@ -114,29 +133,34 @@ export async function pollTransactionDetails(
   for (let i = 0; i < maxAttempts; i++) {
     try {
       const details = await ua.getTransaction(transactionId);
-      console.log("[TxDetails] Attempt", i + 1, "Full response:", JSON.stringify(details, null, 2));
+      console.log("[TxDetails] Attempt", i + 1, "status:", details?.status, "Full:", JSON.stringify(details, null, 2));
       
-      // Check if transaction is complete (various status names)
-      const status = details?.status?.toLowerCase?.() || details?.state?.toLowerCase?.() || "";
-      const isComplete = status === "completed" || status === "success" || status === "confirmed" || status === "done";
-      const isFailed = status === "failed" || status === "error" || status === "reverted";
+      // Status is NUMERIC in UA SDK (7 = FINISHED, 6 = FAILED)
+      const statusNum = typeof details?.status === 'number' ? details.status : -1;
+      const isComplete = statusNum === UA_STATUS.FINISHED;
+      const isFailed = statusNum === UA_STATUS.EXECUTION_FAILED || 
+                       statusNum === UA_STATUS.REFUND_FAILED;
       
       if (isComplete) {
         // Try multiple field names for the target chain tx hash
-        // UA SDK might use: targetTxHash, destinationTxHash, txHash, hash, transactions[].hash, etc.
         let txHash = 
           details.targetTxHash ||
+          details.executionTxHash ||
           details.destinationTxHash || 
           details.txHash || 
           details.hash ||
           details.targetHash ||
           details.finalTxHash;
         
-        // Check nested structures
+        // Check nested structures - execution might have the hash
+        if (!txHash && details.execution) {
+          txHash = details.execution.txHash || details.execution.hash;
+        }
+        
+        // Check transactions array
         if (!txHash && details.transactions) {
-          // Find the target chain transaction (usually Base for EVM swaps)
-          const targetTx = details.transactions.find((t: { chainId?: number; chain?: string }) => 
-            t.chainId === 8453 || t.chain === "base"
+          const targetTx = details.transactions.find((t: { chainId?: number }) => 
+            t.chainId === 8453
           ) || details.transactions[details.transactions.length - 1];
           txHash = targetTx?.hash || targetTx?.txHash;
         }
@@ -144,11 +168,12 @@ export async function pollTransactionDetails(
         // Check for target chain info
         const chainId = 
           details.targetChainId ||
+          details.execution?.chainId ||
           details.destinationChainId || 
           details.chainId || 
           8453;
         
-        console.log("[TxDetails] Completed! txHash:", txHash, "chainId:", chainId);
+        console.log("[TxDetails] FINISHED! txHash:", txHash, "chainId:", chainId);
         
         return {
           status: "completed",
@@ -161,15 +186,11 @@ export async function pollTransactionDetails(
       }
       
       if (isFailed) {
-        console.log("[TxDetails] Failed:", details.error || details.reason);
+        console.log("[TxDetails] FAILED:", details.error || details.reason);
         return { status: "failed" };
       }
       
-      // Check for pending but has hash (tx submitted but not confirmed)
-      if (details.targetTxHash || details.destinationTxHash) {
-        console.log("[TxDetails] Has hash but pending, continuing poll...", 
-          details.targetTxHash || details.destinationTxHash);
-      }
+      console.log("[TxDetails] Status:", statusNum, "- still pending...");
       
       // Wait before next poll
       await new Promise(resolve => setTimeout(resolve, delayMs));
