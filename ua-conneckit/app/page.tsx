@@ -1254,6 +1254,7 @@ const HomeTab = ({
 }) => {
   // Use Set to allow multiple tokens to be expanded simultaneously
   const [expandedTokens, setExpandedTokens] = useState<Set<string>>(new Set());
+  const [hideSmallBalances, setHideSmallBalances] = useState(true); // Hide <$0.10 by default
   
   const toggleExpanded = (symbol: string) => {
     setExpandedTokens(prev => {
@@ -1268,14 +1269,15 @@ const HomeTab = ({
   };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tokens = primaryAssets?.assets?.map((asset: any) => ({
+  const allTokens = primaryAssets?.assets?.map((asset: any) => ({
     symbol: asset.symbol || asset.tokenType?.toUpperCase() || "???",
     name: asset.name || asset.symbol || asset.tokenType || "Token",
     balance: typeof asset.amount === 'string' ? parseFloat(asset.amount) : (asset.amount || 0),
     amountInUSD: asset.amountInUSD || 0,
     price: asset.price || 0,
-    logo: asset.logo, // External assets may have logo
-    isExternal: asset.isExternal || false, // Flag for Mobula-sourced assets
+    logo: asset.logo,
+    isExternal: asset.isExternal || false,
+    contracts: asset.contracts || [],
     // Chain breakdown from chainAggregation
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     chainBreakdown: asset.chainAggregation?.map((chain: any) => ({
@@ -1287,6 +1289,11 @@ const HomeTab = ({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     })).filter((c: any) => c.amount > 0.0001) || [],
   })).filter((t: { balance: number }) => t.balance > 0.0001) || [];
+  
+  // Filter based on hide small balances toggle
+  const tokens = hideSmallBalances 
+    ? allTokens.filter((t: { amountInUSD: number }) => t.amountInUSD >= 0.10)
+    : allTokens;
 
   return (
     <div className="flex-1 overflow-auto pb-24 bg-[#0a0a0a]">
@@ -1336,6 +1343,17 @@ const HomeTab = ({
 
       {/* Token List with Chain Breakdown */}
       <div className="px-4 mt-2">
+        {/* Hide small balances toggle */}
+        <div className="flex items-center justify-between py-2 mb-2">
+          <span className="text-gray-500 text-sm">Hide small balances (&lt;$0.10)</span>
+          <button
+            onClick={() => setHideSmallBalances(!hideSmallBalances)}
+            className={`w-10 h-6 rounded-full transition-colors ${hideSmallBalances ? 'bg-cyan-500' : 'bg-gray-600'}`}
+          >
+            <div className={`w-4 h-4 bg-white rounded-full transition-transform ml-1 ${hideSmallBalances ? 'translate-x-4' : ''}`} />
+          </button>
+        </div>
+        
         {tokens.length > 0 ? (
           <div>
             {tokens.map((token: { 
@@ -1346,48 +1364,65 @@ const HomeTab = ({
               price: number;
               logo?: string;
               isExternal?: boolean;
+              contracts?: Array<{ address: string; blockchain: string }>;
               chainBreakdown: Array<{ chainId: number; chainName: string; amount: number; amountInUSD: number; address: string }>;
-            }, i: number) => (
+            }, i: number) => {
+              // For external tokens, get chain from first chain breakdown or contracts
+              const externalChainId = token.isExternal && token.chainBreakdown[0]?.chainId;
+              
+              return (
               <div key={i} className="border-b border-gray-800/30">
-                {/* Main Token Row */}
+                {/* Main Token Row - click opens swap modal */}
                 <button 
                   className="w-full flex items-center justify-between py-4"
-                  onClick={() => toggleExpanded(token.symbol)}
+                  onClick={() => {
+                    if (token.isExternal) {
+                      // External tokens: open swap modal directly
+                      onConvert();
+                    } else {
+                      // Primary UA tokens: toggle expansion
+                      toggleExpanded(token.symbol);
+                    }
+                  }}
                 >
                   <div className="flex items-center gap-3">
-                    {/* Token Logo - use external logo if available */}
-                    {token.logo ? (
-                      <img 
-                        src={token.logo} 
-                        alt={token.symbol} 
-                        className="w-10 h-10 rounded-full bg-gray-800"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }}
-                      />
-                    ) : (
-                      <TokenLogo symbol={token.symbol} size={40} />
-                    )}
+                    {/* Token Logo with chain badge for external tokens */}
+                    <div className="relative">
+                      {token.logo ? (
+                        <img 
+                          src={token.logo} 
+                          alt={token.symbol} 
+                          className="w-10 h-10 rounded-full bg-gray-800"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <TokenLogo symbol={token.symbol} size={40} />
+                      )}
+                      {/* Chain badge for external tokens */}
+                      {token.isExternal && externalChainId && (
+                        <img 
+                          src={CHAIN_LOGOS[getChainName(externalChainId)] || CHAIN_LOGOS["Base"]}
+                          alt="chain"
+                          className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[#0a0a0a]"
+                        />
+                      )}
+                    </div>
                     <div className="text-left">
-                      <div className="flex items-center gap-2">
-                        <span className="text-white font-medium">{token.name}</span>
-                        {token.isExternal && (
-                          <span className="text-[10px] bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded">
-                            External
-                          </span>
-                        )}
-                      </div>
+                      <span className="text-white font-medium">{token.name}</span>
                       <div className="text-gray-500 text-sm">{token.balance.toFixed(4)} {token.symbol}</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="text-right">
                       <div className="text-white">${token.amountInUSD.toFixed(2)}</div>
-                      {token.chainBreakdown.length > 1 && (
+                      {!token.isExternal && token.chainBreakdown.length > 1 && (
                         <div className="text-gray-500 text-xs">{token.chainBreakdown.length} chains</div>
                       )}
                     </div>
-                    {token.chainBreakdown.length > 0 && (
+                    {/* Only show expand arrow for non-external tokens with chain breakdown */}
+                    {!token.isExternal && token.chainBreakdown.length > 0 && (
                       <span className={`text-gray-500 text-sm transition-transform ${expandedTokens.has(token.symbol) ? 'rotate-180' : ''}`}>
                         ▼
                       </span>
@@ -1395,10 +1430,9 @@ const HomeTab = ({
                   </div>
                 </button>
                 
-                {/* Chain Breakdown (Expanded) + Sell Button */}
-                {expandedTokens.has(token.symbol) && (
+                {/* Chain Breakdown (Expanded) - only for non-external tokens */}
+                {!token.isExternal && expandedTokens.has(token.symbol) && (
                   <div className="pl-14 pb-4">
-                    {/* Chain breakdown */}
                     {token.chainBreakdown.length > 0 && (
                       <div className="space-y-2 mb-3">
                         {token.chainBreakdown.map((chain, j) => (
@@ -1415,11 +1449,11 @@ const HomeTab = ({
                         ))}
                       </div>
                     )}
-                    
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <div className="text-center py-16">
