@@ -44,26 +44,40 @@ interface MobulaAsset {
 
 // Fetch wallet balances from Mobula API
 async function fetchMobulaWalletBalances(address: string): Promise<MobulaAsset[]> {
+  console.log("[Mobula] Fetching wallet balances for:", address);
+  
+  if (!address) {
+    console.error("[Mobula] No wallet address provided");
+    return [];
+  }
+  
   try {
-    const response = await fetch(
-      `https://api.mobula.io/api/1/wallet/portfolio?wallet=${address}&blockchains=base,ethereum,arbitrum,optimism,polygon`,
-      {
-        headers: {
-          "Authorization": MOBULA_API_KEY,
-        },
-      }
-    );
+    // Use the multi-wallet endpoint to get all holdings
+    const url = `https://api.mobula.io/api/1/wallet/multi-portfolio?wallets=${address}&blockchains=Base,Ethereum,Arbitrum,Optimism,Polygon`;
+    console.log("[Mobula] URL:", url);
+    
+    const response = await fetch(url, {
+      headers: {
+        "Authorization": MOBULA_API_KEY,
+      },
+    });
     
     if (!response.ok) {
-      console.error("[Mobula] Wallet fetch failed:", response.status);
+      const errorText = await response.text();
+      console.error("[Mobula] Wallet fetch failed:", response.status, errorText);
       return [];
     }
     
     const data = await response.json();
-    console.log("[Mobula] Wallet balances:", data);
+    console.log("[Mobula] Wallet response:", JSON.stringify(data).slice(0, 500));
     
-    // Return assets array
-    return data.data?.assets || [];
+    // Handle multi-wallet response format
+    // It returns { data: { walletAddress: { assets: [...] } } }
+    const walletData = data.data?.[address] || data.data?.[address.toLowerCase()] || {};
+    const assets = walletData.assets || data.data?.assets || [];
+    
+    console.log("[Mobula] Found assets:", assets.length);
+    return assets;
   } catch (error) {
     console.error("[Mobula] Error fetching wallet:", error);
     return [];
@@ -1381,21 +1395,39 @@ const HomeTab = ({
                   </div>
                 </button>
                 
-                {/* Chain Breakdown (Expanded) */}
-                {expandedTokens.has(token.symbol) && token.chainBreakdown.length > 0 && (
-                  <div className="pl-14 pb-4 space-y-2">
-                    {token.chainBreakdown.map((chain, j) => (
-                      <div key={j} className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-2">
-                          <ChainLogo chainName={chain.chainName} size={16} />
-                          <span className="text-gray-400">{chain.chainName}</span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-gray-300">{chain.amount.toFixed(4)} {token.symbol}</span>
-                          <span className="text-gray-500 ml-2">(${chain.amountInUSD.toFixed(2)})</span>
-                        </div>
+                {/* Chain Breakdown (Expanded) + Sell Button */}
+                {expandedTokens.has(token.symbol) && (
+                  <div className="pl-14 pb-4">
+                    {/* Chain breakdown */}
+                    {token.chainBreakdown.length > 0 && (
+                      <div className="space-y-2 mb-3">
+                        {token.chainBreakdown.map((chain, j) => (
+                          <div key={j} className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-2">
+                              <ChainLogo chainName={chain.chainName} size={16} />
+                              <span className="text-gray-400">{chain.chainName}</span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-gray-300">{chain.amount.toFixed(4)} {token.symbol}</span>
+                              <span className="text-gray-500 ml-2">(${chain.amountInUSD.toFixed(2)})</span>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
+                    
+                    {/* Sell button - only show for non-stablecoin tokens */}
+                    {!["USDC", "USDT", "DAI", "BUSD"].includes(token.symbol.toUpperCase()) && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onConvert(); // Opens convert/swap modal
+                        }}
+                        className="w-full bg-red-500/20 text-red-400 py-2 rounded-lg font-medium hover:bg-red-500/30 transition-colors"
+                      >
+                        Sell {token.symbol} → USDC
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
