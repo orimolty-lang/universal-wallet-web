@@ -36,14 +36,6 @@ const formatTokenAmount = (amount: number, decimals: number = 6): string => {
   return amount.toLocaleString(undefined, { maximumFractionDigits: 0 });
 };
 
-// Token logos
-const TOKEN_LOGOS: Record<string, string> = {
-  "USDC": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png",
-  "USDT": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xdAC17F958D2ee523a2206206994597C13D831ec7/logo.png",
-  "ETH": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png",
-  "SOL": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png",
-};
-
 export const SwapModal = ({
   isOpen,
   onClose,
@@ -54,29 +46,15 @@ export const SwapModal = ({
 }: SwapModalProps) => {
   const [amount, setAmount] = useState("");
   const [sliderValue, setSliderValue] = useState(50);
-  const [selectedFromToken, setSelectedFromToken] = useState<"USDC" | "USDT">("USDC");
-  const [showFromTokenPicker, setShowFromTokenPicker] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [txResult, setTxResult] = useState<{ txId: string; outputAmount?: string } | null>(null);
 
-  // Get available "from" tokens (stablecoins for USD-first approach)
-  const fromTokens: Array<"USDC" | "USDT"> = ["USDC", "USDT"];
-
-  // Get user's balance of selected from token
-  const getFromTokenBalance = useCallback(() => {
-    if (!primaryAssets?.assets) return 0;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const asset = primaryAssets.assets.find((a: any) => 
-      a.symbol?.toUpperCase() === selectedFromToken
-    );
-    if (!asset) return 0;
-    return typeof asset.amount === 'string' ? parseFloat(asset.amount) : (asset.amount || 0);
-  }, [primaryAssets, selectedFromToken]);
-
-  const fromBalance = getFromTokenBalance();
+  // Get total unified balance (UA aggregates across all chains)
+  const totalBalance = primaryAssets?.totalAmountInUSD || 0;
+  
   const amountNum = parseFloat(amount) || 0;
-  const amountUsd = amountNum; // For stablecoins, amount ≈ USD
+  const amountUsd = amountNum;
 
   // Calculate output amount based on target token price
   const outputAmount = targetToken?.price ? amountUsd / targetToken.price : 0;
@@ -92,13 +70,13 @@ export const SwapModal = ({
     }
   }, [isOpen]);
 
-  // Update amount based on slider
+  // Update amount based on slider (uses total unified balance)
   useEffect(() => {
-    if (fromBalance > 0 && !txResult) {
-      const newAmount = (fromBalance * sliderValue / 100).toFixed(2);
+    if (totalBalance > 0 && !txResult) {
+      const newAmount = (totalBalance * sliderValue / 100).toFixed(2);
       setAmount(newAmount);
     }
-  }, [sliderValue, fromBalance, txResult]);
+  }, [sliderValue, totalBalance, txResult]);
 
   // Number pad handler
   const handleNumPad = (key: string) => {
@@ -183,7 +161,7 @@ export const SwapModal = ({
       // Step 1: Prepare transaction
       const result = await executeSwap({
         ua: universalAccount,
-        fromToken: selectedFromToken,
+        fromToken: "USDC", // UA SDK will aggregate from all available balances
         toTokenAddress: address,
         toTokenChainId: chainId,
         amountUsd: amountUsd,
@@ -242,8 +220,8 @@ export const SwapModal = ({
     }
   };
 
-  const hasInsufficientBalance = amountNum > fromBalance;
-  const canSwap = amountNum > 0 && !hasInsufficientBalance && targetToken && universalAccount && !txResult;
+  const hasInsufficientBalance = amountNum > totalBalance;
+  const canSwap = amountNum > 0 && targetToken && universalAccount && !txResult;
 
   if (!isOpen) return null;
 
@@ -304,61 +282,37 @@ export const SwapModal = ({
                 </div>
               )}
 
-              {/* From Token Card */}
+              {/* From (USD) Card - Unified Balance */}
               <div className="bg-[#0f2744] rounded-2xl p-4 mb-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <img 
-                      src={TOKEN_LOGOS[selectedFromToken]} 
-                      alt={selectedFromToken}
-                      className="w-10 h-10 rounded-full"
-                    />
+                    <div className="w-10 h-10 rounded-full bg-green-600 flex items-center justify-center text-xl">
+                      💵
+                    </div>
                     <div>
-                      <input
-                        type="text"
-                        value={amount}
-                        onChange={(e) => setAmount(e.target.value)}
-                        placeholder="0"
-                        className="bg-transparent text-white text-3xl font-bold w-32 outline-none"
-                        readOnly
-                      />
-                      <div className="text-gray-400 text-sm">${amountUsd.toFixed(2)}</div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-gray-400 text-2xl">$</span>
+                        <input
+                          type="text"
+                          value={amount}
+                          onChange={(e) => setAmount(e.target.value)}
+                          placeholder="0"
+                          className="bg-transparent text-white text-3xl font-bold w-28 outline-none"
+                          readOnly
+                        />
+                      </div>
+                      <div className="text-gray-400 text-sm">USD Amount</div>
                     </div>
                   </div>
                   <div className="text-right">
-                    <button 
-                      onClick={() => setShowFromTokenPicker(!showFromTokenPicker)}
-                      className="bg-cyan-500 text-white px-3 py-1.5 rounded-full font-medium flex items-center gap-1"
-                    >
-                      {selectedFromToken}
-                      <span className="text-xs">▼</span>
-                    </button>
+                    <div className="bg-green-600 text-white px-3 py-1.5 rounded-full font-medium">
+                      USD
+                    </div>
                     <div className="text-gray-400 text-sm mt-1">
-                      {fromBalance.toFixed(2)} {selectedFromToken}
+                      Balance: ${totalBalance.toFixed(2)}
                     </div>
                   </div>
                 </div>
-
-                {/* From Token Picker Dropdown */}
-                {showFromTokenPicker && (
-                  <div className="mt-3 bg-[#1a3a5c] rounded-xl p-2">
-                    {fromTokens.map(token => (
-                      <button
-                        key={token}
-                        onClick={() => {
-                          setSelectedFromToken(token);
-                          setShowFromTokenPicker(false);
-                        }}
-                        className={`w-full flex items-center gap-3 p-2 rounded-lg ${
-                          selectedFromToken === token ? "bg-cyan-500/20" : "hover:bg-gray-700/50"
-                        }`}
-                      >
-                        <img src={TOKEN_LOGOS[token]} alt={token} className="w-8 h-8 rounded-full" />
-                        <span className="text-white">{token}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
 
               {/* Swap Arrow */}
@@ -404,10 +358,10 @@ export const SwapModal = ({
               {/* Rate Display */}
               <div className="flex items-center justify-between mt-3 text-sm">
                 <span className="text-gray-400">
-                  1 {selectedFromToken} ≈ {formatTokenAmount(rate)} {targetToken?.symbol || "???"}
+                  $1 ≈ {formatTokenAmount(rate)} {targetToken?.symbol || "???"}
                 </span>
                 <span className="text-gray-500 text-xs">
-                  via {getTokenAddressAndChain().chainId === 101 ? "Relay" : "0x"}
+                  via {getTokenAddressAndChain().chainId === 101 ? "Relay" : "0x"} • UA Unified
                 </span>
               </div>
 
@@ -473,10 +427,12 @@ export const SwapModal = ({
                 {isLoading 
                   ? "Swapping..." 
                   : hasInsufficientBalance 
-                    ? `Insufficient ${selectedFromToken}`
+                    ? "Insufficient Balance"
                     : !universalAccount
                       ? "Connect Wallet"
-                      : "Swap"
+                      : amountNum <= 0
+                        ? "Enter Amount"
+                        : "Swap"
                 }
               </button>
             </div>
