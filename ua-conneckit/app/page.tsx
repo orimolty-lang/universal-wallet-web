@@ -687,14 +687,15 @@ const BottomSheet = ({
         }}
         onClick={e => e.stopPropagation()}
       >
-        {/* Drag Handle - larger touch area */}
+        {/* Drag Handle - larger touch target */}
         <div 
-          className="flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing touch-none"
+          className="flex justify-center pt-4 pb-3 cursor-grab active:cursor-grabbing"
+          style={{ touchAction: 'none' }}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          <div className="w-12 h-1.5 bg-gray-500 rounded-full" />
+          <div className="w-14 h-1.5 bg-gray-500 rounded-full" />
         </div>
         {/* Content */}
         <div className={`overflow-auto ${fullScreen ? 'h-[calc(100%-40px)]' : 'max-h-[calc(90vh-40px)]'}`}>
@@ -2344,28 +2345,50 @@ const App = () => {
     }
   }, [universalAccountInstance]);
 
-  // Fetch Mobula wallet balances for external tokens (UA smart accounts only)
+  // Fetch Mobula wallet balances for external tokens (UA smart accounts - EVM + Solana)
   const fetchMobulaAssets = useCallback(async () => {
     if (!accountInfo?.evmSmartAccount) {
       console.log("[Mobula] No EVM smart account yet");
       return;
     }
     try {
-      console.log("[Mobula] Fetching for UA smart account:", accountInfo.evmSmartAccount);
-      const assets = await fetchMobulaWalletBalances(accountInfo.evmSmartAccount);
-      console.log("[Mobula] Found assets:", assets.length, assets.map(a => a.asset?.symbol).slice(0, 10));
-      setMobulaAssets(assets);
+      // Fetch EVM assets
+      console.log("[Mobula] Fetching for EVM account:", accountInfo.evmSmartAccount);
+      const evmAssets = await fetchMobulaWalletBalances(accountInfo.evmSmartAccount);
+      console.log("[Mobula] EVM assets:", evmAssets.length, evmAssets.map(a => a.asset?.symbol).slice(0, 10));
+      
+      // Fetch Solana assets if we have a Solana address
+      let solanaAssets: MobulaAsset[] = [];
+      if (accountInfo?.solanaSmartAccount) {
+        console.log("[Mobula] Fetching for Solana account:", accountInfo.solanaSmartAccount);
+        solanaAssets = await fetchMobulaWalletBalances(accountInfo.solanaSmartAccount);
+        console.log("[Mobula] Solana assets:", solanaAssets.length, solanaAssets.map(a => a.asset?.symbol).slice(0, 10));
+      }
+      
+      // Merge and dedupe by symbol (prefer higher balance)
+      const assetMap = new Map<string, MobulaAsset>();
+      [...evmAssets, ...solanaAssets].forEach(asset => {
+        const key = asset.asset.symbol?.toUpperCase();
+        const existing = assetMap.get(key);
+        if (!existing || asset.estimated_balance > existing.estimated_balance) {
+          assetMap.set(key, asset);
+        }
+      });
+      
+      const mergedAssets = Array.from(assetMap.values());
+      console.log("[Mobula] Merged assets:", mergedAssets.length);
+      setMobulaAssets(mergedAssets);
     } catch (error) {
       console.error("Failed to fetch Mobula assets:", error);
     }
-  }, [accountInfo?.evmSmartAccount]);
+  }, [accountInfo?.evmSmartAccount, accountInfo?.solanaSmartAccount]);
 
   // Fetch Mobula assets when account info is available
   useEffect(() => {
     if (accountInfo?.evmSmartAccount) {
       fetchMobulaAssets();
     }
-  }, [accountInfo?.evmSmartAccount, fetchMobulaAssets]);
+  }, [accountInfo?.evmSmartAccount, accountInfo?.solanaSmartAccount, fetchMobulaAssets]);
 
   // Merge UA primary assets with Mobula external assets
   const combinedAssets = useMemo(() => {

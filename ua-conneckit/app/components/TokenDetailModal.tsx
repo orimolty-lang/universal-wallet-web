@@ -76,6 +76,36 @@ const formatAddress = (addr: string): string => {
   return `${addr.substring(0, 6)}...${addr.substring(addr.length - 4)}`;
 };
 
+// Chain logo URLs
+const CHAIN_LOGOS: Record<string, string> = {
+  "ethereum": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png",
+  "base": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/info/logo.png",
+  "arbitrum": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png",
+  "optimism": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/optimism/info/logo.png",
+  "polygon": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png",
+  "bsc": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/binance/info/logo.png",
+  "bnb": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/binance/info/logo.png",
+  "solana": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png",
+  "avalanche": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/avalanchec/info/logo.png",
+};
+
+// Chain badge component
+const ChainBadge = ({ blockchain }: { blockchain: string }) => {
+  const logo = CHAIN_LOGOS[blockchain.toLowerCase()];
+  const shortNames: Record<string, string> = {
+    ethereum: "ETH", base: "Base", arbitrum: "ARB", optimism: "OP",
+    polygon: "MATIC", bsc: "BSC", bnb: "BSC", solana: "SOL", avalanche: "AVAX",
+  };
+  const shortName = shortNames[blockchain.toLowerCase()] || blockchain;
+  
+  return (
+    <div className="flex items-center gap-1 bg-gray-800/80 rounded-full px-2 py-0.5">
+      {logo && <img src={logo} alt={blockchain} className="w-3.5 h-3.5 rounded-full" />}
+      <span className="text-gray-300 text-xs">{shortName}</span>
+    </div>
+  );
+};
+
 // Candlestick Chart Component
 const CandlestickChart = ({ 
   symbol, 
@@ -293,6 +323,36 @@ export const TokenDetailModal = ({
 }: TokenDetailModalProps) => {
   const [chartInterval, setChartInterval] = useState<TimeInterval>("1H");
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const startYRef = useRef<number | null>(null);
+  const currentYRef = useRef<number>(0);
+
+  // Handle drag to dismiss
+  const handleTouchStart = (e: React.TouchEvent) => {
+    startYRef.current = e.touches[0].clientY;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (startYRef.current === null || !modalRef.current) return;
+    const deltaY = e.touches[0].clientY - startYRef.current;
+    if (deltaY > 0) {
+      currentYRef.current = deltaY;
+      modalRef.current.style.transform = `translateY(${deltaY}px)`;
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (!modalRef.current) return;
+    if (currentYRef.current > 100) {
+      // Dismiss if dragged more than 100px
+      onClose();
+    } else {
+      // Snap back
+      modalRef.current.style.transform = '';
+    }
+    startYRef.current = null;
+    currentYRef.current = 0;
+  };
 
   if (!token) return null;
 
@@ -311,9 +371,18 @@ export const TokenDetailModal = ({
       />
 
       {/* Modal */}
-      <div className="fixed inset-x-0 bottom-0 z-50 max-h-[90vh] bg-[#0d1b2a] rounded-t-3xl overflow-hidden flex flex-col animate-slide-up">
-        {/* Drag Handle */}
-        <div className="flex justify-center pt-3 pb-2">
+      <div 
+        ref={modalRef}
+        className="fixed inset-x-0 bottom-0 z-50 max-h-[90vh] bg-[#0d1b2a] rounded-t-3xl overflow-hidden flex flex-col animate-slide-up"
+        style={{ touchAction: 'pan-y' }}
+      >
+        {/* Drag Handle - with touch events */}
+        <div 
+          className="flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
           <div className="w-10 h-1 bg-gray-600 rounded-full" />
         </div>
 
@@ -321,21 +390,44 @@ export const TokenDetailModal = ({
         <div className="flex-1 overflow-y-auto px-5 pb-24">
           {/* Token Header */}
           <div className="flex items-center gap-3 mb-1">
-            {token.logo ? (
-              <img
-                src={token.logo}
-                alt={token.symbol}
-                className="w-10 h-10 rounded-full"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = "none";
-                }}
-              />
-            ) : (
-              <div className="w-10 h-10 rounded-full bg-cyan-600 flex items-center justify-center text-white font-bold">
-                {token.symbol.slice(0, 2)}
-              </div>
-            )}
-            <span className="text-cyan-400 font-medium text-lg">{token.name}</span>
+            <div className="relative">
+              {token.logo ? (
+                <img
+                  src={token.logo}
+                  alt={token.symbol}
+                  className="w-10 h-10 rounded-full"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-cyan-600 flex items-center justify-center text-white font-bold">
+                  {token.symbol.slice(0, 2)}
+                </div>
+              )}
+              {/* Single chain badge on logo */}
+              {token.contracts && token.contracts.length > 0 && (
+                <img 
+                  src={CHAIN_LOGOS[token.contracts[0].blockchain.toLowerCase()]}
+                  alt=""
+                  className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[#0d1b2a]"
+                />
+              )}
+            </div>
+            <div>
+              <span className="text-cyan-400 font-medium text-lg">{token.name}</span>
+              {/* Chain badges */}
+              {token.contracts && token.contracts.length > 0 && (
+                <div className="flex gap-1 mt-1">
+                  {token.contracts.slice(0, 3).map((c, i) => (
+                    <ChainBadge key={i} blockchain={c.blockchain} />
+                  ))}
+                  {token.contracts.length > 3 && (
+                    <span className="text-gray-500 text-xs">+{token.contracts.length - 3}</span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Price Display */}
