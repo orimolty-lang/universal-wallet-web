@@ -52,14 +52,14 @@ async function fetchMobulaWalletBalances(address: string): Promise<MobulaAsset[]
   }
   
   try {
-    // Use standard portfolio endpoint
-    const url = `https://api.mobula.io/api/1/wallet/portfolio?wallet=${address}&blockchains=Base,Ethereum,Arbitrum,Optimism,Polygon`;
-    console.log("[Mobula] URL:", url);
+    // Use CORS proxy for browser requests
+    const mobulaUrl = `https://api.mobula.io/api/1/wallet/portfolio?wallet=${address}&blockchains=Base,Ethereum,Arbitrum,Optimism,Polygon`;
+    const url = `https://corsproxy.io/?${encodeURIComponent(mobulaUrl)}`;
+    console.log("[Mobula] URL (via CORS proxy):", url);
     
     const response = await fetch(url, {
       method: "GET",
       headers: {
-        "Authorization": `Bearer ${MOBULA_API_KEY}`,
         "Content-Type": "application/json",
       },
     });
