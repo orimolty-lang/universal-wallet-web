@@ -17,6 +17,7 @@ import DepositDialog from "./components/DepositDialog";
 import AssetBreakdownDialog from "./components/AssetBreakdownDialog";
 import TokenDetailModal from "./components/TokenDetailModal";
 import SwapModal from "./components/SwapModal";
+import SellModal from "./components/SellModal";
 
 // Mobula API for token search
 const MOBULA_API_KEY = "a8e6a174-9dfd-4929-b0e0-9f6ece767923";
@@ -1242,6 +1243,7 @@ const HomeTab = ({
   onReceive,
   onSend,
   onConvert,
+  onSell,
 }: {
   accountInfo: AccountInfo | null;
   primaryAssets: IAssetsResponse | null;
@@ -1251,6 +1253,7 @@ const HomeTab = ({
   onReceive: () => void;
   onSend: () => void;
   onConvert: () => void;
+  onSell: (token: { symbol: string; name: string; balance: number; amountInUSD: number; price: number; logo?: string }) => void;
 }) => {
   // Use Set to allow multiple tokens to be expanded simultaneously
   const [expandedTokens, setExpandedTokens] = useState<Set<string>>(new Set());
@@ -1421,7 +1424,14 @@ const HomeTab = ({
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          onConvert(); // Opens convert/swap modal
+                          onSell({
+                            symbol: token.symbol,
+                            name: token.name,
+                            balance: token.balance,
+                            amountInUSD: token.amountInUSD,
+                            price: token.price,
+                            logo: token.logo,
+                          });
                         }}
                         className="w-full bg-red-500/20 text-red-400 py-2 rounded-lg font-medium hover:bg-red-500/30 transition-colors"
                       >
@@ -2017,6 +2027,15 @@ const App = () => {
   const [showAssetBreakdown, setShowAssetBreakdown] = useState(false);
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showSellModal, setShowSellModal] = useState(false);
+  const [sellToken, setSellToken] = useState<{
+    symbol: string;
+    name: string;
+    balance: number;
+    amountInUSD: number;
+    price: number;
+    logo?: string;
+  } | null>(null);
 
   // Profile settings (persisted to localStorage)
   const [profile, setProfile] = useState<ProfileSettings>(() => {
@@ -2083,22 +2102,46 @@ const App = () => {
   }, [universalAccountInstance]);
 
   // Fetch Mobula wallet balances for external tokens
+  // Try both smart account AND owner address since tokens might be on either
   const fetchMobulaAssets = useCallback(async () => {
-    if (!accountInfo?.evmSmartAccount) return;
+    if (!accountInfo?.evmSmartAccount && !accountInfo?.ownerAddress) return;
     try {
-      const assets = await fetchMobulaWalletBalances(accountInfo.evmSmartAccount);
-      setMobulaAssets(assets);
+      // Fetch for both addresses and combine
+      const addresses = [
+        accountInfo.evmSmartAccount,
+        accountInfo.ownerAddress,
+      ].filter(Boolean);
+      
+      console.log("[Mobula] Fetching for addresses:", addresses);
+      
+      const allAssets: MobulaAsset[] = [];
+      const seenSymbols = new Set<string>();
+      
+      for (const addr of addresses) {
+        if (!addr) continue;
+        const assets = await fetchMobulaWalletBalances(addr);
+        for (const asset of assets) {
+          // Avoid duplicates
+          if (!seenSymbols.has(asset.asset.symbol)) {
+            seenSymbols.add(asset.asset.symbol);
+            allAssets.push(asset);
+          }
+        }
+      }
+      
+      console.log("[Mobula] Total unique assets:", allAssets.length);
+      setMobulaAssets(allAssets);
     } catch (error) {
       console.error("Failed to fetch Mobula assets:", error);
     }
-  }, [accountInfo?.evmSmartAccount]);
+  }, [accountInfo?.evmSmartAccount, accountInfo?.ownerAddress]);
 
   // Fetch Mobula assets when account info is available
   useEffect(() => {
-    if (accountInfo?.evmSmartAccount) {
+    if (accountInfo?.evmSmartAccount || accountInfo?.ownerAddress) {
       fetchMobulaAssets();
     }
-  }, [accountInfo?.evmSmartAccount, fetchMobulaAssets]);
+  }, [accountInfo?.evmSmartAccount, accountInfo?.ownerAddress, fetchMobulaAssets]);
 
   // Merge UA primary assets with Mobula external assets
   const combinedAssets = useMemo(() => {
@@ -2191,6 +2234,10 @@ const App = () => {
           onReceive={() => setShowReceiveModal(true)}
           onSend={() => setShowSendModal(true)}
           onConvert={() => setShowConvertModal(true)}
+          onSell={(token) => {
+            setSellToken(token);
+            setShowSellModal(true);
+          }}
         />
       )}
       {activeTab === "search" && (
@@ -2238,6 +2285,21 @@ const App = () => {
         isOpen={showConvertModal}
         onClose={() => setShowConvertModal(false)}
         assets={primaryAssets}
+      />
+
+      <SellModal
+        isOpen={showSellModal}
+        onClose={() => {
+          setShowSellModal(false);
+          setSellToken(null);
+        }}
+        token={sellToken}
+        universalAccount={universalAccountInstance}
+        onSellSuccess={(txId) => {
+          console.log("Sell success:", txId);
+          fetchAssets(); // Refresh balances
+          fetchMobulaAssets();
+        }}
       />
 
       {accountInfo && (
