@@ -1883,21 +1883,66 @@ const ActivityModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => vo
   </BottomSheet>
 );
 
+// App Lock Modal
+const AppLockModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
+  const [biometricsEnabled, setBiometricsEnabled] = useState(false);
+  
+  return (
+    <BottomSheet isOpen={isOpen} onClose={onClose}>
+      <div className="px-6 pb-8">
+        <div className="flex items-center gap-3 mb-6">
+          <button onClick={onClose} className="text-white">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/>
+            </svg>
+          </button>
+          <h2 className="text-white text-xl font-bold">App Lock</h2>
+        </div>
+        
+        <p className="text-gray-400 text-sm mb-6">
+          App Lock uses biometric data to unlock your OMNI account. Enable an unlock method below.
+        </p>
+        
+        <div className="flex items-center justify-between py-4 border-b border-gray-800">
+          <div className="flex items-center gap-3">
+            <svg className="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7.864 4.243A7.5 7.5 0 0119.5 10.5c0 2.92-.556 5.709-1.568 8.268M5.742 6.364A7.465 7.465 0 004.5 10.5a7.464 7.464 0 01-1.15 3.993m1.989 3.559A11.209 11.209 0 008.25 10.5a3.75 3.75 0 117.5 0c0 .527-.021 1.049-.064 1.565M12 10.5a14.94 14.94 0 01-3.6 9.75m6.633-4.596a18.666 18.666 0 01-2.485 5.33"/>
+            </svg>
+            <span className="text-white">Biometrics</span>
+          </div>
+          <button
+            onClick={() => setBiometricsEnabled(!biometricsEnabled)}
+            className={`w-12 h-7 rounded-full transition-colors ${biometricsEnabled ? 'bg-purple-500' : 'bg-gray-600'}`}
+          >
+            <div className={`w-5 h-5 bg-white rounded-full transition-transform ${biometricsEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+          </button>
+        </div>
+        
+        {biometricsEnabled && (
+          <p className="text-yellow-500 text-xs mt-4">
+            ⚠️ Biometric lock requires native app support. This setting will be saved but may not take effect until the next app update.
+          </p>
+        )}
+      </div>
+    </BottomSheet>
+  );
+};
+
 // Settings Modal (moved from tab)
 const SettingsModal = ({ 
   isOpen, 
   onClose, 
   onLogout,
   onOpenAccountSecurity,
-  onOpenPaymentPassword,
-  userEmail
+  onOpenMasterPassword,
+  onOpenAppLock
 }: { 
   isOpen: boolean; 
   onClose: () => void; 
   onLogout: () => void;
   onOpenAccountSecurity?: () => void;
-  onOpenPaymentPassword?: () => void;
-  userEmail?: string | null;
+  onOpenMasterPassword?: () => void;
+  onOpenAppLock?: () => void;
 }) => (
   <BottomSheet isOpen={isOpen} onClose={onClose}>
     <div className="px-6 pb-8">
@@ -1922,7 +1967,22 @@ const SettingsModal = ({
         </button>
         
         <button 
-          onClick={() => userEmail && onOpenPaymentPassword?.()}
+          onClick={onOpenAppLock}
+          className="w-full flex items-center justify-between py-3 border-b border-gray-800"
+        >
+          <div className="flex items-center gap-3">
+            <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7.864 4.243A7.5 7.5 0 0119.5 10.5c0 2.92-.556 5.709-1.568 8.268M5.742 6.364A7.465 7.465 0 004.5 10.5a7.464 7.464 0 01-1.15 3.993m1.989 3.559A11.209 11.209 0 008.25 10.5a3.75 3.75 0 117.5 0c0 .527-.021 1.049-.064 1.565M12 10.5a14.94 14.94 0 01-3.6 9.75m6.633-4.596a18.666 18.666 0 01-2.485 5.33"/>
+            </svg>
+            <span className="text-white">App Lock</span>
+          </div>
+          <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.25 4.5l7.5 7.5-7.5 7.5"/>
+          </svg>
+        </button>
+        
+        <button 
+          onClick={onOpenMasterPassword}
           className="w-full flex items-center justify-between py-3 border-b border-gray-800"
         >
           <div className="flex items-center gap-3">
@@ -1934,16 +1994,6 @@ const SettingsModal = ({
           <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.25 4.5l7.5 7.5-7.5 7.5"/>
           </svg>
-        </button>
-        
-        <button className="w-full flex items-center justify-between py-3 border-b border-gray-800 opacity-50">
-          <div className="flex items-center gap-3">
-            <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7.864 4.243A7.5 7.5 0 0119.5 10.5c0 2.92-.556 5.709-1.568 8.268M5.742 6.364A7.465 7.465 0 004.5 10.5a7.464 7.464 0 01-1.15 3.993m1.989 3.559A11.209 11.209 0 008.25 10.5a3.75 3.75 0 117.5 0c0 .527-.021 1.049-.064 1.565M12 10.5a14.94 14.94 0 01-3.6 9.75m6.633-4.596a18.666 18.666 0 01-2.485 5.33"/>
-            </svg>
-            <span className="text-white">App Lock (Face ID)</span>
-          </div>
-          <span className="text-gray-600 text-xs">Coming Soon</span>
         </button>
         
         {/* Preferences Section */}
@@ -2047,7 +2097,7 @@ const App = () => {
   useWallets();
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
-  const { openAccountAndSecurity, openSetPaymentPassword, getUserInfo } = useParticleAuth();
+  const { openAccountAndSecurity, openSetMasterPassword } = useParticleAuth();
   
   const [showSplash, setShowSplash] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>("home");
@@ -2067,6 +2117,7 @@ const App = () => {
   const [showAssetBreakdown, setShowAssetBreakdown] = useState(false);
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showAppLockModal, setShowAppLockModal] = useState(false);
   // Sell is handled by SwapModal with direction flip
 
   // Profile settings (persisted to localStorage)
@@ -2336,12 +2387,13 @@ const App = () => {
         onClose={() => setShowSettingsModal(false)} 
         onLogout={disconnect}
         onOpenAccountSecurity={openAccountAndSecurity}
-        onOpenPaymentPassword={() => {
-          const userInfo = getUserInfo();
-          const email = userInfo?.email || userInfo?.google_email || userInfo?.security_account?.email;
-          if (email) openSetPaymentPassword(email);
-        }}
-        userEmail={getUserInfo()?.email || getUserInfo()?.google_email}
+        onOpenMasterPassword={openSetMasterPassword}
+        onOpenAppLock={() => setShowAppLockModal(true)}
+      />
+      
+      <AppLockModal
+        isOpen={showAppLockModal}
+        onClose={() => setShowAppLockModal(false)}
       />
     </div>
   );
