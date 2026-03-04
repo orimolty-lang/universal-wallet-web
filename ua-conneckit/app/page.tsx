@@ -2358,17 +2358,17 @@ const App = () => {
       primaryAssets.assets?.map((a: any) => a.symbol?.toUpperCase()) || []
     );
     
-    // Also track common stablecoins/tokens to avoid dupes
-    const commonTokens = new Set(["USDC", "USDT", "DAI", "ETH", "WETH", "SOL", "WSOL"]);
+    console.log("[CombinedAssets] primarySymbols:", Array.from(primarySymbols));
     
     // Filter Mobula assets to only include tokens NOT in primary assets
     const externalAssets = mobulaAssets
       .filter(ma => {
         const symbolUpper = ma.asset.symbol?.toUpperCase();
-        // Skip if already in primary assets
-        if (primarySymbols.has(symbolUpper)) return false;
-        // Skip common tokens that might be duped with slight naming differences
-        if (commonTokens.has(symbolUpper)) return false;
+        // Skip if already in primary assets (case-insensitive)
+        if (primarySymbols.has(symbolUpper)) {
+          console.log("[CombinedAssets] Skipping dupe:", ma.asset.symbol);
+          return false;
+        }
         return true;
       })
       .filter(ma => ma.token_balance > 0) // Show any token with balance
@@ -2402,7 +2402,7 @@ const App = () => {
           });
         }
         
-        console.log("[CombinedAssets] External token:", ma.asset.symbol, "contracts:", contracts);
+        console.log("[CombinedAssets] Adding external token:", ma.asset.symbol, "contracts:", contracts.length);
         
         return {
           symbol: ma.asset.symbol,
@@ -2424,17 +2424,10 @@ const App = () => {
         };
       });
     
-    // Merge with primary assets, but dedupe by symbol (case-insensitive)
-    const seenSymbols = new Set<string>();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const dedupedPrimary = (primaryAssets.assets || []).filter((a: any) => {
-      const sym = a.symbol?.toUpperCase();
-      if (seenSymbols.has(sym)) return false;
-      seenSymbols.add(sym);
-      return true;
-    });
+    // Simply merge - no dedup on primary (UA handles that)
+    const mergedAssets = [...(primaryAssets.assets || []), ...externalAssets];
     
-    const mergedAssets = [...dedupedPrimary, ...externalAssets];
+    console.log("[CombinedAssets] Final:", mergedAssets.length, "assets");
     
     // Calculate new total
     const externalTotal = externalAssets.reduce((sum, a) => sum + a.amountInUSD, 0);
