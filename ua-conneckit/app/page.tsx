@@ -1425,6 +1425,21 @@ const AVANTIS_PAIRS = [
   { index: 21, name: 'XAG/USD', maxLeverage: 100 },
 ];
 
+// Pyth Price Feed IDs for Avantis pairs
+const PYTH_FEED_IDS: Record<string, string> = {
+  'BTC/USD': '0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43',
+  'ETH/USD': '0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace',
+  'SOL/USD': '0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d',
+  'LINK/USD': '0x8ac0c70fff57e9aefdf5edf44b51d62c2d433653cbb2cf5cc06bb115af04d221',
+  'DOGE/USD': '0xdcef50dd0a4cd2dcc17e45df1676dcb336a11a61c69df7a0299b0150c672d25c',
+  'XRP/USD': '0xec5d399846a9209f3fe5881d70aae9268c94339ff9817e8d18ff19fa05eaea1c',
+  'EUR/USD': '0xa995d00bb36a63cef7fd2c287dc105fc8f3d93779f062f09551b0af3e81ec30b',
+  'GBP/USD': '0x84c2dde9633d93d1bcad84e7dc41c9d56578b7ec52fabedc1f335d673df0a7c1',
+  'USD/JPY': '0xef2c98c804ba503c6a707e38be4dfbb16683775f195b091252bf24693042fd52',
+  'XAU/USD': '0x765d2ba906dbc32ca17cc11f5310a89e9ee1f6420508c63861f2f8ba4ee34bb2',
+  'XAG/USD': '0xf2fb02c32b055c805e7238d628e5e9dadef274376114eb1f012337cabe93871e',
+};
+
 const PerpsModal = ({
   isOpen,
   onClose,
@@ -1436,6 +1451,7 @@ const PerpsModal = ({
   assets: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
 }) => {
+  const [primaryWallet] = useWallets();
   const [selectedPair, setSelectedPair] = useState(AVANTIS_PAIRS[0]);
   const [isLong, setIsLong] = useState(true);
   const [leverage, setLeverage] = useState(10);
@@ -1445,6 +1461,8 @@ const PerpsModal = ({
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState<string>('');
+  const [txResult, setTxResult] = useState<{ txId: string; status: string } | null>(null);
 
   // Get USDC balance from UA assets
   const usdcBalance = useMemo(() => {
@@ -1467,26 +1485,53 @@ const PerpsModal = ({
     return isLong ? currentPrice - liqDistance : currentPrice + liqDistance;
   }, [currentPrice, collateral, leverage, isLong]);
 
-  // Fetch current price for selected pair (placeholder - would use Pyth in production)
+  // Fetch current price from Pyth oracle
   useEffect(() => {
-    const fetchPrice = async () => {
-      // Simulated prices - in production, fetch from Pyth oracle
-      const prices: Record<string, number> = {
-        'BTC/USD': 95000,
-        'ETH/USD': 3500,
-        'SOL/USD': 150,
-        'LINK/USD': 18,
-        'DOGE/USD': 0.32,
-        'XRP/USD': 2.1,
-        'EUR/USD': 1.08,
-        'GBP/USD': 1.27,
-        'USD/JPY': 150.5,
-        'XAU/USD': 2650,
+    const fetchPythPrice = async () => {
+      const feedId = PYTH_FEED_IDS[selectedPair.name];
+      if (!feedId) {
+        console.log('[Perps] No Pyth feed ID for', selectedPair.name);
+        return;
+      }
+      
+      try {
+        // Pyth Hermes API for real-time prices
+        const response = await fetch(
+          `https://hermes.pyth.network/v2/updates/price/latest?ids[]=${feedId}`
+        );
+        const data = await response.json();
+        
+        if (data.parsed?.[0]?.price) {
+          const priceData = data.parsed[0].price;
+          // Pyth returns price with exponent, e.g. price=9500000000, expo=-8 means $95000.00
+          const price = Number(priceData.price) * Math.pow(10, priceData.expo);
+          setCurrentPrice(price);
+          console.log('[Perps] Pyth price for', selectedPair.name, ':', price);
+        }
+      } catch (err) {
+        console.error('[Perps] Failed to fetch Pyth price:', err);
+        // Fallback to static prices
+        const fallbackPrices: Record<string, number> = {
+          'BTC/USD': 95000,
+          'ETH/USD': 3500,
+          'SOL/USD': 150,
+          'LINK/USD': 18,
+          'DOGE/USD': 0.32,
+          'XRP/USD': 2.1,
+          'EUR/USD': 1.08,
+          'GBP/USD': 1.27,
+          'USD/JPY': 150.5,
+          'XAU/USD': 2650,
         'XAG/USD': 31,
-      };
-      setCurrentPrice(prices[selectedPair.name] || 0);
+        };
+        setCurrentPrice(fallbackPrices[selectedPair.name] || 0);
+      }
     };
-    fetchPrice();
+    
+    fetchPythPrice();
+    // Refresh price every 5 seconds
+    const interval = setInterval(fetchPythPrice, 5000);
+    return () => clearInterval(interval);
   }, [selectedPair]);
 
   const handleOpenPosition = async () => {
@@ -1495,8 +1540,15 @@ const PerpsModal = ({
       return;
     }
 
+    if (!primaryWallet) {
+      setError('Please connect wallet first');
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
+    setLoadingStatus('Preparing position...');
+    setTxResult(null);
 
     try {
       const collateralAmount = parseFloat(collateral);
@@ -1533,13 +1585,12 @@ const PerpsModal = ({
       });
 
       // Encode the openTrade call
-      // Note: trader address will be the UA smart account address
       const calldata = encodeFunctionData({
         abi: AVANTIS_TRADING_ABI,
         functionName: 'openTrade',
         args: [
           {
-            trader: '0x0000000000000000000000000000000000000000' as `0x${string}`, // Placeholder - contract uses msg.sender
+            trader: '0x0000000000000000000000000000000000000000' as `0x${string}`, // Contract uses msg.sender
             pairIndex: BigInt(selectedPair.index),
             index: BigInt(0), // Contract finds first empty index
             initialPosToken: BigInt(0), // Not used for USDC collateral
@@ -1550,18 +1601,15 @@ const PerpsModal = ({
             tp: tpScaled,
             sl: slScaled,
           },
-          0, // orderType: 0 = MARKET, 1 = LIMIT, 2 = STOP_LIMIT
+          0, // orderType: 0 = MARKET
           slippageP,
         ],
       });
 
       console.log('[Perps] Encoded calldata:', calldata);
+      setLoadingStatus('Creating transaction...');
 
       // Create universal transaction via UA
-      // UA will:
-      // 1. Route USDC from any chain to Base (if needed)
-      // 2. Approve USDC spending for Avantis (if needed)
-      // 3. Execute the openTrade call
       const tx = await universalAccount.createUniversalTransaction({
         chainId: 8453, // Base mainnet
         expectTokens: [{
@@ -1576,16 +1624,48 @@ const PerpsModal = ({
       });
 
       console.log('[Perps] UA transaction created:', tx);
-      
-      // Transaction is ready - would need to sign and send
-      // In production: await universalAccount.sendTransaction(tx, signature)
-      alert(`Position ready!\n\nPair: ${selectedPair.name}\nSide: ${isLong ? 'LONG' : 'SHORT'}\nLeverage: ${leverage}x\nCollateral: $${collateralAmount}\nPosition Size: $${positionSize}\n\nTransaction created. Connect wallet to sign.`);
+
+      // Step 2: Sign with wallet (same flow as SwapModal)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((tx as any).rootHash) {
+        setLoadingStatus('Waiting for signature...');
+        
+        const walletClient = primaryWallet.getWalletClient();
+        
+        // Sign the root hash using personal_sign
+        const signature = await walletClient.request({
+          method: 'personal_sign',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          params: [(tx as any).rootHash as `0x${string}`, walletClient.account?.address as `0x${string}`],
+        });
+
+        // Step 3: Send transaction
+        setLoadingStatus('Sending transaction...');
+        const sendResult = await universalAccount.sendTransaction(tx, signature as string);
+        
+        if (sendResult?.transactionId) {
+          console.log('[Perps] Transaction sent:', sendResult.transactionId);
+          setTxResult({
+            txId: sendResult.transactionId,
+            status: 'pending',
+          });
+          setLoadingStatus('Position opening...');
+          
+          // Reset form
+          setCollateral('');
+          setTakeProfit('');
+          setStopLoss('');
+        }
+      } else {
+        setError('Transaction requires signature but rootHash not found');
+      }
       
     } catch (err) {
       console.error('[Perps] Error:', err);
       setError(err instanceof Error ? err.message : 'Failed to open position');
     } finally {
       setIsLoading(false);
+      setLoadingStatus('');
     }
   };
 
@@ -1762,12 +1842,28 @@ const PerpsModal = ({
               : 'bg-gray-700 text-gray-500 cursor-not-allowed'
           }`}
         >
-          {isLoading ? 'Opening...' : `Open ${isLong ? 'Long' : 'Short'} ${selectedPair.name}`}
+          {isLoading ? (loadingStatus || 'Processing...') : `Open ${isLong ? 'Long' : 'Short'} ${selectedPair.name}`}
         </button>
 
         <p className="text-gray-500 text-xs text-center mt-3">
           Trading involves risk. UA routes USDC automatically.
         </p>
+
+        {/* Transaction Result */}
+        {txResult && (
+          <div className={`mt-4 p-3 rounded-lg text-sm ${
+            txResult.status === 'pending' 
+              ? 'bg-yellow-900/30 border border-yellow-500/50 text-yellow-300'
+              : 'bg-green-900/30 border border-green-500/50 text-green-300'
+          }`}>
+            <div className="font-bold mb-1">
+              {txResult.status === 'pending' ? '⏳ Position Opening...' : '✅ Position Opened!'}
+            </div>
+            <div className="text-xs font-mono break-all">
+              TX: {txResult.txId.slice(0, 16)}...
+            </div>
+          </div>
+        )}
       </div>
     </BottomSheet>
   );
