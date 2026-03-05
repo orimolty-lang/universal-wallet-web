@@ -19,6 +19,7 @@ import DepositDialog from "./components/DepositDialog";
 import AssetBreakdownDialog from "./components/AssetBreakdownDialog";
 import TokenDetailModal from "./components/TokenDetailModal";
 import SwapModal from "./components/SwapModal";
+import { encodeFunctionData } from "viem";
 
 // Mobula API for token search
 const MOBULA_API_KEY = "a8e6a174-9dfd-4929-b0e0-9f6ece767923";
@@ -1365,6 +1366,38 @@ const ConvertModal = ({
   );
 };
 
+// Avantis Trading Contract ABI (openTrade function)
+const AVANTIS_TRADING_ABI = [
+  {
+    name: 'openTrade',
+    type: 'function',
+    stateMutability: 'payable',
+    inputs: [
+      {
+        name: 't',
+        type: 'tuple',
+        components: [
+          { name: 'trader', type: 'address' },
+          { name: 'pairIndex', type: 'uint256' },
+          { name: 'index', type: 'uint256' },
+          { name: 'initialPosToken', type: 'uint256' },
+          { name: 'positionSizeUSDC', type: 'uint256' },
+          { name: 'openPrice', type: 'uint256' },
+          { name: 'buy', type: 'bool' },
+          { name: 'leverage', type: 'uint256' },
+          { name: 'tp', type: 'uint256' },
+          { name: 'sl', type: 'uint256' },
+        ],
+      },
+      { name: 'orderType', type: 'uint8' },
+      { name: 'slippageP', type: 'uint256' },
+    ],
+    outputs: [],
+  },
+] as const;
+
+const AVANTIS_TRADING_ADDRESS = '0x44914408af82bC9983bbb330e3578E1105e11d4e';
+
 // Avantis Perps Trading Modal
 const AVANTIS_PAIRS = [
   { index: 0, name: 'BTC/USD', maxLeverage: 150 },
@@ -1454,23 +1487,74 @@ const PerpsModal = ({
     setError(null);
 
     try {
-      // For now, show a message that this will be integrated
-      // In production: build Avantis calldata and route through UA
+      const collateralAmount = parseFloat(collateral);
+      const tpPrice = takeProfit ? parseFloat(takeProfit) : 0;
+      const slPrice = stopLoss ? parseFloat(stopLoss) : 0;
+      
       console.log('[Perps] Opening position:', {
         pair: selectedPair.name,
+        pairIndex: selectedPair.index,
         isLong,
         leverage,
-        collateral,
-        takeProfit,
-        stopLoss,
+        collateral: collateralAmount,
+        takeProfit: tpPrice,
+        stopLoss: slPrice,
+        currentPrice,
       });
 
-      // TODO: Integrate with Avantis SDK
-      // 1. Build Avantis openTrade calldata
-      // 2. Create UA transaction with target chain = 8453 (Base)
-      // 3. Execute via UA sendTransaction
+      // Convert values to contract format (10 decimals for prices/leverage, 6 for USDC)
+      const openPriceScaled = BigInt(Math.floor((currentPrice || 0) * 1e10));
+      const leverageScaled = BigInt(Math.floor(leverage * 1e10));
+      const positionSizeUSDC = BigInt(Math.floor(collateralAmount * 1e6));
+      const tpScaled = BigInt(Math.floor(tpPrice * 1e10));
+      const slScaled = BigInt(Math.floor(slPrice * 1e10));
+      const slippageP = BigInt(1e8); // 1% slippage (1e10 = 100%)
+      const executionFee = BigInt(1e14); // 0.0001 ETH
 
-      setError('Perps integration coming soon! Transaction flow ready.');
+      // Encode the openTrade call
+      const calldata = encodeFunctionData({
+        abi: AVANTIS_TRADING_ABI,
+        functionName: 'openTrade',
+        args: [
+          {
+            trader: '0x0000000000000000000000000000000000000000' as `0x${string}`, // UA will replace
+            pairIndex: BigInt(selectedPair.index),
+            index: BigInt(0),
+            initialPosToken: BigInt(0),
+            positionSizeUSDC: positionSizeUSDC,
+            openPrice: openPriceScaled,
+            buy: isLong,
+            leverage: leverageScaled,
+            tp: tpScaled,
+            sl: slScaled,
+          },
+          0, // orderType: 0 = MARKET
+          slippageP,
+        ],
+      });
+
+      console.log('[Perps] Encoded calldata:', calldata);
+
+      // Create universal transaction via UA
+      // UA will route USDC to Base and execute the trade
+      const tx = await universalAccount.createUniversalTransaction({
+        chainId: 8453, // Base
+        expectTokens: [{
+          type: SUPPORTED_TOKEN_TYPE.USDC,
+          amount: collateralAmount.toString(),
+        }],
+        transactions: [{
+          to: AVANTIS_TRADING_ADDRESS,
+          data: calldata,
+          value: executionFee.toString(),
+        }],
+      });
+
+      console.log('[Perps] UA transaction created:', tx);
+      
+      // Show transaction ready for signing
+      setError(`Position ready! TX created. Check console for details.`);
+      
     } catch (err) {
       console.error('[Perps] Error:', err);
       setError(err instanceof Error ? err.message : 'Failed to open position');
