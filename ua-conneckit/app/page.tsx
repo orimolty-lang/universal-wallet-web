@@ -1367,6 +1367,7 @@ const ConvertModal = ({
 };
 
 // Avantis Trading Contract ABI (openTrade function)
+// Verified from Basescan and official SDK docs
 const AVANTIS_TRADING_ABI = [
   {
     name: 'openTrade',
@@ -1396,7 +1397,18 @@ const AVANTIS_TRADING_ABI = [
   },
 ] as const;
 
+// Avantis Trading contract on Base mainnet (verified on Basescan)
 const AVANTIS_TRADING_ADDRESS = '0x44914408af82bC9983bbb330e3578E1105e11d4e';
+// USDC on Base (for reference, UA handles routing)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const BASE_USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+
+// Decimal conventions from Avantis SDK docs:
+// - USDC amounts: 6 decimals (100n * 10n**6n = 100 USDC)
+// - Prices: 10 decimals (50000n * 10n**10n = $50,000)
+// - Leverage: 10 decimals (10n * 10n**10n = 10x)
+// - Slippage: 10 decimals (10n**8n = 1%)
+// - Execution fees: 18 decimals wei
 
 // Avantis Perps Trading Modal
 const AVANTIS_PAIRS = [
@@ -1502,25 +1514,35 @@ const PerpsModal = ({
         currentPrice,
       });
 
-      // Convert values to contract format (10 decimals for prices/leverage, 6 for USDC)
+      // Convert values using Avantis decimal conventions:
+      // USDC: 6 decimals, Prices/Leverage/Slippage: 10 decimals, ETH: 18 decimals
       const openPriceScaled = BigInt(Math.floor((currentPrice || 0) * 1e10));
       const leverageScaled = BigInt(Math.floor(leverage * 1e10));
       const positionSizeUSDC = BigInt(Math.floor(collateralAmount * 1e6));
-      const tpScaled = BigInt(Math.floor(tpPrice * 1e10));
-      const slScaled = BigInt(Math.floor(slPrice * 1e10));
-      const slippageP = BigInt(1e8); // 1% slippage (1e10 = 100%)
-      const executionFee = BigInt(1e14); // 0.0001 ETH
+      const tpScaled = tpPrice > 0 ? BigInt(Math.floor(tpPrice * 1e10)) : BigInt(0);
+      const slScaled = slPrice > 0 ? BigInt(Math.floor(slPrice * 1e10)) : BigInt(0);
+      const slippageP = BigInt(1e8); // 1% slippage (1e8 / 1e10 = 0.01 = 1%)
+      const executionFee = BigInt(1e14); // 0.0001 ETH for Pyth oracle keeper
+
+      console.log('[Perps] Scaled values:', {
+        openPriceScaled: openPriceScaled.toString(),
+        leverageScaled: leverageScaled.toString(),
+        positionSizeUSDC: positionSizeUSDC.toString(),
+        tpScaled: tpScaled.toString(),
+        slScaled: slScaled.toString(),
+      });
 
       // Encode the openTrade call
+      // Note: trader address will be the UA smart account address
       const calldata = encodeFunctionData({
         abi: AVANTIS_TRADING_ABI,
         functionName: 'openTrade',
         args: [
           {
-            trader: '0x0000000000000000000000000000000000000000' as `0x${string}`, // UA will replace
+            trader: '0x0000000000000000000000000000000000000000' as `0x${string}`, // Placeholder - contract uses msg.sender
             pairIndex: BigInt(selectedPair.index),
-            index: BigInt(0),
-            initialPosToken: BigInt(0),
+            index: BigInt(0), // Contract finds first empty index
+            initialPosToken: BigInt(0), // Not used for USDC collateral
             positionSizeUSDC: positionSizeUSDC,
             openPrice: openPriceScaled,
             buy: isLong,
@@ -1528,7 +1550,7 @@ const PerpsModal = ({
             tp: tpScaled,
             sl: slScaled,
           },
-          0, // orderType: 0 = MARKET
+          0, // orderType: 0 = MARKET, 1 = LIMIT, 2 = STOP_LIMIT
           slippageP,
         ],
       });
@@ -1536,9 +1558,12 @@ const PerpsModal = ({
       console.log('[Perps] Encoded calldata:', calldata);
 
       // Create universal transaction via UA
-      // UA will route USDC to Base and execute the trade
+      // UA will:
+      // 1. Route USDC from any chain to Base (if needed)
+      // 2. Approve USDC spending for Avantis (if needed)
+      // 3. Execute the openTrade call
       const tx = await universalAccount.createUniversalTransaction({
-        chainId: 8453, // Base
+        chainId: 8453, // Base mainnet
         expectTokens: [{
           type: SUPPORTED_TOKEN_TYPE.USDC,
           amount: collateralAmount.toString(),
@@ -1552,8 +1577,9 @@ const PerpsModal = ({
 
       console.log('[Perps] UA transaction created:', tx);
       
-      // Show transaction ready for signing
-      setError(`Position ready! TX created. Check console for details.`);
+      // Transaction is ready - would need to sign and send
+      // In production: await universalAccount.sendTransaction(tx, signature)
+      alert(`Position ready!\n\nPair: ${selectedPair.name}\nSide: ${isLong ? 'LONG' : 'SHORT'}\nLeverage: ${leverage}x\nCollateral: $${collateralAmount}\nPosition Size: $${positionSize}\n\nTransaction created. Connect wallet to sign.`);
       
     } catch (err) {
       console.error('[Perps] Error:', err);
