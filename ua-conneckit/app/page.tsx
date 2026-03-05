@@ -3287,7 +3287,7 @@ const App = () => {
         if (contracts.length === 0 && ma.cross_chain_balances) {
           const chainIdToName: Record<number, string> = {
             1: "ethereum", 8453: "base", 42161: "arbitrum", 
-            10: "optimism", 137: "polygon", 56: "bsc",
+            10: "optimism", 137: "polygon", 56: "bsc", 101: "solana",
           };
           Object.values(ma.cross_chain_balances).forEach((data) => {
             if (data.address && data.chainId) {
