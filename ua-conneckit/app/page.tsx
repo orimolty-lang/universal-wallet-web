@@ -3209,7 +3209,10 @@ const App = () => {
       console.log("[Mobula] Merged assets:", mergedAssets.length);
       setMobulaAssets(mergedAssets);
       // Debug info for on-device diagnosis
-      const debugInfo = `EVM: ${evmAssets.length} [${evmAssets.map(a => a.asset?.symbol).join(',')}] | SOL: ${solanaAssets.length} [${solanaAssets.map(a => a.asset?.symbol).join(',')}] | Merged: ${mergedAssets.length}`;
+      // Find PUNCH in solana assets for debug
+      const punchAsset = solanaAssets.find(a => a.asset?.symbol?.toUpperCase() === 'PUNCH');
+      const punchDebug = punchAsset ? ` | PUNCH: bal=${punchAsset.token_balance} est=${punchAsset.estimated_balance}` : ' | PUNCH: not found';
+      const debugInfo = `EVM: ${evmAssets.length} | SOL: ${solanaAssets.length} [${solanaAssets.map(a => a.asset?.symbol).join(',')}]${punchDebug} | Merged: ${mergedAssets.length}`;
       setMobulaDebug(debugInfo);
     } catch (error) {
       console.error("Failed to fetch Mobula assets:", error);
@@ -3253,6 +3256,18 @@ const App = () => {
         const symbolUpper = ma.asset.symbol?.toUpperCase()?.trim();
         if (!symbolUpper) return false;
         
+        // Debug: Log PUNCH specifically
+        if (symbolUpper === 'PUNCH') {
+          console.log("[CombinedAssets] PUNCH debug:", {
+            symbol: ma.asset.symbol,
+            token_balance: ma.token_balance,
+            estimated_balance: ma.estimated_balance,
+            inPrimary: primarySymbols.has(symbolUpper),
+            contracts: ma.asset.contracts,
+            blockchains: ma.asset.blockchains,
+          });
+        }
+        
         // Skip if already in primary assets (case-insensitive)
         if (primarySymbols.has(symbolUpper)) {
           console.log("[CombinedAssets] Skipping dupe (in primary):", ma.asset.symbol);
@@ -3268,7 +3283,13 @@ const App = () => {
         
         return true;
       })
-      .filter(ma => ma.token_balance > 0) // Show any token with balance
+      .filter(ma => {
+        // Debug: log if PUNCH gets filtered by balance
+        if (ma.asset.symbol?.toUpperCase() === 'PUNCH' && ma.token_balance <= 0) {
+          console.log("[CombinedAssets] PUNCH filtered - zero balance:", ma.token_balance);
+        }
+        return ma.token_balance > 0;
+      }) // Show any token with balance
       .map(ma => {
         // Build contracts array from Mobula asset data or cross_chain_balances
         const contracts: Array<{ address: string; blockchain: string }> = [];
