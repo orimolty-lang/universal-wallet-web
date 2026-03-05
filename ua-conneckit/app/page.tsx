@@ -1365,6 +1365,304 @@ const ConvertModal = ({
   );
 };
 
+// Avantis Perps Trading Modal
+const AVANTIS_PAIRS = [
+  { index: 0, name: 'BTC/USD', maxLeverage: 150 },
+  { index: 1, name: 'ETH/USD', maxLeverage: 150 },
+  { index: 2, name: 'SOL/USD', maxLeverage: 100 },
+  { index: 3, name: 'LINK/USD', maxLeverage: 75 },
+  { index: 4, name: 'DOGE/USD', maxLeverage: 75 },
+  { index: 5, name: 'XRP/USD', maxLeverage: 75 },
+  { index: 10, name: 'EUR/USD', maxLeverage: 500 },
+  { index: 11, name: 'GBP/USD', maxLeverage: 500 },
+  { index: 12, name: 'USD/JPY', maxLeverage: 500 },
+  { index: 20, name: 'XAU/USD', maxLeverage: 250 },
+  { index: 21, name: 'XAG/USD', maxLeverage: 100 },
+];
+
+const PerpsModal = ({
+  isOpen,
+  onClose,
+  assets,
+  universalAccount,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  assets: IAssetsResponse | null;
+  universalAccount: UniversalAccount | null;
+}) => {
+  const [selectedPair, setSelectedPair] = useState(AVANTIS_PAIRS[0]);
+  const [isLong, setIsLong] = useState(true);
+  const [leverage, setLeverage] = useState(10);
+  const [collateral, setCollateral] = useState('');
+  const [takeProfit, setTakeProfit] = useState('');
+  const [stopLoss, setStopLoss] = useState('');
+  const [currentPrice, setCurrentPrice] = useState<number | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Get USDC balance from UA assets
+  const usdcBalance = useMemo(() => {
+    if (!assets?.assets) return 0;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const usdc = assets.assets.find((a: any) => a.symbol === 'USDC') as any;
+    return usdc?.balance || 0;
+  }, [assets]);
+
+  // Calculate position details
+  const positionSize = useMemo(() => {
+    const col = parseFloat(collateral) || 0;
+    return col * leverage;
+  }, [collateral, leverage]);
+
+  const liquidationPrice = useMemo(() => {
+    if (!currentPrice || !collateral || !leverage) return null;
+    // Simplified liq calc: entry ± (entry / leverage) * 0.9
+    const liqDistance = (currentPrice / leverage) * 0.9;
+    return isLong ? currentPrice - liqDistance : currentPrice + liqDistance;
+  }, [currentPrice, collateral, leverage, isLong]);
+
+  // Fetch current price for selected pair (placeholder - would use Pyth in production)
+  useEffect(() => {
+    const fetchPrice = async () => {
+      // Simulated prices - in production, fetch from Pyth oracle
+      const prices: Record<string, number> = {
+        'BTC/USD': 95000,
+        'ETH/USD': 3500,
+        'SOL/USD': 150,
+        'LINK/USD': 18,
+        'DOGE/USD': 0.32,
+        'XRP/USD': 2.1,
+        'EUR/USD': 1.08,
+        'GBP/USD': 1.27,
+        'USD/JPY': 150.5,
+        'XAU/USD': 2650,
+        'XAG/USD': 31,
+      };
+      setCurrentPrice(prices[selectedPair.name] || 0);
+    };
+    fetchPrice();
+  }, [selectedPair]);
+
+  const handleOpenPosition = async () => {
+    if (!universalAccount || !collateral) {
+      setError('Please enter collateral amount');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // For now, show a message that this will be integrated
+      // In production: build Avantis calldata and route through UA
+      console.log('[Perps] Opening position:', {
+        pair: selectedPair.name,
+        isLong,
+        leverage,
+        collateral,
+        takeProfit,
+        stopLoss,
+      });
+
+      // TODO: Integrate with Avantis SDK
+      // 1. Build Avantis openTrade calldata
+      // 2. Create UA transaction with target chain = 8453 (Base)
+      // 3. Execute via UA sendTransaction
+
+      setError('Perps integration coming soon! Transaction flow ready.');
+    } catch (err) {
+      console.error('[Perps] Error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to open position');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const canTrade = collateral && parseFloat(collateral) > 0 && parseFloat(collateral) <= usdcBalance;
+
+  return (
+    <BottomSheet isOpen={isOpen} onClose={onClose}>
+      <div className="px-6 pb-8 max-h-[80vh] overflow-y-auto">
+        <h2 className="text-white text-xl font-bold mb-2 text-center">Perps Trading</h2>
+        <p className="text-gray-500 text-xs text-center mb-4">Powered by Avantis on Base</p>
+
+        {error && (
+          <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-3 mb-4 text-red-300 text-sm">
+            {error}
+          </div>
+        )}
+
+        {/* Pair Selection */}
+        <div className="mb-4">
+          <label className="text-gray-400 text-xs mb-1 block">Trading Pair</label>
+          <select
+            value={selectedPair.index}
+            onChange={(e) => {
+              const pair = AVANTIS_PAIRS.find(p => p.index === Number(e.target.value));
+              if (pair) setSelectedPair(pair);
+            }}
+            className="w-full bg-gray-800 rounded-lg px-3 py-2 text-white outline-none text-sm"
+          >
+            {AVANTIS_PAIRS.map((pair) => (
+              <option key={pair.index} value={pair.index}>{pair.name} (up to {pair.maxLeverage}x)</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Current Price */}
+        {currentPrice && (
+          <div className="text-center mb-4">
+            <span className="text-gray-400 text-xs">Current Price</span>
+            <div className="text-white text-2xl font-bold">
+              ${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </div>
+          </div>
+        )}
+
+        {/* Long/Short Toggle */}
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={() => setIsLong(true)}
+            className={`flex-1 py-3 rounded-lg font-bold transition-colors ${
+              isLong
+                ? 'bg-green-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
+          >
+            📈 LONG
+          </button>
+          <button
+            onClick={() => setIsLong(false)}
+            className={`flex-1 py-3 rounded-lg font-bold transition-colors ${
+              !isLong
+                ? 'bg-red-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
+          >
+            📉 SHORT
+          </button>
+        </div>
+
+        {/* Leverage Slider */}
+        <div className="mb-4">
+          <div className="flex justify-between text-sm mb-1">
+            <span className="text-gray-400">Leverage</span>
+            <span className="text-white font-bold">{leverage}x</span>
+          </div>
+          <input
+            type="range"
+            min="2"
+            max={selectedPair.maxLeverage}
+            value={leverage}
+            onChange={(e) => setLeverage(Number(e.target.value))}
+            className="w-full accent-purple-500"
+          />
+          <div className="flex justify-between text-xs text-gray-500">
+            <span>2x</span>
+            <span>{selectedPair.maxLeverage}x</span>
+          </div>
+        </div>
+
+        {/* Collateral Input */}
+        <div className="bg-gray-800/50 rounded-xl p-4 mb-3">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-gray-400 text-sm">Collateral (USDC)</span>
+            <button 
+              onClick={() => setCollateral(usdcBalance.toString())}
+              className="text-purple-400 text-xs hover:text-purple-300"
+            >
+              Balance: ${usdcBalance.toFixed(2)}
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              value={collateral}
+              onChange={(e) => setCollateral(e.target.value)}
+              placeholder="0.00"
+              className="flex-1 bg-gray-700 rounded-lg px-3 py-2 text-white outline-none text-lg"
+            />
+            <button 
+              onClick={() => setCollateral(usdcBalance.toString())}
+              className="bg-gray-700 px-3 py-2 rounded-lg text-purple-400 text-sm hover:bg-gray-600"
+            >
+              MAX
+            </button>
+          </div>
+          {positionSize > 0 && (
+            <div className="text-gray-400 text-xs mt-2">
+              Position Size: ${positionSize.toLocaleString()}
+            </div>
+          )}
+        </div>
+
+        {/* TP/SL */}
+        <div className="flex gap-2 mb-4">
+          <div className="flex-1">
+            <label className="text-gray-400 text-xs mb-1 block">Take Profit</label>
+            <input
+              type="number"
+              value={takeProfit}
+              onChange={(e) => setTakeProfit(e.target.value)}
+              placeholder="Price"
+              className="w-full bg-gray-800 rounded-lg px-3 py-2 text-white outline-none text-sm"
+            />
+          </div>
+          <div className="flex-1">
+            <label className="text-gray-400 text-xs mb-1 block">Stop Loss</label>
+            <input
+              type="number"
+              value={stopLoss}
+              onChange={(e) => setStopLoss(e.target.value)}
+              placeholder="Price"
+              className="w-full bg-gray-800 rounded-lg px-3 py-2 text-white outline-none text-sm"
+            />
+          </div>
+        </div>
+
+        {/* Position Summary */}
+        {positionSize > 0 && liquidationPrice && (
+          <div className="bg-gray-800/30 rounded-lg p-3 mb-4 text-xs space-y-1">
+            <div className="flex justify-between">
+              <span className="text-gray-400">Entry Price</span>
+              <span className="text-white">${currentPrice?.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-400">Liq. Price (est.)</span>
+              <span className={isLong ? 'text-red-400' : 'text-green-400'}>
+                ${liquidationPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-400">Fee (est.)</span>
+              <span className="text-white">~${(positionSize * 0.0006).toFixed(2)}</span>
+            </div>
+          </div>
+        )}
+
+        <button 
+          onClick={handleOpenPosition}
+          disabled={!canTrade || isLoading}
+          className={`w-full font-bold py-4 rounded-xl transition-colors ${
+            canTrade && !isLoading
+              ? isLong 
+                ? 'bg-green-600 text-white hover:bg-green-500'
+                : 'bg-red-600 text-white hover:bg-red-500'
+              : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+          }`}
+        >
+          {isLoading ? 'Opening...' : `Open ${isLong ? 'Long' : 'Short'} ${selectedPair.name}`}
+        </button>
+
+        <p className="text-gray-500 text-xs text-center mt-3">
+          Trading involves risk. UA routes USDC automatically.
+        </p>
+      </div>
+    </BottomSheet>
+  );
+};
+
 // Buy (Onramp) Modal
 const BuyModal = ({
   isOpen,
@@ -1505,6 +1803,7 @@ const HomeTab = ({
   onReceive,
   onSend,
   onConvert,
+  onPerps,
   onTokenSelect,
   mobulaDebug,
 }: {
@@ -1516,6 +1815,7 @@ const HomeTab = ({
   onReceive: () => void;
   onSend: () => void;
   onConvert: () => void;
+  onPerps: () => void;
   onTokenSelect?: (token: { id: string; symbol: string; name: string; logo?: string; price: number; contracts?: Array<{ address: string; blockchain: string }> }) => void;
   mobulaDebug?: string;
 }) => {
@@ -1620,6 +1920,7 @@ const HomeTab = ({
           { icon: "↓", label: "Receive", action: onReceive },
           { icon: "↑", label: "Send", action: onSend },
           { icon: "⇄", label: "Convert", action: onConvert },
+          { icon: "📊", label: "Perps", action: onPerps },
         ].map(({ icon, label, action }) => (
           <button key={label} onClick={action} className="flex flex-col items-center gap-2">
             <div className="w-14 h-14 rounded-full bg-[#f5a623] flex items-center justify-center text-black text-xl font-bold">
@@ -2585,6 +2886,7 @@ const App = () => {
   const [showReceiveModal, setShowReceiveModal] = useState(false);
   const [showSendModal, setShowSendModal] = useState(false);
   const [showConvertModal, setShowConvertModal] = useState(false);
+  const [showPerpsModal, setShowPerpsModal] = useState(false);
   const [showDepositDialog, setShowDepositDialog] = useState(false);
   const [showAssetBreakdown, setShowAssetBreakdown] = useState(false);
   const [showActivityModal, setShowActivityModal] = useState(false);
@@ -2876,6 +3178,7 @@ const App = () => {
           onReceive={() => setShowReceiveModal(true)}
           onSend={() => setShowSendModal(true)}
           onConvert={() => setShowConvertModal(true)}
+          onPerps={() => setShowPerpsModal(true)}
           onTokenSelect={(token) => setHomeSelectedToken(token)}
           mobulaDebug={mobulaDebug}
         />
@@ -2930,6 +3233,13 @@ const App = () => {
           console.log('[Convert] Transaction created, show signing modal:', tx);
           // TODO: Integrate with transaction signing flow
         }}
+      />
+
+      <PerpsModal
+        isOpen={showPerpsModal}
+        onClose={() => setShowPerpsModal(false)}
+        assets={combinedAssets as IAssetsResponse | null}
+        universalAccount={universalAccountInstance}
       />
 
       {/* Sell is handled by SwapModal with direction flip */}
