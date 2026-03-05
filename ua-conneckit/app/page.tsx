@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   UniversalAccount,
   UNIVERSAL_ACCOUNT_VERSION,
+  SUPPORTED_TOKEN_TYPE,
   type IAssetsResponse,
   type IUniversalAccountConfig,
 } from "@particle-network/universal-account-sdk";
@@ -1020,83 +1021,344 @@ const SendModal = ({
   );
 };
 
-// Convert/Swap Modal
+// UA Primary Assets with chain support
+const UA_PRIMARY_ASSETS = [
+  { symbol: 'USDC', name: 'USD Coin', chains: [8453, 1, 42161, 10, 137, 43114, 101] }, // Base, ETH, Arb, OP, Polygon, Avalanche, Solana
+  { symbol: 'USDT', name: 'Tether USD', chains: [8453, 1, 42161, 10, 137, 43114, 56, 101] }, // + BSC, Solana
+  { symbol: 'ETH', name: 'Ethereum', chains: [8453, 1, 42161, 10, 137, 43114] }, // EVM chains only
+  { symbol: 'SOL', name: 'Solana', chains: [101] }, // Solana only
+  { symbol: 'BNB', name: 'BNB', chains: [56] }, // BSC only
+];
+
+const CHAIN_INFO: Record<number, { name: string; logo: string }> = {
+  1: { name: 'Ethereum', logo: '⟠' },
+  8453: { name: 'Base', logo: '🔵' },
+  42161: { name: 'Arbitrum', logo: '🔷' },
+  10: { name: 'Optimism', logo: '🔴' },
+  137: { name: 'Polygon', logo: '🟣' },
+  43114: { name: 'Avalanche', logo: '🔺' },
+  56: { name: 'BSC', logo: '🟡' },
+  101: { name: 'Solana', logo: '◎' },
+};
+
+// Convert Modal - UA Cross-Chain Convert
 const ConvertModal = ({
   isOpen,
   onClose,
   assets,
+  universalAccount,
+  onTransactionCreated,
 }: {
   isOpen: boolean;
   onClose: () => void;
   assets: IAssetsResponse | null;
-}) => {
-  const [fromToken, setFromToken] = useState("");
-  const [toToken, setToToken] = useState("");
-  const [amount, setAmount] = useState("");
-
+  universalAccount: UniversalAccount | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tokens = assets?.assets?.filter((a: any) => {
-    const bal = typeof a.balance === 'string' ? parseFloat(a.balance) : (a.balance || 0);
-    return bal > 0.0001;
-  }) || [];
+  onTransactionCreated?: (tx: any) => void;
+}) => {
+  const [fromAsset, setFromAsset] = useState<string>('');
+  const [fromChain, setFromChain] = useState<number | null>(null);
+  const [toAsset, setToAsset] = useState<string>('');
+  const [toChain, setToChain] = useState<number | null>(null);
+  const [amount, setAmount] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [estimatedOutput, setEstimatedOutput] = useState<string | null>(null);
+
+  // Get user's UA assets with chain breakdown
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const uaAssets = useMemo(() => {
+    if (!assets?.assets) return [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return assets.assets.filter((a: any) => {
+      const uaPrimary = UA_PRIMARY_ASSETS.find(p => p.symbol === a.symbol);
+      return uaPrimary && a.balance > 0.0001;
+    });
+  }, [assets]);
+
+  // Get available chains for selected from asset (where user has balance)
+  const fromChains = useMemo(() => {
+    if (!fromAsset) return [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const asset = uaAssets.find((a: any) => a.symbol === fromAsset);
+    if (!asset?.chainAggregation) return [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return asset.chainAggregation.filter((c: any) => c.amount > 0.0001).map((c: any) => ({
+      chainId: c.token?.chainId || c.chainId,
+      balance: c.amount,
+      balanceUSD: c.amountInUSD,
+    }));
+  }, [fromAsset, uaAssets]);
+
+  // Get available chains for selected to asset
+  const toChains = useMemo(() => {
+    if (!toAsset) return [];
+    const uaPrimary = UA_PRIMARY_ASSETS.find(p => p.symbol === toAsset);
+    return uaPrimary?.chains || [];
+  }, [toAsset]);
+
+  // Get balance for selected from chain
+  const selectedFromBalance = useMemo(() => {
+    if (!fromChain || !fromChains.length) return null;
+    return fromChains.find((c: { chainId: number }) => c.chainId === fromChain);
+  }, [fromChain, fromChains]);
+
+  // Reset chain when asset changes
+  useEffect(() => {
+    setFromChain(null);
+  }, [fromAsset]);
+
+  useEffect(() => {
+    setToChain(null);
+  }, [toAsset]);
+
+  // Estimate output (simplified - same amount for stablecoins, rough rate for others)
+  useEffect(() => {
+    if (!amount || !fromAsset || !toAsset) {
+      setEstimatedOutput(null);
+      return;
+    }
+    const amtNum = parseFloat(amount);
+    if (isNaN(amtNum)) {
+      setEstimatedOutput(null);
+      return;
+    }
+    // For simplicity, use USD value - in production, get actual quote from UA SDK
+    if (selectedFromBalance?.balanceUSD && amtNum > 0) {
+      const pricePerUnit = selectedFromBalance.balanceUSD / selectedFromBalance.balance;
+      const usdValue = amtNum * pricePerUnit;
+      // Rough conversion - in production, call getTokenPair for actual rates
+      if (['USDC', 'USDT'].includes(toAsset)) {
+        setEstimatedOutput(`~${usdValue.toFixed(2)} ${toAsset}`);
+      } else if (toAsset === 'ETH') {
+        setEstimatedOutput(`~${(usdValue / 3500).toFixed(6)} ${toAsset}`); // Rough ETH price
+      } else if (toAsset === 'SOL') {
+        setEstimatedOutput(`~${(usdValue / 150).toFixed(4)} ${toAsset}`); // Rough SOL price
+      } else if (toAsset === 'BNB') {
+        setEstimatedOutput(`~${(usdValue / 600).toFixed(4)} ${toAsset}`); // Rough BNB price
+      } else {
+        setEstimatedOutput(`~$${usdValue.toFixed(2)} worth`);
+      }
+    }
+  }, [amount, fromAsset, toAsset, selectedFromBalance]);
+
+  const handleConvert = async () => {
+    if (!universalAccount || !fromAsset || !fromChain || !toAsset || !toChain || !amount) {
+      setError('Please fill all fields');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Calculate the amount in the target token
+      // For simplicity, use USD value and estimate
+      const amtNum = parseFloat(amount);
+      if (isNaN(amtNum) || amtNum <= 0) {
+        throw new Error('Invalid amount');
+      }
+
+      // Get USD value of what we're converting
+      const pricePerUnit = selectedFromBalance?.balanceUSD && selectedFromBalance?.balance 
+        ? selectedFromBalance.balanceUSD / selectedFromBalance.balance 
+        : 1;
+      const usdValue = amtNum * pricePerUnit;
+
+      // Map to SUPPORTED_TOKEN_TYPE enum
+      const tokenTypeMap: Record<string, SUPPORTED_TOKEN_TYPE> = {
+        'USDC': SUPPORTED_TOKEN_TYPE.USDC,
+        'USDT': SUPPORTED_TOKEN_TYPE.USDT,
+        'ETH': SUPPORTED_TOKEN_TYPE.ETH,
+        'SOL': SUPPORTED_TOKEN_TYPE.SOL,
+        'BNB': SUPPORTED_TOKEN_TYPE.BNB,
+        'BTC': SUPPORTED_TOKEN_TYPE.BTC,
+      };
+      
+      const targetTokenType = tokenTypeMap[toAsset];
+      if (!targetTokenType) {
+        throw new Error(`Unsupported token type: ${toAsset}`);
+      }
+
+      // Estimate output amount based on target asset
+      // In production, use getTokenPair for actual rates
+      let outputAmount: number;
+      
+      if ([SUPPORTED_TOKEN_TYPE.USDC, SUPPORTED_TOKEN_TYPE.USDT].includes(targetTokenType)) {
+        outputAmount = usdValue; // Stablecoins ~= USD
+      } else if (targetTokenType === SUPPORTED_TOKEN_TYPE.ETH) {
+        outputAmount = usdValue / 3500; // Rough ETH price
+      } else if (targetTokenType === SUPPORTED_TOKEN_TYPE.SOL) {
+        outputAmount = usdValue / 150; // Rough SOL price
+      } else if (targetTokenType === SUPPORTED_TOKEN_TYPE.BNB) {
+        outputAmount = usdValue / 600; // Rough BNB price
+      } else if (targetTokenType === SUPPORTED_TOKEN_TYPE.BTC) {
+        outputAmount = usdValue / 95000; // Rough BTC price
+      } else {
+        outputAmount = usdValue; // Fallback
+      }
+
+      // Create convert transaction via UA SDK
+      // chainId = destination chain, expectToken = what we want to receive
+      const tx = await universalAccount.createConvertTransaction({
+        chainId: toChain,
+        expectToken: {
+          type: targetTokenType,
+          amount: outputAmount.toFixed(8), // Amount in target token units
+        },
+      });
+
+      console.log('[Convert] Transaction created:', tx);
+      
+      if (onTransactionCreated) {
+        onTransactionCreated(tx);
+      }
+      
+      onClose();
+    } catch (err) {
+      console.error('[Convert] Error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to create convert transaction');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleMax = () => {
+    if (selectedFromBalance) {
+      setAmount(selectedFromBalance.balance.toString());
+    }
+  };
+
+  const canConvert = fromAsset && fromChain && toAsset && toChain && amount && parseFloat(amount) > 0;
 
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose}>
       <div className="px-6 pb-8">
         <h2 className="text-white text-xl font-bold mb-6 text-center">Convert</h2>
+        <p className="text-gray-500 text-xs text-center mb-4">Convert UA assets across chains</p>
 
-        {/* From */}
-        <div className="mb-4">
-          <label className="text-gray-400 text-sm mb-2 block">From</label>
-          <div className="flex gap-2">
+        {error && (
+          <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-3 mb-4 text-red-300 text-sm">
+            {error}
+          </div>
+        )}
+
+        {/* From Section */}
+        <div className="bg-gray-800/50 rounded-xl p-4 mb-3">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-gray-400 text-sm">From</span>
+            {selectedFromBalance && (
+              <button 
+                onClick={handleMax}
+                className="text-purple-400 text-xs hover:text-purple-300"
+              >
+                Balance: {selectedFromBalance.balance.toFixed(4)} (${selectedFromBalance.balanceUSD.toFixed(2)})
+              </button>
+            )}
+          </div>
+          
+          <div className="flex gap-2 mb-2">
             <select
-              value={fromToken}
-              onChange={(e) => setFromToken(e.target.value)}
-              className="flex-1 bg-gray-800 rounded-xl px-4 py-3 text-white outline-none"
+              value={fromAsset}
+              onChange={(e) => setFromAsset(e.target.value)}
+              className="flex-1 bg-gray-700 rounded-lg px-3 py-2 text-white outline-none text-sm"
             >
-              <option value="">Select token</option>
+              <option value="">Select asset</option>
               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              {tokens.map((t: any, i: number) => (
-                <option key={i} value={t.symbol}>{t.symbol}</option>
+              {uaAssets.map((a: any, i: number) => (
+                <option key={i} value={a.symbol}>{a.symbol} - {a.name}</option>
               ))}
             </select>
+            <select
+              value={fromChain || ''}
+              onChange={(e) => setFromChain(Number(e.target.value))}
+              className="w-32 bg-gray-700 rounded-lg px-3 py-2 text-white outline-none text-sm"
+              disabled={!fromAsset}
+            >
+              <option value="">Chain</option>
+              {fromChains.map((c: { chainId: number; balance: number }) => (
+                <option key={c.chainId} value={c.chainId}>
+                  {CHAIN_INFO[c.chainId]?.logo} {CHAIN_INFO[c.chainId]?.name || `Chain ${c.chainId}`}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
             <input
               type="number"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0.00"
-              className="w-32 bg-gray-800 rounded-xl px-4 py-3 text-white outline-none text-right"
+              className="flex-1 bg-gray-700 rounded-lg px-3 py-2 text-white outline-none text-lg"
             />
+            <button 
+              onClick={handleMax}
+              className="bg-gray-700 px-3 py-2 rounded-lg text-purple-400 text-sm hover:bg-gray-600"
+            >
+              MAX
+            </button>
           </div>
         </div>
 
-        {/* Swap Icon */}
-        <div className="flex justify-center my-4">
-          <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center text-xl">
-            ↕
+        {/* Swap Arrow */}
+        <div className="flex justify-center -my-1 relative z-10">
+          <div className="w-10 h-10 rounded-full bg-gray-700 border-4 border-[#0a0a0a] flex items-center justify-center text-xl">
+            ↓
           </div>
         </div>
 
-        {/* To */}
-        <div className="mb-6">
-          <label className="text-gray-400 text-sm mb-2 block">To</label>
-          <select
-            value={toToken}
-            onChange={(e) => setToToken(e.target.value)}
-            className="w-full bg-gray-800 rounded-xl px-4 py-3 text-white outline-none"
-          >
-            <option value="">Select token</option>
-            <option value="ETH">ETH</option>
-            <option value="USDC">USDC</option>
-            <option value="USDT">USDT</option>
-            <option value="SOL">SOL</option>
-            <option value="ARB">ARB</option>
-            <option value="OP">OP</option>
-          </select>
+        {/* To Section */}
+        <div className="bg-gray-800/50 rounded-xl p-4 mb-4">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-gray-400 text-sm">To</span>
+            {estimatedOutput && (
+              <span className="text-green-400 text-xs">{estimatedOutput}</span>
+            )}
+          </div>
+          
+          <div className="flex gap-2">
+            <select
+              value={toAsset}
+              onChange={(e) => setToAsset(e.target.value)}
+              className="flex-1 bg-gray-700 rounded-lg px-3 py-2 text-white outline-none text-sm"
+            >
+              <option value="">Select asset</option>
+              {UA_PRIMARY_ASSETS.map((a) => (
+                <option key={a.symbol} value={a.symbol}>{a.symbol} - {a.name}</option>
+              ))}
+            </select>
+            <select
+              value={toChain || ''}
+              onChange={(e) => setToChain(Number(e.target.value))}
+              className="w-32 bg-gray-700 rounded-lg px-3 py-2 text-white outline-none text-sm"
+              disabled={!toAsset}
+            >
+              <option value="">Chain</option>
+              {toChains.map((chainId: number) => (
+                <option key={chainId} value={chainId}>
+                  {CHAIN_INFO[chainId]?.logo} {CHAIN_INFO[chainId]?.name || `Chain ${chainId}`}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
-        <button className="w-full bg-[#f5a623] text-black font-bold py-4 rounded-xl">
-          Review Swap
+        {/* Info */}
+        <div className="text-gray-500 text-xs mb-4 text-center">
+          UA handles routing & bridging automatically
+        </div>
+
+        <button 
+          onClick={handleConvert}
+          disabled={!canConvert || isLoading}
+          className={`w-full font-bold py-4 rounded-xl transition-colors ${
+            canConvert && !isLoading
+              ? 'bg-[#f5a623] text-black hover:bg-[#e09520]'
+              : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+          }`}
+        >
+          {isLoading ? 'Creating Transaction...' : 'Review Convert'}
         </button>
       </div>
     </BottomSheet>
@@ -2662,7 +2924,12 @@ const App = () => {
       <ConvertModal
         isOpen={showConvertModal}
         onClose={() => setShowConvertModal(false)}
-        assets={primaryAssets}
+        assets={combinedAssets as IAssetsResponse | null}
+        universalAccount={universalAccountInstance}
+        onTransactionCreated={(tx) => {
+          console.log('[Convert] Transaction created, show signing modal:', tx);
+          // TODO: Integrate with transaction signing flow
+        }}
       />
 
       {/* Sell is handled by SwapModal with direction flip */}
