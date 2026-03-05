@@ -1674,7 +1674,19 @@ const SearchTab = ({
       {!query && recentTokens.length > 0 && (
         <div>
           <div className="text-gray-500 text-xs uppercase mb-3">History</div>
-          {recentTokens.map((token) => (
+          {recentTokens.map((token) => {
+            // Get primary chain for badge
+            const primaryChain = token.contracts?.[0]?.blockchain;
+            const chainLogo = primaryChain ? (() => {
+              const mapping: Record<string, string> = {
+                ethereum: "Ethereum", base: "Base", arbitrum: "Arbitrum",
+                optimism: "Optimism", polygon: "Polygon", bsc: "BNB Chain",
+                bnb: "BNB Chain", solana: "Solana", avalanche: "Avalanche",
+              };
+              return CHAIN_LOGOS[mapping[primaryChain.toLowerCase()] || "Base"];
+            })() : null;
+            
+            return (
             <button 
               key={token.id} 
               onClick={() => setSelectedToken(token)}
@@ -1683,13 +1695,23 @@ const SearchTab = ({
               {/* Top row: logo, name, price, change */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  {token.logo ? (
-                    <img src={token.logo} alt={token.symbol} className="w-9 h-9 rounded-full bg-gray-800" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                  ) : (
-                    <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold">
-                      {token.symbol.slice(0, 2)}
-                    </div>
-                  )}
+                  <div className="relative">
+                    {token.logo ? (
+                      <img src={token.logo} alt={token.symbol} className="w-9 h-9 rounded-full bg-gray-800" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold">
+                        {token.symbol.slice(0, 2)}
+                      </div>
+                    )}
+                    {/* Chain badge on logo */}
+                    {chainLogo && (
+                      <img 
+                        src={chainLogo}
+                        alt=""
+                        className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-[#0a0a0a]"
+                      />
+                    )}
+                  </div>
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-white font-medium text-sm">{token.symbol}</span>
@@ -1730,7 +1752,8 @@ const SearchTab = ({
                 )}
               </div>
             </button>
-          ))}
+            );
+          })}
         </div>
       )}
       
@@ -1743,7 +1766,19 @@ const SearchTab = ({
 
       {results.length > 0 && (
         <div>
-          {results.map((token) => (
+          {results.map((token) => {
+            // Get primary chain for badge
+            const primaryChain = token.contracts?.[0]?.blockchain;
+            const chainLogo = primaryChain ? (() => {
+              const mapping: Record<string, string> = {
+                ethereum: "Ethereum", base: "Base", arbitrum: "Arbitrum",
+                optimism: "Optimism", polygon: "Polygon", bsc: "BNB Chain",
+                bnb: "BNB Chain", solana: "Solana", avalanche: "Avalanche",
+              };
+              return CHAIN_LOGOS[mapping[primaryChain.toLowerCase()] || "Base"];
+            })() : null;
+            
+            return (
             <button 
               key={token.id} 
               onClick={() => {
@@ -1753,21 +1788,31 @@ const SearchTab = ({
               className="w-full flex items-center justify-between py-3 border-b border-gray-800/30 hover:bg-gray-900/50 rounded-lg px-2 transition-colors"
             >
               <div className="flex items-center gap-3">
-                {token.logo ? (
-                  <img 
-                    src={token.logo} 
-                    alt={token.symbol} 
-                    className="w-10 h-10 rounded-full bg-gray-800"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = "";
-                      (e.target as HTMLImageElement).style.display = "none";
-                    }}
-                  />
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center">
-                    {getTokenIcon(token.symbol)}
-                  </div>
-                )}
+                <div className="relative">
+                  {token.logo ? (
+                    <img 
+                      src={token.logo} 
+                      alt={token.symbol} 
+                      className="w-10 h-10 rounded-full bg-gray-800"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = "";
+                        (e.target as HTMLImageElement).style.display = "none";
+                      }}
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center">
+                      {getTokenIcon(token.symbol)}
+                    </div>
+                  )}
+                  {/* Chain badge on logo */}
+                  {chainLogo && (
+                    <img 
+                      src={chainLogo}
+                      alt=""
+                      className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[#0a0a0a]"
+                    />
+                  )}
+                </div>
                 <div className="text-left">
                   <div className="flex items-center gap-2">
                     <span className="text-white">{token.name}</span>
@@ -1799,7 +1844,8 @@ const SearchTab = ({
                 )}
               </div>
             </button>
-          ))}
+            );
+          })}
         </div>
       )}
 
