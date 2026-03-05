@@ -1244,6 +1244,7 @@ const HomeTab = ({
   onSend,
   onConvert,
   onTokenSelect,
+  mobulaDebug,
 }: {
   accountInfo: AccountInfo | null;
   primaryAssets: IAssetsResponse | null;
@@ -1254,6 +1255,7 @@ const HomeTab = ({
   onSend: () => void;
   onConvert: () => void;
   onTokenSelect?: (token: { id: string; symbol: string; name: string; logo?: string; price: number; contracts?: Array<{ address: string; blockchain: string }> }) => void;
+  mobulaDebug?: string;
 }) => {
   // Use Set to allow multiple tokens to be expanded simultaneously
   const [expandedTokens, setExpandedTokens] = useState<Set<string>>(new Set());
@@ -1368,6 +1370,17 @@ const HomeTab = ({
 
       {/* Token List with Chain Breakdown */}
       <div className="px-4 mt-2">
+        {/* Debug panel - tap to copy */}
+        {mobulaDebug && (
+          <div 
+            className="bg-purple-900/30 border border-purple-500/50 rounded-lg p-2 mb-2 text-xs text-purple-300"
+            onClick={() => navigator.clipboard?.writeText(mobulaDebug)}
+          >
+            <div className="font-mono break-all">{mobulaDebug}</div>
+            <div className="text-purple-500 text-[10px] mt-1">tap to copy</div>
+          </div>
+        )}
+        
         {/* Hide small balances toggle */}
         <div className="flex items-center justify-between py-2 mb-2">
           <span className="text-gray-500 text-sm">Hide small balances (&lt;$0.10)</span>
@@ -2301,6 +2314,7 @@ const App = () => {
   const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null);
   const [primaryAssets, setPrimaryAssets] = useState<IAssetsResponse | null>(null);
   const [mobulaAssets, setMobulaAssets] = useState<MobulaAsset[]>([]);
+  const [mobulaDebug, setMobulaDebug] = useState<string>("");
   
   // Modals
   const [showAgentModal, setShowAgentModal] = useState(false);
@@ -2424,6 +2438,9 @@ const App = () => {
       const mergedAssets = Array.from(assetMap.values());
       console.log("[Mobula] Merged assets:", mergedAssets.length);
       setMobulaAssets(mergedAssets);
+      // Debug info for on-device diagnosis
+      const debugInfo = `EVM: ${evmAssets.length} [${evmAssets.map(a => a.asset?.symbol).join(',')}] | SOL: ${solanaAssets.length} [${solanaAssets.map(a => a.asset?.symbol).join(',')}] | Merged: ${mergedAssets.length}`;
+      setMobulaDebug(debugInfo);
     } catch (error) {
       console.error("Failed to fetch Mobula assets:", error);
     }
@@ -2598,6 +2615,7 @@ const App = () => {
           onSend={() => setShowSendModal(true)}
           onConvert={() => setShowConvertModal(true)}
           onTokenSelect={(token) => setHomeSelectedToken(token)}
+          mobulaDebug={mobulaDebug}
         />
       )}
       {activeTab === "search" && (
