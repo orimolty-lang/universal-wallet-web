@@ -1072,14 +1072,18 @@ const ConvertModal = ({
   const [estimatedOutput, setEstimatedOutput] = useState<string | null>(null);
   const [loadingStatus, setLoadingStatus] = useState<string>('');
   const [txResult, setTxResult] = useState<{ txId: string; status: string } | null>(null);
+  const [estimatedFee, setEstimatedFee] = useState<string | null>(null);
   
-  // Auto-clear txResult after success animation
+  // Auto-clear txResult after success animation and close modal
   useEffect(() => {
     if (txResult?.status === 'complete') {
-      const timer = setTimeout(() => setTxResult(null), 2500);
+      const timer = setTimeout(() => {
+        setTxResult(null);
+        onClose();
+      }, 2500);
       return () => clearTimeout(timer);
     }
-  }, [txResult?.status]);
+  }, [txResult?.status, onClose]);
   
   // Dropdown visibility states
   const [fromAssetOpen, setFromAssetOpen] = useState(false);
@@ -1256,6 +1260,20 @@ const ConvertModal = ({
 
       console.log('[Convert] Transaction created:', tx);
       
+      // Extract and display fees from transaction
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const txFees = (tx as any).transactionFees;
+      if (txFees) {
+        const serviceFee = parseFloat(txFees.transactionServiceFeeAmountInUSD || '0');
+        const lpFee = parseFloat(txFees.transactionLPFeeAmountInUSD || '0');
+        const totalFee = serviceFee + lpFee;
+        if (totalFee > 0) {
+          setEstimatedFee(`~$${totalFee.toFixed(2)}`);
+        } else if (txFees.freeGasFee && txFees.freeServiceFee) {
+          setEstimatedFee('Free');
+        }
+      }
+      
       if (onTransactionCreated) {
         onTransactionCreated(tx);
       }
@@ -1345,99 +1363,87 @@ const ConvertModal = ({
 
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose}>
-      <div className="px-4 pb-6">
+      <div className="px-4 pb-4">
         <h2 className="text-white text-lg font-bold mb-2 text-center">Convert</h2>
 
         {error && (
-          <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-2 mb-3 text-red-300 text-xs">
+          <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-2 mb-2 text-red-300 text-xs">
             {error}
           </div>
         )}
 
-        {/* From Section */}
-        <div className="bg-gray-800/50 rounded-xl p-3 mb-2">
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-gray-400 text-sm">From</span>
-            {selectedFromBalance && (
-              <button 
-                onClick={handleMax}
-                className="text-purple-400 text-xs hover:text-purple-300"
-              >
-                Balance: {selectedFromBalance.balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })} (${selectedFromBalance.balanceUSD.toFixed(2)})
-              </button>
-            )}
-          </div>
+        {/* From Section - Compact */}
+        <div className="bg-gray-800/50 rounded-xl p-3 mb-1">
+          <div className="text-gray-400 text-xs mb-1">From</div>
           
-          <div className="flex gap-2 mb-2">
-            {/* Custom Asset Dropdown */}
+          <div className="flex gap-2 mb-1">
+            {/* Asset Dropdown - Compact */}
             <div className="flex-1 relative">
               <button
                 onClick={() => { setFromAssetOpen(!fromAssetOpen); setFromChainOpen(false); }}
-                className="w-full bg-gray-700 rounded-xl px-3 py-2 text-white text-left flex items-center justify-between"
+                className="w-full bg-gray-700 rounded-lg px-2 py-1.5 text-white text-left flex items-center justify-between"
               >
                 <div className="flex items-center gap-2">
                   {fromAsset ? (
                     <>
-                      <img src={TOKEN_LOGOS[fromAsset.toUpperCase()] || TOKEN_LOGOS['ETH']} alt="" className="w-6 h-6 rounded-full" />
-                      <span className="font-medium">{fromAsset.toUpperCase()}</span>
+                      <img src={TOKEN_LOGOS[fromAsset.toUpperCase()] || TOKEN_LOGOS['ETH']} alt="" className="w-5 h-5 rounded-full" />
+                      <span className="text-sm font-medium">{fromAsset.toUpperCase()}</span>
                     </>
                   ) : (
-                    <span className="text-gray-400">Select asset</span>
+                    <span className="text-gray-400 text-sm">Asset</span>
                   )}
                 </div>
-                <span className="text-gray-400">▼</span>
+                <span className="text-gray-400 text-xs">▼</span>
               </button>
               {fromAssetOpen && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-xl border border-gray-700 overflow-hidden z-20 max-h-48 overflow-y-auto">
+                <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-xl border border-gray-700 overflow-hidden z-20 max-h-40 overflow-y-auto">
                   {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                   {uaAssets.map((a: any, i: number) => (
                     <button
                       key={i}
                       onClick={() => { setFromAsset(a.tokenType); setFromAssetOpen(false); }}
-                      className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-700 text-left"
+                      className="w-full px-3 py-2 flex items-center gap-2 hover:bg-gray-700 text-left"
                     >
-                      <img src={TOKEN_LOGOS[a.tokenType?.toUpperCase()] || TOKEN_LOGOS['ETH']} alt="" className="w-6 h-6 rounded-full" />
-                      <div>
-                        <div className="text-white font-medium">{a.tokenType?.toUpperCase()}</div>
-                        <div className="text-gray-400 text-xs">${a.amountInUSD?.toFixed(2)}</div>
-                      </div>
+                      <img src={TOKEN_LOGOS[a.tokenType?.toUpperCase()] || TOKEN_LOGOS['ETH']} alt="" className="w-5 h-5 rounded-full" />
+                      <span className="text-white text-sm">{a.tokenType?.toUpperCase()}</span>
+                      <span className="text-gray-400 text-xs ml-auto">${a.amountInUSD?.toFixed(2)}</span>
                     </button>
                   ))}
                 </div>
               )}
             </div>
             
-            {/* Custom Chain Dropdown */}
-            <div className="w-36 relative">
+            {/* Chain Dropdown - Compact */}
+            <div className="w-28 relative">
               <button
                 onClick={() => { if (fromAsset) { setFromChainOpen(!fromChainOpen); setFromAssetOpen(false); }}}
-                className={`w-full bg-gray-700 rounded-xl px-3 py-2 text-left flex items-center justify-between ${!fromAsset ? 'opacity-50' : ''}`}
+                className={`w-full bg-gray-700 rounded-lg px-2 py-1.5 text-left flex items-center justify-between ${!fromAsset ? 'opacity-50' : ''}`}
                 disabled={!fromAsset}
               >
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
                   {fromChain ? (
                     <>
-                      <img src={CHAIN_LOGOS[CHAIN_ID_TO_NAME[fromChain]] || CHAIN_LOGOS['Ethereum']} alt="" className="w-5 h-5 rounded-full" />
-                      <span className="text-white text-sm">{CHAIN_ID_TO_NAME[fromChain]}</span>
+                      <img src={CHAIN_LOGOS[CHAIN_ID_TO_NAME[fromChain]] || CHAIN_LOGOS['Ethereum']} alt="" className="w-4 h-4 rounded-full" />
+                      <span className="text-white text-xs">{CHAIN_ID_TO_NAME[fromChain]}</span>
                     </>
                   ) : (
-                    <span className="text-gray-400 text-sm">Chain</span>
+                    <span className="text-gray-400 text-xs">Chain</span>
                   )}
                 </div>
-                <span className="text-gray-400 text-xs">▼</span>
+                <span className="text-gray-400 text-[10px]">▼</span>
               </button>
               {fromChainOpen && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-xl border border-gray-700 overflow-hidden z-20 max-h-48 overflow-y-auto">
+                <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-xl border border-gray-700 overflow-hidden z-20 max-h-40 overflow-y-auto">
                   {fromChains.map((c: { chainId: number; balance: number; balanceUSD: number }) => (
                     <button
                       key={c.chainId}
                       onClick={() => { setFromChain(c.chainId); setFromChainOpen(false); }}
-                      className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-700 text-left"
+                      className="w-full px-2 py-2 flex items-center gap-2 hover:bg-gray-700 text-left"
                     >
-                      <img src={CHAIN_LOGOS[CHAIN_ID_TO_NAME[c.chainId]] || CHAIN_LOGOS['Ethereum']} alt="" className="w-5 h-5 rounded-full" />
+                      <img src={CHAIN_LOGOS[CHAIN_ID_TO_NAME[c.chainId]] || CHAIN_LOGOS['Ethereum']} alt="" className="w-4 h-4 rounded-full" />
                       <div>
-                        <div className="text-white text-sm">{CHAIN_ID_TO_NAME[c.chainId]}</div>
-                        <div className="text-gray-400 text-xs">{c.balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })}</div>
+                        <div className="text-white text-xs">{CHAIN_ID_TO_NAME[c.chainId]}</div>
+                        <div className="text-gray-400 text-[10px]">{c.balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })}</div>
                       </div>
                     </button>
                   ))}
@@ -1452,100 +1458,100 @@ const ConvertModal = ({
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0.00"
-              className="flex-1 bg-gray-700 rounded-lg px-3 py-2 text-white outline-none text-lg"
+              className="flex-1 bg-gray-700 rounded-lg px-2 py-1.5 text-white outline-none"
             />
             <button 
               onClick={handleMax}
-              className="bg-gray-700 px-3 py-2 rounded-lg text-purple-400 text-sm hover:bg-gray-600"
+              className="bg-gray-700 px-2 py-1.5 rounded-lg text-purple-400 text-xs hover:bg-gray-600"
             >
               MAX
             </button>
+            {selectedFromBalance && (
+              <span className="text-gray-500 text-[10px]">${selectedFromBalance.balanceUSD.toFixed(2)}</span>
+            )}
           </div>
         </div>
 
         {/* Swap Arrow */}
         <div className="flex justify-center -my-0.5 relative z-10">
-          <div className="w-8 h-8 rounded-full bg-gray-700 border-2 border-[#0a0a0a] flex items-center justify-center text-lg">
+          <div className="w-6 h-6 rounded-full bg-gray-700 border-2 border-[#1a1a1a] flex items-center justify-center text-sm">
             ↓
           </div>
         </div>
 
-        {/* To Section */}
-        <div className="bg-gray-800/50 rounded-xl p-3 mb-3">
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-gray-400 text-sm">To</span>
+        {/* To Section - Compact */}
+        <div className="bg-gray-800/50 rounded-xl p-3 mb-2">
+          <div className="flex justify-between items-center mb-1">
+            <span className="text-gray-400 text-xs">To</span>
             {estimatedOutput && (
               <span className="text-green-400 text-xs">{estimatedOutput}</span>
             )}
           </div>
           
           <div className="flex gap-2">
-            {/* Custom To Asset Dropdown */}
+            {/* To Asset Dropdown - Compact */}
             <div className="flex-1 relative">
               <button
                 onClick={() => { setToAssetOpen(!toAssetOpen); setToChainOpen(false); }}
-                className="w-full bg-gray-700 rounded-xl px-3 py-2 text-white text-left flex items-center justify-between"
+                className="w-full bg-gray-700 rounded-lg px-2 py-1.5 text-white text-left flex items-center justify-between"
               >
                 <div className="flex items-center gap-2">
                   {toAsset ? (
                     <>
-                      <img src={TOKEN_LOGOS[toAsset.toUpperCase()] || TOKEN_LOGOS['ETH']} alt="" className="w-6 h-6 rounded-full" />
-                      <span className="font-medium">{toAsset.toUpperCase()}</span>
+                      <img src={TOKEN_LOGOS[toAsset.toUpperCase()] || TOKEN_LOGOS['ETH']} alt="" className="w-5 h-5 rounded-full" />
+                      <span className="text-sm font-medium">{toAsset.toUpperCase()}</span>
                     </>
                   ) : (
-                    <span className="text-gray-400">Select asset</span>
+                    <span className="text-gray-400 text-sm">Asset</span>
                   )}
                 </div>
-                <span className="text-gray-400">▼</span>
+                <span className="text-gray-400 text-xs">▼</span>
               </button>
               {toAssetOpen && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-xl border border-gray-700 overflow-hidden z-20 max-h-48 overflow-y-auto">
+                <div className="absolute bottom-full left-0 right-0 mb-1 bg-gray-800 rounded-xl border border-gray-700 overflow-hidden z-20 max-h-40 overflow-y-auto">
                   {UA_PRIMARY_ASSETS.map((a) => (
                     <button
                       key={a.symbol}
                       onClick={() => { setToAsset(a.symbol); setToAssetOpen(false); }}
-                      className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-700 text-left"
+                      className="w-full px-3 py-2 flex items-center gap-2 hover:bg-gray-700 text-left"
                     >
-                      <img src={TOKEN_LOGOS[a.symbol] || TOKEN_LOGOS['ETH']} alt="" className="w-6 h-6 rounded-full" />
-                      <div>
-                        <div className="text-white font-medium">{a.symbol}</div>
-                        <div className="text-gray-400 text-xs">{a.name}</div>
-                      </div>
+                      <img src={TOKEN_LOGOS[a.symbol] || TOKEN_LOGOS['ETH']} alt="" className="w-5 h-5 rounded-full" />
+                      <span className="text-white text-sm">{a.symbol}</span>
                     </button>
                   ))}
                 </div>
               )}
             </div>
             
-            {/* Custom To Chain Dropdown */}
-            <div className="w-36 relative">
+            {/* To Chain Dropdown - Opens UPWARD */}
+            <div className="w-28 relative">
               <button
                 onClick={() => { if (toAsset) { setToChainOpen(!toChainOpen); setToAssetOpen(false); }}}
-                className={`w-full bg-gray-700 rounded-xl px-3 py-2 text-left flex items-center justify-between ${!toAsset ? 'opacity-50' : ''}`}
+                className={`w-full bg-gray-700 rounded-lg px-2 py-1.5 text-left flex items-center justify-between ${!toAsset ? 'opacity-50' : ''}`}
                 disabled={!toAsset}
               >
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
                   {toChain ? (
                     <>
-                      <img src={CHAIN_LOGOS[CHAIN_ID_TO_NAME[toChain]] || CHAIN_LOGOS['Ethereum']} alt="" className="w-5 h-5 rounded-full" />
-                      <span className="text-white text-sm">{CHAIN_ID_TO_NAME[toChain]}</span>
+                      <img src={CHAIN_LOGOS[CHAIN_ID_TO_NAME[toChain]] || CHAIN_LOGOS['Ethereum']} alt="" className="w-4 h-4 rounded-full" />
+                      <span className="text-white text-xs">{CHAIN_ID_TO_NAME[toChain]}</span>
                     </>
                   ) : (
-                    <span className="text-gray-400 text-sm">Chain</span>
+                    <span className="text-gray-400 text-xs">Chain</span>
                   )}
                 </div>
-                <span className="text-gray-400 text-xs">▼</span>
+                <span className="text-gray-400 text-[10px]">▼</span>
               </button>
               {toChainOpen && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-xl border border-gray-700 overflow-hidden z-20 max-h-48 overflow-y-auto">
+                <div className="absolute bottom-full left-0 right-0 mb-1 bg-gray-800 rounded-xl border border-gray-700 overflow-hidden z-20 max-h-40 overflow-y-auto">
                   {toChains.map((chainId: number) => (
                     <button
                       key={chainId}
                       onClick={() => { setToChain(chainId); setToChainOpen(false); }}
-                      className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-700 text-left"
+                      className="w-full px-2 py-2 flex items-center gap-2 hover:bg-gray-700 text-left"
                     >
-                      <img src={CHAIN_LOGOS[CHAIN_ID_TO_NAME[chainId]] || CHAIN_LOGOS['Ethereum']} alt="" className="w-5 h-5 rounded-full" />
-                      <div className="text-white text-sm">{CHAIN_ID_TO_NAME[chainId]}</div>
+                      <img src={CHAIN_LOGOS[CHAIN_ID_TO_NAME[chainId]] || CHAIN_LOGOS['Ethereum']} alt="" className="w-4 h-4 rounded-full" />
+                      <span className="text-white text-xs">{CHAIN_ID_TO_NAME[chainId]}</span>
                     </button>
                   ))}
                 </div>
@@ -1554,15 +1560,18 @@ const ConvertModal = ({
           </div>
         </div>
 
-        {/* Info */}
-        <div className="text-gray-500 text-xs mb-4 text-center">
-          UA handles routing & bridging automatically
+        {/* Info + Fees - Smaller */}
+        <div className="flex justify-between items-center text-[10px] mb-2 px-1">
+          <span className="text-gray-500">UA auto-routes</span>
+          {estimatedFee && (
+            <span className="text-gray-400">Fee: {estimatedFee}</span>
+          )}
         </div>
 
         <button 
           onClick={handleConvert}
           disabled={!canConvert || isLoading}
-          className={`w-full font-bold py-4 rounded-xl transition-colors ${
+          className={`w-full font-bold py-3 rounded-xl transition-colors ${
             canConvert && !isLoading
               ? 'bg-[#f5a623] text-black hover:bg-[#e09520]'
               : 'bg-gray-700 text-gray-500 cursor-not-allowed'
