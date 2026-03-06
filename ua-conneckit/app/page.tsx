@@ -368,14 +368,15 @@ const LoginScreen = () => {
 
       {/* Content wrapper - centered vertically */}
       <div className="flex-1 flex flex-col justify-center px-8">
-        {/* Logo */}
+        {/* Logo - Slow rotation matching splash screen */}
         <div className="flex items-center justify-center mb-12">
           <div className="flex items-center gap-1">
             <div className="relative">
               <img 
                 src="/universal-wallet-web/omni-logo.png" 
                 alt="O" 
-                className="w-14 h-14 rounded-xl animate-breathe-strong" 
+                className="w-14 h-14 rounded-xl"
+                style={{ animation: 'slowRotate 12s linear infinite' }}
               />
               <div className="absolute -inset-2 rounded-2xl bg-gradient-to-r from-purple-500/40 via-cyan-400/40 to-purple-500/40 blur-xl animate-glow-pulse -z-10" />
             </div>
@@ -480,6 +481,10 @@ const LoginScreen = () => {
         }
         .animate-glow-pulse {
           animation: glowPulse 4s ease-in-out infinite;
+        }
+        @keyframes slowRotate {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
         }
       `}</style>
     </div>
@@ -1890,13 +1895,23 @@ const PerpsModal = ({
         slScaled: slScaled.toString(),
       });
 
+      // Get smart account address for trader field
+      let smartAccountAddress = '0x0000000000000000000000000000000000000000';
+      try {
+        const options = await universalAccount.getSmartAccountOptions();
+        smartAccountAddress = options.smartAccountAddress || smartAccountAddress;
+        console.log('[Perps] Using smart account:', smartAccountAddress);
+      } catch {
+        console.log('[Perps] Could not get smart account, using zero address');
+      }
+
       // Encode the openTrade call
       const calldata = encodeFunctionData({
         abi: AVANTIS_TRADING_ABI,
         functionName: 'openTrade',
         args: [
           {
-            trader: '0x0000000000000000000000000000000000000000' as `0x${string}`, // Contract uses msg.sender
+            trader: smartAccountAddress as `0x${string}`, // Use actual smart account address
             pairIndex: BigInt(selectedPair.index),
             index: BigInt(0), // Contract finds first empty index
             initialPosToken: BigInt(0), // Not used for USDC collateral
@@ -3089,33 +3104,42 @@ const SearchTab = ({
 
 // Browser Tab (dApp Browser)
 const BrowserTab = () => {
-  const [url, setUrl] = useState("https://app.uniswap.org");
   const [inputUrl, setInputUrl] = useState("");
   
   const quickLinks = [
-    { name: "Uniswap", url: "https://app.uniswap.org", icon: "🦄" },
-    { name: "Aave", url: "https://app.aave.com", icon: "👻" },
-    { name: "OpenSea", url: "https://opensea.io", icon: "🌊" },
-    { name: "Blur", url: "https://blur.io", icon: "🟠" },
-    { name: "GMX", url: "https://app.gmx.io", icon: "💎" },
-    { name: "Curve", url: "https://curve.fi", icon: "🔄" },
+    { name: "UniversalX", url: "https://universalx.app", icon: "⚡", description: "Native UA trading" },
+    { name: "DefiLlama", url: "https://defillama.com", icon: "🦙", description: "DeFi analytics" },
+    { name: "Dexscreener", url: "https://dexscreener.com", icon: "📊", description: "DEX charts" },
+    { name: "CoinGecko", url: "https://coingecko.com", icon: "🦎", description: "Token data" },
+    { name: "Basescan", url: "https://basescan.org", icon: "🔍", description: "Base explorer" },
+    { name: "Etherscan", url: "https://etherscan.io", icon: "⟠", description: "ETH explorer" },
   ];
 
+  const openInNewTab = (url: string) => {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
   return (
-    <div className="flex-1 flex flex-col bg-[#0a0a0a] pb-24">
+    <div className="flex-1 flex flex-col bg-[#0a0a0a] pb-24 overflow-auto">
+      {/* Header */}
+      <div className="px-4 pt-4 pb-2">
+        <h2 className="text-white text-xl font-bold">Browser</h2>
+        <p className="text-gray-500 text-sm mt-1">Explore DeFi & Web3</p>
+      </div>
+
       {/* URL Bar */}
-      <div className="px-4 py-3 border-b border-gray-800">
+      <div className="px-4 py-3">
         <div className="flex items-center gap-2">
           <input
             type="text"
             value={inputUrl}
             onChange={(e) => setInputUrl(e.target.value)}
-            placeholder="Enter URL or search..."
+            placeholder="Enter URL..."
             className="flex-1 bg-gray-900 rounded-xl px-4 py-2.5 text-white text-sm outline-none"
             onKeyPress={(e) => {
               if (e.key === "Enter" && inputUrl.trim()) {
                 const newUrl = inputUrl.startsWith("http") ? inputUrl : `https://${inputUrl}`;
-                setUrl(newUrl);
+                openInNewTab(newUrl);
               }
             }}
           />
@@ -3123,44 +3147,54 @@ const BrowserTab = () => {
             onClick={() => {
               if (inputUrl.trim()) {
                 const newUrl = inputUrl.startsWith("http") ? inputUrl : `https://${inputUrl}`;
-                setUrl(newUrl);
+                openInNewTab(newUrl);
               }
             }}
             className="bg-cyan-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium"
           >
-            Go
+            Open
           </button>
         </div>
       </div>
 
+      {/* Info Banner */}
+      <div className="mx-4 mb-4 bg-purple-500/10 border border-purple-500/30 rounded-xl p-3">
+        <p className="text-purple-300 text-xs">
+          💡 Most dApps don&apos;t support wallet injection in embedded browsers yet. Use quick links below or open dApps directly and connect via WalletConnect.
+        </p>
+      </div>
+
       {/* Quick Links */}
-      <div className="px-4 py-4">
+      <div className="px-4">
         <div className="text-gray-500 text-xs uppercase mb-3">Quick Access</div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="space-y-2">
           {quickLinks.map((link) => (
             <button
               key={link.name}
-              onClick={() => {
-                setUrl(link.url);
-                setInputUrl(link.url);
-              }}
-              className="flex flex-col items-center gap-2 p-3 bg-gray-900 rounded-xl"
+              onClick={() => openInNewTab(link.url)}
+              className="w-full flex items-center gap-3 p-3 bg-gray-900 rounded-xl hover:bg-gray-800 transition-colors"
             >
-              <span className="text-2xl">{link.icon}</span>
-              <span className="text-white text-xs">{link.name}</span>
+              <span className="text-2xl w-10 h-10 flex items-center justify-center bg-gray-800 rounded-lg">{link.icon}</span>
+              <div className="text-left flex-1">
+                <span className="text-white font-medium">{link.name}</span>
+                <p className="text-gray-500 text-xs">{link.description}</p>
+              </div>
+              <span className="text-gray-500">↗</span>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Browser Frame */}
-      <div className="flex-1 mx-4 mb-4 rounded-xl overflow-hidden bg-gray-900">
-        <iframe
-          src={url}
-          className="w-full h-full border-0"
-          title="dApp Browser"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-        />
+      {/* WalletConnect Guide */}
+      <div className="px-4 mt-6">
+        <div className="bg-gray-900 rounded-xl p-4">
+          <h3 className="text-white font-medium mb-2">Connect to Any dApp</h3>
+          <ol className="text-gray-400 text-sm space-y-2">
+            <li className="flex gap-2"><span className="text-cyan-400">1.</span> Open any dApp in your browser</li>
+            <li className="flex gap-2"><span className="text-cyan-400">2.</span> Select &quot;WalletConnect&quot; to connect</li>
+            <li className="flex gap-2"><span className="text-cyan-400">3.</span> Scan QR code with Omni or paste link</li>
+          </ol>
+        </div>
       </div>
     </div>
   );
