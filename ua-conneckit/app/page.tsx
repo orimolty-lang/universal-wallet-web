@@ -1050,6 +1050,7 @@ const ConvertModal = ({
   assets,
   universalAccount,
   onTransactionCreated,
+  onSuccess,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -1057,7 +1058,9 @@ const ConvertModal = ({
   universalAccount: UniversalAccount | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onTransactionCreated?: (tx: any) => void;
+  onSuccess?: () => void; // Callback to refresh balances
 }) => {
+  const [primaryWallet] = useWallets();
   const [fromAsset, setFromAsset] = useState<string>('');
   const [fromChain, setFromChain] = useState<number | null>(null);
   const [toAsset, setToAsset] = useState<string>('');
@@ -1066,6 +1069,8 @@ const ConvertModal = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [estimatedOutput, setEstimatedOutput] = useState<string | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState<string>('');
+  const [txResult, setTxResult] = useState<{ txId: string; status: string } | null>(null);
   
   // Dropdown visibility states
   const [fromAssetOpen, setFromAssetOpen] = useState(false);
@@ -1231,6 +1236,7 @@ const ConvertModal = ({
 
       // Create convert transaction via UA SDK
       // chainId = destination chain, expectToken = what we want to receive
+      setLoadingStatus('Creating transaction...');
       const tx = await universalAccount.createConvertTransaction({
         chainId: toChain,
         expectToken: {
@@ -1245,12 +1251,55 @@ const ConvertModal = ({
         onTransactionCreated(tx);
       }
       
-      onClose();
+      // Sign and send transaction (same flow as Perps)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((tx as any).rootHash) {
+        if (!primaryWallet) {
+          throw new Error('Please connect wallet first');
+        }
+        
+        setLoadingStatus('Waiting for signature...');
+        const walletClient = primaryWallet.getWalletClient();
+        
+        // Sign the root hash
+        const signature = await walletClient.request({
+          method: 'personal_sign',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          params: [(tx as any).rootHash as `0x${string}`, walletClient.account?.address as `0x${string}`],
+        });
+
+        // Send transaction
+        setLoadingStatus('Sending transaction...');
+        const sendResult = await universalAccount.sendTransaction(tx, signature as string);
+        
+        if (sendResult?.transactionId) {
+          console.log('[Convert] Transaction sent:', sendResult.transactionId);
+          setTxResult({
+            txId: sendResult.transactionId,
+            status: 'pending',
+          });
+          
+          // Reset form
+          setFromAsset('');
+          setFromChain(null);
+          setToAsset('');
+          setToChain(null);
+          setAmount('');
+          
+          // Trigger balance refresh
+          if (onSuccess) {
+            setTimeout(() => onSuccess(), 2000);
+          }
+        }
+      } else {
+        throw new Error('Transaction requires signature but rootHash not found');
+      }
     } catch (err) {
       console.error('[Convert] Error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to create convert transaction');
+      setError(err instanceof Error ? err.message : 'Failed to convert');
     } finally {
       setIsLoading(false);
+      setLoadingStatus('');
     }
   };
 
@@ -1494,8 +1543,24 @@ const ConvertModal = ({
               : 'bg-gray-700 text-gray-500 cursor-not-allowed'
           }`}
         >
-          {isLoading ? 'Creating Transaction...' : 'Review Convert'}
+          {isLoading ? (loadingStatus || 'Processing...') : 'Convert'}
         </button>
+        
+        {/* Transaction Result */}
+        {txResult && (
+          <div className={`mt-4 p-4 rounded-xl text-sm ${
+            txResult.status === 'pending' 
+              ? 'bg-yellow-900/30 border border-yellow-500/50 text-yellow-300'
+              : 'bg-green-900/30 border border-green-500/50 text-green-300'
+          }`}>
+            <div className="font-bold mb-1">
+              {txResult.status === 'pending' ? '⏳ Converting...' : '✅ Conversion Complete!'}
+            </div>
+            <div className="text-xs font-mono break-all">
+              TX: {txResult.txId.slice(0, 20)}...
+            </div>
+          </div>
+        )}
       </div>
     </BottomSheet>
   );
@@ -2283,6 +2348,7 @@ const HomeTab = ({
   onPerps,
   onTokenSelect,
   mobulaDebug,
+  onRefresh,
 }: {
   accountInfo: AccountInfo | null;
   primaryAssets: IAssetsResponse | null;
@@ -2295,10 +2361,41 @@ const HomeTab = ({
   onPerps: () => void;
   onTokenSelect?: (token: { id: string; symbol: string; name: string; logo?: string; price: number; contracts?: Array<{ address: string; blockchain: string }> }) => void;
   mobulaDebug?: string;
+  onRefresh?: () => Promise<void>;
 }) => {
   // Use Set to allow multiple tokens to be expanded simultaneously
   const [expandedTokens, setExpandedTokens] = useState<Set<string>>(new Set());
   const [hideSmallBalances, setHideSmallBalances] = useState(true); // Hide <$0.10 by default
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const touchStartY = useRef(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  
+  // Pull-to-refresh handler
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (scrollRef.current?.scrollTop === 0) {
+      touchStartY.current = e.touches[0].clientY;
+    }
+  };
+  
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (scrollRef.current?.scrollTop === 0 && touchStartY.current > 0) {
+      const distance = e.touches[0].clientY - touchStartY.current;
+      if (distance > 0) {
+        setPullDistance(Math.min(distance * 0.5, 80));
+      }
+    }
+  };
+  
+  const handleTouchEnd = async () => {
+    if (pullDistance > 60 && onRefresh) {
+      setIsRefreshing(true);
+      await onRefresh();
+      setIsRefreshing(false);
+    }
+    setPullDistance(0);
+    touchStartY.current = 0;
+  };
   
   const toggleExpanded = (symbol: string) => {
     setExpandedTokens(prev => {
@@ -2362,7 +2459,27 @@ const HomeTab = ({
     : allTokens;
 
   return (
-    <div className="flex-1 overflow-auto pb-24 bg-[#0a0a0a]">
+    <div 
+      ref={scrollRef}
+      className="flex-1 overflow-auto pb-24 bg-[#0a0a0a]"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Pull-to-refresh indicator */}
+      <div 
+        className="flex justify-center items-center transition-all duration-200"
+        style={{ height: pullDistance, opacity: pullDistance / 60 }}
+      >
+        {isRefreshing ? (
+          <div className="w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+        ) : (
+          <span className={`text-cyan-400 text-sm ${pullDistance > 60 ? 'font-bold' : ''}`}>
+            {pullDistance > 60 ? '↓ Release to refresh' : '↓ Pull to refresh'}
+          </span>
+        )}
+      </div>
+      
       {/* Profile & Balance */}
       <div className="flex flex-col items-center pt-6 pb-4">
         <button 
@@ -3665,6 +3782,10 @@ const App = () => {
           onPerps={() => setShowPerpsModal(true)}
           onTokenSelect={(token) => setHomeSelectedToken(token)}
           mobulaDebug={mobulaDebug}
+          onRefresh={async () => {
+            await fetchAssets();
+            await fetchMobulaAssets();
+          }}
         />
       )}
       {activeTab === "search" && (
@@ -3714,8 +3835,12 @@ const App = () => {
         assets={primaryAssets}
         universalAccount={universalAccountInstance}
         onTransactionCreated={(tx) => {
-          console.log('[Convert] Transaction created, show signing modal:', tx);
-          // TODO: Integrate with transaction signing flow
+          console.log('[Convert] Transaction created:', tx);
+        }}
+        onSuccess={() => {
+          // Refresh balances after successful conversion
+          fetchAssets();
+          fetchMobulaAssets();
         }}
       />
 
