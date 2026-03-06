@@ -1066,7 +1066,7 @@ const ConvertModal = ({
   const [error, setError] = useState<string | null>(null);
   const [estimatedOutput, setEstimatedOutput] = useState<string | null>(null);
 
-  // Get user's UA primary assets with balance
+  // Get convertible assets (primary assets with balance from ANY source)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const uaAssets = useMemo(() => {
     if (!assets?.assets) {
@@ -1074,18 +1074,25 @@ const ConvertModal = ({
       return [];
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    console.log('[Convert] All assets:', assets.assets.map((a: any) => ({ symbol: a.symbol, balance: a.balance })));
+    const allAssets = assets.assets.map((a: any) => ({ symbol: a.symbol, balance: a.balance || a.token_balance || 0 }));
+    console.log('[Convert] All assets:', allAssets.slice(0, 20));
+    
+    // Primary symbols we support for conversion
+    const primarySymbols = ['USDC', 'USDT', 'ETH', 'SOL', 'BNB'];
+    
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const filtered = assets.assets.filter((a: any) => {
-      const symbolUpper = a.symbol?.toUpperCase();
-      const uaPrimary = UA_PRIMARY_ASSETS.find(p => p.symbol.toUpperCase() === symbolUpper);
-      const hasBalance = a.balance > 0.0001;
-      if (uaPrimary) {
-        console.log('[Convert] Primary match:', a.symbol, 'balance:', a.balance, 'pass:', hasBalance);
+      const symbolUpper = a.symbol?.toUpperCase()?.trim();
+      const isPrimary = primarySymbols.includes(symbolUpper);
+      const balance = a.balance || a.token_balance || 0;
+      const hasBalance = balance > 0.0001;
+      if (isPrimary) {
+        console.log('[Convert] Primary check:', a.symbol, 'balance:', balance, 'pass:', hasBalance);
       }
-      return uaPrimary && hasBalance;
+      return isPrimary && hasBalance;
     });
-    console.log('[Convert] Filtered assets:', filtered.length);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    console.log('[Convert] Filtered primary assets:', filtered.length, filtered.map((a: any) => a.symbol));
     return filtered;
   }, [assets]);
 
@@ -3394,13 +3401,9 @@ const App = () => {
         .filter((s: string | undefined) => s) // Remove empty/null
     );
     
-    // Common stablecoins and major tokens - these are almost always in UA primary
-    // Don't allow Mobula to add duplicates of these
-    const commonTokens = new Set([
-      'USDC', 'USDT', 'DAI', 'ETH', 'WETH', 'WBTC', 'BTC', 
-      'SOL', 'WSOL', 'MATIC', 'WMATIC', 'BNB', 'WBNB',
-      'ARB', 'OP', 'AVAX', 'WAVAX'
-    ]);
+    // Only block common tokens if they ACTUALLY exist in primaryAssets
+    // (Don't assume UA has them - let Mobula provide if UA doesn't)
+    // This prevents SOL from disappearing when UA doesn't support Solana
     
     console.log("[CombinedAssets] primarySymbols:", Array.from(primarySymbols));
     
@@ -3423,15 +3426,9 @@ const App = () => {
         }
         
         // Skip if already in primary assets (case-insensitive)
+        // This is the ONLY dedup - no more commonTokens blocking
         if (primarySymbols.has(symbolUpper)) {
           console.log("[CombinedAssets] Skipping dupe (in primary):", ma.asset.symbol);
-          return false;
-        }
-        
-        // Also skip common tokens that UA should handle
-        // (in case UA hasn't reported them yet but they exist)
-        if (commonTokens.has(symbolUpper)) {
-          console.log("[CombinedAssets] Skipping common token:", ma.asset.symbol);
           return false;
         }
         
