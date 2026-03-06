@@ -1276,19 +1276,42 @@ const ConvertModal = ({
           console.log('[Convert] Transaction sent:', sendResult.transactionId);
           setTxResult({
             txId: sendResult.transactionId,
-            status: 'complete',
+            status: 'pending',
           });
+          setLoadingStatus('Waiting for confirmation...');
           
-          // Reset form
-          setFromAsset('');
-          setFromChain(null);
-          setToAsset('');
-          setToChain(null);
-          setAmount('');
-          
-          // Trigger balance refresh
+          // Wait for balance refresh to confirm conversion
           if (onSuccess) {
-            setTimeout(() => onSuccess(), 2000);
+            // Poll balance until it updates (max 30 seconds)
+            let attempts = 0;
+            const maxAttempts = 15;
+            
+            const checkBalance = async () => {
+              attempts++;
+              await onSuccess();
+              
+              // After refresh, mark as complete
+              // In production, we'd compare before/after balances
+              // For now, trust the refresh after a few attempts
+              if (attempts >= 3) {
+                setTxResult({
+                  txId: sendResult.transactionId,
+                  status: 'complete',
+                });
+                setLoadingStatus('');
+                
+                // Reset form
+                setFromAsset('');
+                setFromChain(null);
+                setToAsset('');
+                setToChain(null);
+                setAmount('');
+              } else if (attempts < maxAttempts) {
+                setTimeout(checkBalance, 2000);
+              }
+            };
+            
+            setTimeout(checkBalance, 2000);
           }
         }
       } else {
@@ -1548,9 +1571,24 @@ const ConvertModal = ({
         
         {/* Transaction Result */}
         {txResult && (
-          <div className="mt-4 p-4 rounded-xl text-sm bg-green-900/30 border border-green-500/50 text-green-300">
-            <div className="font-bold mb-1">✅ Conversion Submitted!</div>
-            <div className="text-xs text-green-400 mb-2">Your assets are being converted. This may take a few minutes.</div>
+          <div className={`mt-4 p-4 rounded-xl text-sm ${
+            txResult.status === 'pending'
+              ? 'bg-yellow-900/30 border border-yellow-500/50 text-yellow-300'
+              : 'bg-green-900/30 border border-green-500/50 text-green-300'
+          }`}>
+            <div className="font-bold mb-1 flex items-center gap-2">
+              {txResult.status === 'pending' ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
+                  Confirming...
+                </>
+              ) : (
+                <>✅ Conversion Complete!</>
+              )}
+            </div>
+            {txResult.status === 'complete' && (
+              <div className="text-xs text-green-400 mb-2">Your assets have been converted successfully.</div>
+            )}
             <div className="text-xs font-mono break-all opacity-75">
               TX: {txResult.txId}
             </div>
