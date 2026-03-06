@@ -1066,33 +1066,29 @@ const ConvertModal = ({
   const [error, setError] = useState<string | null>(null);
   const [estimatedOutput, setEstimatedOutput] = useState<string | null>(null);
 
-  // Get convertible assets (primary assets with balance from ANY source)
+  // Get UA primary assets with balance (using correct SDK structure)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const uaAssets = useMemo(() => {
     if (!assets?.assets) {
       console.log('[Convert] No assets.assets');
       return [];
     }
+    // UA SDK uses tokenType (e.g., "eth", "usdt", "sol") and amount
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const allAssets = assets.assets.map((a: any) => ({ symbol: a.symbol, balance: a.balance || a.token_balance || 0 }));
-    console.log('[Convert] All assets:', allAssets.slice(0, 20));
+    console.log('[Convert] UA assets:', assets.assets.map((a: any) => ({ 
+      tokenType: a.tokenType, 
+      amount: a.amount,
+      amountInUSD: a.amountInUSD 
+    })));
     
-    // Primary symbols we support for conversion
-    const primarySymbols = ['USDC', 'USDT', 'ETH', 'SOL', 'BNB'];
-    
+    // Filter for primary assets with balance
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const filtered = assets.assets.filter((a: any) => {
-      const symbolUpper = a.symbol?.toUpperCase()?.trim();
-      const isPrimary = primarySymbols.includes(symbolUpper);
-      const balance = a.balance || a.token_balance || 0;
-      const hasBalance = balance > 0.0001;
-      if (isPrimary) {
-        console.log('[Convert] Primary check:', a.symbol, 'balance:', balance, 'pass:', hasBalance);
-      }
-      return isPrimary && hasBalance;
+      const hasBalance = a.amount > 0.0001;
+      console.log('[Convert] Asset:', a.tokenType, 'amount:', a.amount, 'USD:', a.amountInUSD);
+      return hasBalance;
     });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    console.log('[Convert] Filtered primary assets:', filtered.length, filtered.map((a: any) => a.symbol));
+    console.log('[Convert] Filtered:', filtered.length);
     return filtered;
   }, [assets]);
 
@@ -1100,11 +1096,12 @@ const ConvertModal = ({
   const fromChains = useMemo(() => {
     if (!fromAsset) return [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const asset = uaAssets.find((a: any) => a.symbol === fromAsset);
+    const asset = uaAssets.find((a: any) => a.tokenType === fromAsset);
     if (!asset?.chainAggregation) return [];
+    // Use SDK structure: chainAggregation[].token.chainId, amount, amountInUSD
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return asset.chainAggregation.filter((c: any) => c.amount > 0.0001).map((c: any) => ({
-      chainId: c.token?.chainId || c.chainId,
+      chainId: c.token?.chainId,
       balance: c.amount,
       balanceUSD: c.amountInUSD,
     }));
@@ -1113,7 +1110,8 @@ const ConvertModal = ({
   // Get available chains for selected to asset
   const toChains = useMemo(() => {
     if (!toAsset) return [];
-    const uaPrimary = UA_PRIMARY_ASSETS.find(p => p.symbol === toAsset);
+    // Match by tokenType (lowercase) to UA_PRIMARY_ASSETS symbol
+    const uaPrimary = UA_PRIMARY_ASSETS.find(p => p.symbol.toLowerCase() === toAsset.toLowerCase());
     return uaPrimary?.chains || [];
   }, [toAsset]);
 
@@ -1268,7 +1266,7 @@ const ConvertModal = ({
           {/* Debug: Show available primary assets */}
           <div className="text-xs text-gray-500 mb-2">
             {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-            Available: {uaAssets.length > 0 ? uaAssets.map((a: any) => `${a.symbol}(${a.balance?.toFixed(4)})`).join(', ') : 'None - checking assets...'}
+            Available: {uaAssets.length > 0 ? uaAssets.map((a: any) => `${a.tokenType?.toUpperCase()}($${a.amountInUSD?.toFixed(2)})`).join(', ') : 'None'}
           </div>
           
           <div className="flex justify-between items-center mb-2">
@@ -1292,7 +1290,7 @@ const ConvertModal = ({
               <option value="">Select asset</option>
               {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
               {uaAssets.map((a: any, i: number) => (
-                <option key={i} value={a.symbol}>{a.symbol} - {a.name}</option>
+                <option key={i} value={a.tokenType}>{a.tokenType?.toUpperCase()} - ${a.amountInUSD?.toFixed(2)}</option>
               ))}
             </select>
             <select
@@ -3605,7 +3603,7 @@ const App = () => {
       <ConvertModal
         isOpen={showConvertModal}
         onClose={() => setShowConvertModal(false)}
-        assets={combinedAssets as IAssetsResponse | null}
+        assets={primaryAssets}
         universalAccount={universalAccountInstance}
         onTransactionCreated={(tx) => {
           console.log('[Convert] Transaction created, show signing modal:', tx);
