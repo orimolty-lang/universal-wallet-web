@@ -1066,15 +1066,12 @@ const ConvertModal = ({
   const [error, setError] = useState<string | null>(null);
   const [estimatedOutput, setEstimatedOutput] = useState<string | null>(null);
 
-  // Get user's UA assets with chain breakdown
+  // Get ALL user's assets with balance (not just UA primary)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const uaAssets = useMemo(() => {
     if (!assets?.assets) return [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return assets.assets.filter((a: any) => {
-      const uaPrimary = UA_PRIMARY_ASSETS.find(p => p.symbol === a.symbol);
-      return uaPrimary && a.balance > 0.0001;
-    });
+    return assets.assets.filter((a: any) => a.balance > 0.0001);
   }, [assets]);
 
   // Get available chains for selected from asset (where user has balance)
