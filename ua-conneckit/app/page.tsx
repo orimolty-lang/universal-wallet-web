@@ -1066,12 +1066,27 @@ const ConvertModal = ({
   const [error, setError] = useState<string | null>(null);
   const [estimatedOutput, setEstimatedOutput] = useState<string | null>(null);
 
-  // Get ALL user's assets with balance (not just UA primary)
+  // Get user's UA primary assets with balance
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const uaAssets = useMemo(() => {
-    if (!assets?.assets) return [];
+    if (!assets?.assets) {
+      console.log('[Convert] No assets.assets');
+      return [];
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return assets.assets.filter((a: any) => a.balance > 0.0001);
+    console.log('[Convert] All assets:', assets.assets.map((a: any) => ({ symbol: a.symbol, balance: a.balance })));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const filtered = assets.assets.filter((a: any) => {
+      const symbolUpper = a.symbol?.toUpperCase();
+      const uaPrimary = UA_PRIMARY_ASSETS.find(p => p.symbol.toUpperCase() === symbolUpper);
+      const hasBalance = a.balance > 0.0001;
+      if (uaPrimary) {
+        console.log('[Convert] Primary match:', a.symbol, 'balance:', a.balance, 'pass:', hasBalance);
+      }
+      return uaPrimary && hasBalance;
+    });
+    console.log('[Convert] Filtered assets:', filtered.length);
+    return filtered;
   }, [assets]);
 
   // Get available chains for selected from asset (where user has balance)
@@ -1243,6 +1258,12 @@ const ConvertModal = ({
 
         {/* From Section */}
         <div className="bg-gray-800/50 rounded-xl p-4 mb-3">
+          {/* Debug: Show available primary assets */}
+          <div className="text-xs text-gray-500 mb-2">
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            Available: {uaAssets.length > 0 ? uaAssets.map((a: any) => `${a.symbol}(${a.balance?.toFixed(4)})`).join(', ') : 'None - checking assets...'}
+          </div>
+          
           <div className="flex justify-between items-center mb-2">
             <span className="text-gray-400 text-sm">From</span>
             {selectedFromBalance && (
