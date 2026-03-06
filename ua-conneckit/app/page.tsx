@@ -1645,14 +1645,14 @@ const BASE_USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 
 // Avantis Perps Markets with Rainbow-style display data
 const PERPS_MARKETS = [
-  { index: 0, symbol: 'BTC', name: 'Bitcoin', maxLeverage: 150, logo: '₿', color: '#F7931A' },
-  { index: 1, symbol: 'ETH', name: 'Ethereum', maxLeverage: 150, logo: '⟠', color: '#627EEA' },
-  { index: 2, symbol: 'SOL', name: 'Solana', maxLeverage: 100, logo: '◎', color: '#9945FF' },
-  { index: 3, symbol: 'LINK', name: 'Chainlink', maxLeverage: 75, logo: '⬡', color: '#375BD2' },
-  { index: 4, symbol: 'DOGE', name: 'Dogecoin', maxLeverage: 75, logo: '🐕', color: '#C2A633' },
-  { index: 5, symbol: 'XRP', name: 'Ripple', maxLeverage: 75, logo: '✕', color: '#23292F' },
-  { index: 20, symbol: 'XAU', name: 'Gold', maxLeverage: 250, logo: '🥇', color: '#FFD700' },
-  { index: 21, symbol: 'XAG', name: 'Silver', maxLeverage: 100, logo: '🥈', color: '#C0C0C0' },
+  { index: 0, symbol: 'BTC', name: 'Bitcoin', maxLeverage: 150, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/bitcoin/info/logo.png', color: '#F7931A' },
+  { index: 1, symbol: 'ETH', name: 'Ethereum', maxLeverage: 150, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png', color: '#627EEA' },
+  { index: 2, symbol: 'SOL', name: 'Solana', maxLeverage: 100, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png', color: '#9945FF' },
+  { index: 3, symbol: 'LINK', name: 'Chainlink', maxLeverage: 75, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x514910771AF9Ca656af840dff83E8264EcF986CA/logo.png', color: '#375BD2' },
+  { index: 4, symbol: 'DOGE', name: 'Dogecoin', maxLeverage: 75, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/doge/info/logo.png', color: '#C2A633' },
+  { index: 5, symbol: 'XRP', name: 'Ripple', maxLeverage: 75, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/xrp/info/logo.png', color: '#23292F' },
+  { index: 20, symbol: 'XAU', name: 'Gold', maxLeverage: 250, logo: 'https://s2.coinmarketcap.com/static/img/coins/64x64/5176.png', color: '#FFD700' },
+  { index: 21, symbol: 'XAG', name: 'Silver', maxLeverage: 100, logo: 'https://s2.coinmarketcap.com/static/img/coins/64x64/5180.png', color: '#C0C0C0' },
 ];
 
 // Legacy format for compatibility
@@ -2030,10 +2030,10 @@ const PerpsModal = ({
                     <div className="flex items-center gap-3">
                       {/* Token Logo */}
                       <div 
-                        className="w-10 h-10 rounded-full flex items-center justify-center text-lg"
+                        className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden"
                         style={{ backgroundColor: `${market.color}20` }}
                       >
-                        {market.logo}
+                        <img src={market.logo} alt={market.symbol} className="w-7 h-7" />
                       </div>
                       {/* Token Info */}
                       <div className="text-left">
@@ -2087,10 +2087,10 @@ const PerpsModal = ({
               </button>
               <div className="flex items-center gap-2">
                 <div 
-                  className="w-8 h-8 rounded-full flex items-center justify-center"
+                  className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden"
                   style={{ backgroundColor: `${selectedMarket.color}20` }}
                 >
-                  {selectedMarket.logo}
+                  <img src={selectedMarket.logo} alt={selectedMarket.symbol} className="w-6 h-6" />
                 </div>
                 <span className="text-white font-bold text-lg">{selectedMarket.symbol}/USD</span>
               </div>
