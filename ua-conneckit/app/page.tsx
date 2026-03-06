@@ -1276,7 +1276,7 @@ const ConvertModal = ({
           console.log('[Convert] Transaction sent:', sendResult.transactionId);
           setTxResult({
             txId: sendResult.transactionId,
-            status: 'pending',
+            status: 'complete',
           });
           
           // Reset form
@@ -1548,16 +1548,11 @@ const ConvertModal = ({
         
         {/* Transaction Result */}
         {txResult && (
-          <div className={`mt-4 p-4 rounded-xl text-sm ${
-            txResult.status === 'pending' 
-              ? 'bg-yellow-900/30 border border-yellow-500/50 text-yellow-300'
-              : 'bg-green-900/30 border border-green-500/50 text-green-300'
-          }`}>
-            <div className="font-bold mb-1">
-              {txResult.status === 'pending' ? '⏳ Converting...' : '✅ Conversion Complete!'}
-            </div>
-            <div className="text-xs font-mono break-all">
-              TX: {txResult.txId.slice(0, 20)}...
+          <div className="mt-4 p-4 rounded-xl text-sm bg-green-900/30 border border-green-500/50 text-green-300">
+            <div className="font-bold mb-1">✅ Conversion Submitted!</div>
+            <div className="text-xs text-green-400 mb-2">Your assets are being converted. This may take a few minutes.</div>
+            <div className="text-xs font-mono break-all opacity-75">
+              TX: {txResult.txId}
             </div>
           </div>
         )}
