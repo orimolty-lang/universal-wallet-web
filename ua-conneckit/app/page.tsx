@@ -1031,6 +1031,7 @@ const UA_PRIMARY_ASSETS = [
   { symbol: 'BNB', name: 'BNB', chains: [56] }, // BSC only
 ];
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const CHAIN_INFO: Record<number, { name: string; logo: string }> = {
   1: { name: 'Ethereum', logo: '⟠' },
   8453: { name: 'Base', logo: '🔵' },
@@ -1072,10 +1073,10 @@ const ConvertModal = ({
   const [toAssetOpen, setToAssetOpen] = useState(false);
   const [toChainOpen, setToChainOpen] = useState(false);
   
-  // Token logos for display
-  const TOKEN_LOGOS: Record<string, string> = {
-    'eth': '⟠', 'usdc': '💵', 'usdt': '💲', 'sol': '◎', 'bnb': '🟡',
-    'ETH': '⟠', 'USDC': '💵', 'USDT': '💲', 'SOL': '◎', 'BNB': '🟡',
+  // Map chainId to chain name for logo lookup
+  const CHAIN_ID_TO_NAME: Record<number, string> = {
+    1: "Ethereum", 8453: "Base", 42161: "Arbitrum", 10: "Optimism",
+    137: "Polygon", 56: "BNB Chain", 101: "Solana", 43114: "Avalanche",
   };
 
   // Get UA primary assets with balance (using correct SDK structure)
@@ -1303,7 +1304,7 @@ const ConvertModal = ({
                 <div className="flex items-center gap-2">
                   {fromAsset ? (
                     <>
-                      <span className="text-lg">{TOKEN_LOGOS[fromAsset] || '🪙'}</span>
+                      <img src={TOKEN_LOGOS[fromAsset.toUpperCase()] || TOKEN_LOGOS['ETH']} alt="" className="w-6 h-6 rounded-full" />
                       <span className="font-medium">{fromAsset.toUpperCase()}</span>
                     </>
                   ) : (
@@ -1321,7 +1322,7 @@ const ConvertModal = ({
                       onClick={() => { setFromAsset(a.tokenType); setFromAssetOpen(false); }}
                       className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-700 text-left"
                     >
-                      <span className="text-lg">{TOKEN_LOGOS[a.tokenType] || '🪙'}</span>
+                      <img src={TOKEN_LOGOS[a.tokenType?.toUpperCase()] || TOKEN_LOGOS['ETH']} alt="" className="w-6 h-6 rounded-full" />
                       <div>
                         <div className="text-white font-medium">{a.tokenType?.toUpperCase()}</div>
                         <div className="text-gray-400 text-xs">${a.amountInUSD?.toFixed(2)}</div>
@@ -1342,8 +1343,8 @@ const ConvertModal = ({
                 <div className="flex items-center gap-2">
                   {fromChain ? (
                     <>
-                      <span className="text-lg">{CHAIN_INFO[fromChain]?.logo || '🔗'}</span>
-                      <span className="text-white text-sm">{CHAIN_INFO[fromChain]?.name}</span>
+                      <img src={CHAIN_LOGOS[CHAIN_ID_TO_NAME[fromChain]] || CHAIN_LOGOS['Ethereum']} alt="" className="w-5 h-5 rounded-full" />
+                      <span className="text-white text-sm">{CHAIN_ID_TO_NAME[fromChain]}</span>
                     </>
                   ) : (
                     <span className="text-gray-400 text-sm">Chain</span>
@@ -1359,9 +1360,9 @@ const ConvertModal = ({
                       onClick={() => { setFromChain(c.chainId); setFromChainOpen(false); }}
                       className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-700 text-left"
                     >
-                      <span className="text-lg">{CHAIN_INFO[c.chainId]?.logo || '🔗'}</span>
+                      <img src={CHAIN_LOGOS[CHAIN_ID_TO_NAME[c.chainId]] || CHAIN_LOGOS['Ethereum']} alt="" className="w-5 h-5 rounded-full" />
                       <div>
-                        <div className="text-white text-sm">{CHAIN_INFO[c.chainId]?.name}</div>
+                        <div className="text-white text-sm">{CHAIN_ID_TO_NAME[c.chainId]}</div>
                         <div className="text-gray-400 text-xs">{c.balance.toFixed(4)}</div>
                       </div>
                     </button>
@@ -1414,7 +1415,7 @@ const ConvertModal = ({
                 <div className="flex items-center gap-2">
                   {toAsset ? (
                     <>
-                      <span className="text-lg">{TOKEN_LOGOS[toAsset] || '🪙'}</span>
+                      <img src={TOKEN_LOGOS[toAsset.toUpperCase()] || TOKEN_LOGOS['ETH']} alt="" className="w-6 h-6 rounded-full" />
                       <span className="font-medium">{toAsset.toUpperCase()}</span>
                     </>
                   ) : (
@@ -1431,7 +1432,7 @@ const ConvertModal = ({
                       onClick={() => { setToAsset(a.symbol); setToAssetOpen(false); }}
                       className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-700 text-left"
                     >
-                      <span className="text-lg">{TOKEN_LOGOS[a.symbol] || '🪙'}</span>
+                      <img src={TOKEN_LOGOS[a.symbol] || TOKEN_LOGOS['ETH']} alt="" className="w-6 h-6 rounded-full" />
                       <div>
                         <div className="text-white font-medium">{a.symbol}</div>
                         <div className="text-gray-400 text-xs">{a.name}</div>
@@ -1452,8 +1453,8 @@ const ConvertModal = ({
                 <div className="flex items-center gap-2">
                   {toChain ? (
                     <>
-                      <span className="text-lg">{CHAIN_INFO[toChain]?.logo || '🔗'}</span>
-                      <span className="text-white text-sm">{CHAIN_INFO[toChain]?.name}</span>
+                      <img src={CHAIN_LOGOS[CHAIN_ID_TO_NAME[toChain]] || CHAIN_LOGOS['Ethereum']} alt="" className="w-5 h-5 rounded-full" />
+                      <span className="text-white text-sm">{CHAIN_ID_TO_NAME[toChain]}</span>
                     </>
                   ) : (
                     <span className="text-gray-400 text-sm">Chain</span>
@@ -1469,8 +1470,8 @@ const ConvertModal = ({
                       onClick={() => { setToChain(chainId); setToChainOpen(false); }}
                       className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-700 text-left"
                     >
-                      <span className="text-lg">{CHAIN_INFO[chainId]?.logo || '🔗'}</span>
-                      <div className="text-white text-sm">{CHAIN_INFO[chainId]?.name}</div>
+                      <img src={CHAIN_LOGOS[CHAIN_ID_TO_NAME[chainId]] || CHAIN_LOGOS['Ethereum']} alt="" className="w-5 h-5 rounded-full" />
+                      <div className="text-white text-sm">{CHAIN_ID_TO_NAME[chainId]}</div>
                     </button>
                   ))}
                 </div>
