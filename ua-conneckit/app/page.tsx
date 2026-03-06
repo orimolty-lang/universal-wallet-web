@@ -1065,6 +1065,18 @@ const ConvertModal = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [estimatedOutput, setEstimatedOutput] = useState<string | null>(null);
+  
+  // Dropdown visibility states
+  const [fromAssetOpen, setFromAssetOpen] = useState(false);
+  const [fromChainOpen, setFromChainOpen] = useState(false);
+  const [toAssetOpen, setToAssetOpen] = useState(false);
+  const [toChainOpen, setToChainOpen] = useState(false);
+  
+  // Token logos for display
+  const TOKEN_LOGOS: Record<string, string> = {
+    'eth': '⟠', 'usdc': '💵', 'usdt': '💲', 'sol': '◎', 'bnb': '🟡',
+    'ETH': '⟠', 'USDC': '💵', 'USDT': '💲', 'SOL': '◎', 'BNB': '🟡',
+  };
 
   // Get UA primary assets with balance (using correct SDK structure)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1282,30 +1294,81 @@ const ConvertModal = ({
           </div>
           
           <div className="flex gap-2 mb-2">
-            <select
-              value={fromAsset}
-              onChange={(e) => setFromAsset(e.target.value)}
-              className="flex-1 bg-gray-700 rounded-lg px-3 py-2 text-white outline-none text-sm"
-            >
-              <option value="">Select asset</option>
-              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              {uaAssets.map((a: any, i: number) => (
-                <option key={i} value={a.tokenType}>{a.tokenType?.toUpperCase()} - ${a.amountInUSD?.toFixed(2)}</option>
-              ))}
-            </select>
-            <select
-              value={fromChain || ''}
-              onChange={(e) => setFromChain(Number(e.target.value))}
-              className="w-32 bg-gray-700 rounded-lg px-3 py-2 text-white outline-none text-sm"
-              disabled={!fromAsset}
-            >
-              <option value="">Chain</option>
-              {fromChains.map((c: { chainId: number; balance: number }) => (
-                <option key={c.chainId} value={c.chainId}>
-                  {CHAIN_INFO[c.chainId]?.logo} {CHAIN_INFO[c.chainId]?.name || `Chain ${c.chainId}`}
-                </option>
-              ))}
-            </select>
+            {/* Custom Asset Dropdown */}
+            <div className="flex-1 relative">
+              <button
+                onClick={() => { setFromAssetOpen(!fromAssetOpen); setFromChainOpen(false); }}
+                className="w-full bg-gray-700 rounded-xl px-4 py-3 text-white text-left flex items-center justify-between"
+              >
+                <div className="flex items-center gap-2">
+                  {fromAsset ? (
+                    <>
+                      <span className="text-lg">{TOKEN_LOGOS[fromAsset] || '🪙'}</span>
+                      <span className="font-medium">{fromAsset.toUpperCase()}</span>
+                    </>
+                  ) : (
+                    <span className="text-gray-400">Select asset</span>
+                  )}
+                </div>
+                <span className="text-gray-400">▼</span>
+              </button>
+              {fromAssetOpen && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-xl border border-gray-700 overflow-hidden z-20 max-h-48 overflow-y-auto">
+                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                  {uaAssets.map((a: any, i: number) => (
+                    <button
+                      key={i}
+                      onClick={() => { setFromAsset(a.tokenType); setFromAssetOpen(false); }}
+                      className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-700 text-left"
+                    >
+                      <span className="text-lg">{TOKEN_LOGOS[a.tokenType] || '🪙'}</span>
+                      <div>
+                        <div className="text-white font-medium">{a.tokenType?.toUpperCase()}</div>
+                        <div className="text-gray-400 text-xs">${a.amountInUSD?.toFixed(2)}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            {/* Custom Chain Dropdown */}
+            <div className="w-36 relative">
+              <button
+                onClick={() => { if (fromAsset) { setFromChainOpen(!fromChainOpen); setFromAssetOpen(false); }}}
+                className={`w-full bg-gray-700 rounded-xl px-4 py-3 text-left flex items-center justify-between ${!fromAsset ? 'opacity-50' : ''}`}
+                disabled={!fromAsset}
+              >
+                <div className="flex items-center gap-2">
+                  {fromChain ? (
+                    <>
+                      <span className="text-lg">{CHAIN_INFO[fromChain]?.logo || '🔗'}</span>
+                      <span className="text-white text-sm">{CHAIN_INFO[fromChain]?.name}</span>
+                    </>
+                  ) : (
+                    <span className="text-gray-400 text-sm">Chain</span>
+                  )}
+                </div>
+                <span className="text-gray-400 text-xs">▼</span>
+              </button>
+              {fromChainOpen && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-xl border border-gray-700 overflow-hidden z-20 max-h-48 overflow-y-auto">
+                  {fromChains.map((c: { chainId: number; balance: number; balanceUSD: number }) => (
+                    <button
+                      key={c.chainId}
+                      onClick={() => { setFromChain(c.chainId); setFromChainOpen(false); }}
+                      className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-700 text-left"
+                    >
+                      <span className="text-lg">{CHAIN_INFO[c.chainId]?.logo || '🔗'}</span>
+                      <div>
+                        <div className="text-white text-sm">{CHAIN_INFO[c.chainId]?.name}</div>
+                        <div className="text-gray-400 text-xs">{c.balance.toFixed(4)}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
@@ -1342,29 +1405,77 @@ const ConvertModal = ({
           </div>
           
           <div className="flex gap-2">
-            <select
-              value={toAsset}
-              onChange={(e) => setToAsset(e.target.value)}
-              className="flex-1 bg-gray-700 rounded-lg px-3 py-2 text-white outline-none text-sm"
-            >
-              <option value="">Select asset</option>
-              {UA_PRIMARY_ASSETS.map((a) => (
-                <option key={a.symbol} value={a.symbol}>{a.symbol} - {a.name}</option>
-              ))}
-            </select>
-            <select
-              value={toChain || ''}
-              onChange={(e) => setToChain(Number(e.target.value))}
-              className="w-32 bg-gray-700 rounded-lg px-3 py-2 text-white outline-none text-sm"
-              disabled={!toAsset}
-            >
-              <option value="">Chain</option>
-              {toChains.map((chainId: number) => (
-                <option key={chainId} value={chainId}>
-                  {CHAIN_INFO[chainId]?.logo} {CHAIN_INFO[chainId]?.name || `Chain ${chainId}`}
-                </option>
-              ))}
-            </select>
+            {/* Custom To Asset Dropdown */}
+            <div className="flex-1 relative">
+              <button
+                onClick={() => { setToAssetOpen(!toAssetOpen); setToChainOpen(false); }}
+                className="w-full bg-gray-700 rounded-xl px-4 py-3 text-white text-left flex items-center justify-between"
+              >
+                <div className="flex items-center gap-2">
+                  {toAsset ? (
+                    <>
+                      <span className="text-lg">{TOKEN_LOGOS[toAsset] || '🪙'}</span>
+                      <span className="font-medium">{toAsset.toUpperCase()}</span>
+                    </>
+                  ) : (
+                    <span className="text-gray-400">Select asset</span>
+                  )}
+                </div>
+                <span className="text-gray-400">▼</span>
+              </button>
+              {toAssetOpen && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-xl border border-gray-700 overflow-hidden z-20 max-h-48 overflow-y-auto">
+                  {UA_PRIMARY_ASSETS.map((a) => (
+                    <button
+                      key={a.symbol}
+                      onClick={() => { setToAsset(a.symbol); setToAssetOpen(false); }}
+                      className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-700 text-left"
+                    >
+                      <span className="text-lg">{TOKEN_LOGOS[a.symbol] || '🪙'}</span>
+                      <div>
+                        <div className="text-white font-medium">{a.symbol}</div>
+                        <div className="text-gray-400 text-xs">{a.name}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            {/* Custom To Chain Dropdown */}
+            <div className="w-36 relative">
+              <button
+                onClick={() => { if (toAsset) { setToChainOpen(!toChainOpen); setToAssetOpen(false); }}}
+                className={`w-full bg-gray-700 rounded-xl px-4 py-3 text-left flex items-center justify-between ${!toAsset ? 'opacity-50' : ''}`}
+                disabled={!toAsset}
+              >
+                <div className="flex items-center gap-2">
+                  {toChain ? (
+                    <>
+                      <span className="text-lg">{CHAIN_INFO[toChain]?.logo || '🔗'}</span>
+                      <span className="text-white text-sm">{CHAIN_INFO[toChain]?.name}</span>
+                    </>
+                  ) : (
+                    <span className="text-gray-400 text-sm">Chain</span>
+                  )}
+                </div>
+                <span className="text-gray-400 text-xs">▼</span>
+              </button>
+              {toChainOpen && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-xl border border-gray-700 overflow-hidden z-20 max-h-48 overflow-y-auto">
+                  {toChains.map((chainId: number) => (
+                    <button
+                      key={chainId}
+                      onClick={() => { setToChain(chainId); setToChainOpen(false); }}
+                      className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-700 text-left"
+                    >
+                      <span className="text-lg">{CHAIN_INFO[chainId]?.logo || '🔗'}</span>
+                      <div className="text-white text-sm">{CHAIN_INFO[chainId]?.name}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -3391,19 +3502,15 @@ const App = () => {
     console.log("[CombinedAssets] mobulaAssets:", mobulaAssets?.length || 0);
     if (!primaryAssets) return null;
     
-    // Get symbols already in primary assets (case-insensitive, trimmed)
-    // Also track common tokens that UA handles (avoid duplicates from Mobula)
+    // Get tokenTypes from UA primary assets for dedup (UA uses tokenType, not symbol)
+    // e.g., "eth", "sol", "usdc" - we uppercase for comparison with Mobula's symbols
     const primarySymbols = new Set(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (primaryAssets.assets?.map((a: any) => a.symbol?.toUpperCase()?.trim()) || [])
+      (primaryAssets.assets?.map((a: any) => a.tokenType?.toUpperCase()?.trim()) || [])
         .filter((s: string | undefined) => s) // Remove empty/null
     );
     
-    // Only block common tokens if they ACTUALLY exist in primaryAssets
-    // (Don't assume UA has them - let Mobula provide if UA doesn't)
-    // This prevents SOL from disappearing when UA doesn't support Solana
-    
-    console.log("[CombinedAssets] primarySymbols:", Array.from(primarySymbols));
+    console.log("[CombinedAssets] primarySymbols (from tokenType):", Array.from(primarySymbols));
     
     // Filter Mobula assets to only include tokens NOT in primary assets
     const externalAssets = mobulaAssets
