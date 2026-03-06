@@ -326,8 +326,10 @@ export const SwapModal = ({
           
           if (sendResult?.transactionId) {
             // Format expected amount
+            // When selling: output is USDC (6 decimals), when buying: output is target token
+            const outputDecimals = direction === "sell" ? 6 : (targetToken?.decimals || 18);
             const expectedFormatted = result.outputAmount 
-              ? formatTokenAmount(parseFloat(result.outputAmount) / Math.pow(10, targetToken?.decimals || 18))
+              ? formatTokenAmount(parseFloat(result.outputAmount) / Math.pow(10, outputDecimals))
               : undefined;
             
             // Show pending state with TARGET chain (not source chain)
@@ -434,11 +436,11 @@ export const SwapModal = ({
             <div className="text-center mb-4">
               {txResult.status === "completed" && txResult.actualAmount ? (
                 <p className="text-green-400 text-lg">
-                  Received: {formatTokenAmount(parseFloat(txResult.actualAmount))} {targetToken?.symbol}
+                  Received: {formatTokenAmount(parseFloat(txResult.actualAmount))} {direction === "sell" ? "USDC" : targetToken?.symbol}
                 </p>
               ) : txResult.expectedAmount ? (
                 <p className="text-gray-400">
-                  Expected: ~{txResult.expectedAmount} {targetToken?.symbol}
+                  Expected: ~{txResult.expectedAmount} {direction === "sell" ? "USDC" : targetToken?.symbol}
                 </p>
               ) : null}
               

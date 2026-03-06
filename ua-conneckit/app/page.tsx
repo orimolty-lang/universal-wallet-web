@@ -118,7 +118,7 @@ const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
             alt="Omni" 
             className="w-32 h-32 rounded-2xl"
             style={{
-              animation: 'splashBreathe 1.5s ease-in-out infinite',
+              animation: 'splashBreathe 12s linear infinite',
             }}
           />
           {/* Glow rings */}
@@ -142,15 +142,16 @@ const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
       </div>
       
       <style jsx>{`
+        /* SAVED: Original breathing animation
+        @keyframes splashBreatheOriginal {
+          0%, 100% { transform: scale(1) rotate(0deg); filter: brightness(1) saturate(1); }
+          50% { transform: scale(1.15) rotate(5deg); filter: brightness(1.4) saturate(1.3); }
+        }
+        */
+        /* Slow circular rotation - clean and smooth */
         @keyframes splashBreathe {
-          0%, 100% {
-            transform: scale(1) rotate(0deg);
-            filter: brightness(1) saturate(1);
-          }
-          50% {
-            transform: scale(1.15) rotate(5deg);
-            filter: brightness(1.4) saturate(1.3);
-          }
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
         }
         @keyframes splashGlow {
           0%, 100% {
@@ -755,7 +756,7 @@ const ProfilePickerModal = ({
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder="Enter a custom name..."
-            className="w-full bg-gray-800 rounded-xl px-4 py-3 text-white outline-none"
+            className="w-full bg-gray-800 rounded-xl px-3 py-2 text-white outline-none"
             maxLength={20}
           />
         </div>
@@ -886,7 +887,7 @@ const ReceiveModal = ({
 
         <div className="space-y-2 max-h-[50vh] overflow-y-auto">
           {chains.map((chain) => (
-            <div key={chain.name} className="bg-[#252525] rounded-xl px-4 py-3 flex items-center justify-between">
+            <div key={chain.name} className="bg-[#252525] rounded-xl px-3 py-2 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <img src={chain.logo} alt={chain.name} className="w-9 h-9 rounded-full" />
                 <span className="text-white font-medium">{chain.name}</span>
@@ -980,7 +981,7 @@ const SendModal = ({
           <select
             value={selectedToken || ""}
             onChange={(e) => setSelectedToken(e.target.value)}
-            className="w-full bg-gray-800 rounded-xl px-4 py-3 text-white outline-none"
+            className="w-full bg-gray-800 rounded-xl px-3 py-2 text-white outline-none"
           >
             <option value="">Select a token</option>
             {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
@@ -998,7 +999,7 @@ const SendModal = ({
             value={recipient}
             onChange={(e) => setRecipient(e.target.value)}
             placeholder="0x... or .eth"
-            className="w-full bg-gray-800 rounded-xl px-4 py-3 text-white outline-none"
+            className="w-full bg-gray-800 rounded-xl px-3 py-2 text-white outline-none"
           />
         </div>
 
@@ -1010,7 +1011,7 @@ const SendModal = ({
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder="0.00"
-            className="w-full bg-gray-800 rounded-xl px-4 py-3 text-white outline-none"
+            className="w-full bg-gray-800 rounded-xl px-3 py-2 text-white outline-none"
           />
         </div>
 
@@ -1071,6 +1072,14 @@ const ConvertModal = ({
   const [estimatedOutput, setEstimatedOutput] = useState<string | null>(null);
   const [loadingStatus, setLoadingStatus] = useState<string>('');
   const [txResult, setTxResult] = useState<{ txId: string; status: string } | null>(null);
+  
+  // Auto-clear txResult after success animation
+  useEffect(() => {
+    if (txResult?.status === 'complete') {
+      const timer = setTimeout(() => setTxResult(null), 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [txResult?.status]);
   
   // Dropdown visibility states
   const [fromAssetOpen, setFromAssetOpen] = useState(false);
@@ -1336,24 +1345,17 @@ const ConvertModal = ({
 
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose}>
-      <div className="px-6 pb-8">
-        <h2 className="text-white text-xl font-bold mb-6 text-center">Convert</h2>
-        <p className="text-gray-500 text-xs text-center mb-4">Convert UA assets across chains</p>
+      <div className="px-4 pb-6">
+        <h2 className="text-white text-lg font-bold mb-2 text-center">Convert</h2>
 
         {error && (
-          <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-3 mb-4 text-red-300 text-sm">
+          <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-2 mb-3 text-red-300 text-xs">
             {error}
           </div>
         )}
 
         {/* From Section */}
-        <div className="bg-gray-800/50 rounded-xl p-4 mb-3">
-          {/* Debug: Show available primary assets */}
-          <div className="text-xs text-gray-500 mb-2">
-            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-            Available: {uaAssets.length > 0 ? uaAssets.map((a: any) => `${a.tokenType?.toUpperCase()}($${a.amountInUSD?.toFixed(2)})`).join(', ') : 'None'}
-          </div>
-          
+        <div className="bg-gray-800/50 rounded-xl p-3 mb-2">
           <div className="flex justify-between items-center mb-2">
             <span className="text-gray-400 text-sm">From</span>
             {selectedFromBalance && (
@@ -1361,7 +1363,7 @@ const ConvertModal = ({
                 onClick={handleMax}
                 className="text-purple-400 text-xs hover:text-purple-300"
               >
-                Balance: {selectedFromBalance.balance.toFixed(4)} (${selectedFromBalance.balanceUSD.toFixed(2)})
+                Balance: {selectedFromBalance.balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })} (${selectedFromBalance.balanceUSD.toFixed(2)})
               </button>
             )}
           </div>
@@ -1371,7 +1373,7 @@ const ConvertModal = ({
             <div className="flex-1 relative">
               <button
                 onClick={() => { setFromAssetOpen(!fromAssetOpen); setFromChainOpen(false); }}
-                className="w-full bg-gray-700 rounded-xl px-4 py-3 text-white text-left flex items-center justify-between"
+                className="w-full bg-gray-700 rounded-xl px-3 py-2 text-white text-left flex items-center justify-between"
               >
                 <div className="flex items-center gap-2">
                   {fromAsset ? (
@@ -1409,7 +1411,7 @@ const ConvertModal = ({
             <div className="w-36 relative">
               <button
                 onClick={() => { if (fromAsset) { setFromChainOpen(!fromChainOpen); setFromAssetOpen(false); }}}
-                className={`w-full bg-gray-700 rounded-xl px-4 py-3 text-left flex items-center justify-between ${!fromAsset ? 'opacity-50' : ''}`}
+                className={`w-full bg-gray-700 rounded-xl px-3 py-2 text-left flex items-center justify-between ${!fromAsset ? 'opacity-50' : ''}`}
                 disabled={!fromAsset}
               >
                 <div className="flex items-center gap-2">
@@ -1435,7 +1437,7 @@ const ConvertModal = ({
                       <img src={CHAIN_LOGOS[CHAIN_ID_TO_NAME[c.chainId]] || CHAIN_LOGOS['Ethereum']} alt="" className="w-5 h-5 rounded-full" />
                       <div>
                         <div className="text-white text-sm">{CHAIN_ID_TO_NAME[c.chainId]}</div>
-                        <div className="text-gray-400 text-xs">{c.balance.toFixed(4)}</div>
+                        <div className="text-gray-400 text-xs">{c.balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })}</div>
                       </div>
                     </button>
                   ))}
@@ -1462,14 +1464,14 @@ const ConvertModal = ({
         </div>
 
         {/* Swap Arrow */}
-        <div className="flex justify-center -my-1 relative z-10">
-          <div className="w-10 h-10 rounded-full bg-gray-700 border-4 border-[#0a0a0a] flex items-center justify-center text-xl">
+        <div className="flex justify-center -my-0.5 relative z-10">
+          <div className="w-8 h-8 rounded-full bg-gray-700 border-2 border-[#0a0a0a] flex items-center justify-center text-lg">
             ↓
           </div>
         </div>
 
         {/* To Section */}
-        <div className="bg-gray-800/50 rounded-xl p-4 mb-4">
+        <div className="bg-gray-800/50 rounded-xl p-3 mb-3">
           <div className="flex justify-between items-center mb-2">
             <span className="text-gray-400 text-sm">To</span>
             {estimatedOutput && (
@@ -1482,7 +1484,7 @@ const ConvertModal = ({
             <div className="flex-1 relative">
               <button
                 onClick={() => { setToAssetOpen(!toAssetOpen); setToChainOpen(false); }}
-                className="w-full bg-gray-700 rounded-xl px-4 py-3 text-white text-left flex items-center justify-between"
+                className="w-full bg-gray-700 rounded-xl px-3 py-2 text-white text-left flex items-center justify-between"
               >
                 <div className="flex items-center gap-2">
                   {toAsset ? (
@@ -1519,7 +1521,7 @@ const ConvertModal = ({
             <div className="w-36 relative">
               <button
                 onClick={() => { if (toAsset) { setToChainOpen(!toChainOpen); setToAssetOpen(false); }}}
-                className={`w-full bg-gray-700 rounded-xl px-4 py-3 text-left flex items-center justify-between ${!toAsset ? 'opacity-50' : ''}`}
+                className={`w-full bg-gray-700 rounded-xl px-3 py-2 text-left flex items-center justify-between ${!toAsset ? 'opacity-50' : ''}`}
                 disabled={!toAsset}
               >
                 <div className="flex items-center gap-2">
@@ -1569,29 +1571,32 @@ const ConvertModal = ({
           {isLoading ? (loadingStatus || 'Processing...') : 'Convert'}
         </button>
         
-        {/* Transaction Result */}
+        {/* Transaction Result - Spinner/Checkmark Animation */}
         {txResult && (
-          <div className={`mt-4 p-4 rounded-xl text-sm ${
-            txResult.status === 'pending'
-              ? 'bg-yellow-900/30 border border-yellow-500/50 text-yellow-300'
-              : 'bg-green-900/30 border border-green-500/50 text-green-300'
-          }`}>
-            <div className="font-bold mb-1 flex items-center gap-2">
+          <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/60">
+            <div 
+              className="flex flex-col items-center"
+              style={{
+                animation: txResult.status === 'complete' ? 'fadeOut 0.5s ease-out 2s forwards' : 'none'
+              }}
+            >
               {txResult.status === 'pending' ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
-                  Confirming...
-                </>
+                <div className="w-16 h-16 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin" />
               ) : (
-                <>✅ Conversion Complete!</>
+                <div className="w-16 h-16 rounded-full bg-green-500 flex items-center justify-center animate-bounce">
+                  <span className="text-white text-3xl">✓</span>
+                </div>
               )}
+              <p className="text-white mt-4 text-sm">
+                {txResult.status === 'pending' ? 'Converting...' : 'Complete!'}
+              </p>
             </div>
-            {txResult.status === 'complete' && (
-              <div className="text-xs text-green-400 mb-2">Your assets have been converted successfully.</div>
-            )}
-            <div className="text-xs font-mono break-all opacity-75">
-              TX: {txResult.txId}
-            </div>
+            <style jsx>{`
+              @keyframes fadeOut {
+                from { opacity: 1; }
+                to { opacity: 0; pointer-events: none; }
+              }
+            `}</style>
           </div>
         )}
       </div>
@@ -2333,7 +2338,7 @@ const AgentModal = ({
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               placeholder="Ask anything..."
-              className="flex-1 bg-gray-900 rounded-xl px-4 py-3 text-white placeholder-gray-500 outline-none"
+              className="flex-1 bg-gray-900 rounded-xl px-3 py-2 text-white placeholder-gray-500 outline-none"
               onKeyPress={(e) => {
                 if (e.key === "Enter" && message.trim()) {
                   setChat([...chat, { role: "user", text: message }]);
@@ -2379,7 +2384,6 @@ const HomeTab = ({
   onConvert,
   onPerps,
   onTokenSelect,
-  mobulaDebug,
   onRefresh,
 }: {
   accountInfo: AccountInfo | null;
@@ -2392,7 +2396,6 @@ const HomeTab = ({
   onConvert: () => void;
   onPerps: () => void;
   onTokenSelect?: (token: { id: string; symbol: string; name: string; logo?: string; price: number; contracts?: Array<{ address: string; blockchain: string }> }) => void;
-  mobulaDebug?: string;
   onRefresh?: () => Promise<void>;
 }) => {
   // Use Set to allow multiple tokens to be expanded simultaneously
@@ -2559,17 +2562,6 @@ const HomeTab = ({
 
       {/* Token List with Chain Breakdown */}
       <div className="px-4 mt-2">
-        {/* Debug panel - tap to copy */}
-        {mobulaDebug && (
-          <div 
-            className="bg-purple-900/30 border border-purple-500/50 rounded-lg p-2 mb-2 text-xs text-purple-300"
-            onClick={() => navigator.clipboard?.writeText(mobulaDebug)}
-          >
-            <div className="font-mono break-all">{mobulaDebug}</div>
-            <div className="text-purple-500 text-[10px] mt-1">tap to copy</div>
-          </div>
-        )}
-        
         {/* Hide small balances toggle */}
         <div className="flex items-center justify-between py-2 mb-2">
           <span className="text-gray-500 text-sm">Hide small balances (&lt;$0.10)</span>
@@ -2663,7 +2655,7 @@ const HomeTab = ({
                     </div>
                     <div className="text-left">
                       <span className="text-white font-medium">{token.name}</span>
-                      <div className="text-gray-500 text-sm">{token.balance.toFixed(4)} {token.symbol}</div>
+                      <div className="text-gray-500 text-sm">{token.balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })} {token.symbol}</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -2694,7 +2686,7 @@ const HomeTab = ({
                               <span className="text-gray-400">{chain.chainName}</span>
                             </div>
                             <div className="text-right">
-                              <span className="text-gray-300">{chain.amount.toFixed(4)} {token.symbol}</span>
+                              <span className="text-gray-300">{chain.amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })} {token.symbol}</span>
                               <span className="text-gray-500 ml-2">(${chain.amountInUSD.toFixed(2)})</span>
                             </div>
                           </div>
@@ -2865,7 +2857,7 @@ const SearchTab = ({
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Search tokens or paste address..."
-        className="w-full bg-gray-900 rounded-xl px-4 py-3 text-white placeholder-gray-500 outline-none mb-4"
+        className="w-full bg-gray-900 rounded-xl px-3 py-2 text-white placeholder-gray-500 outline-none mb-4"
       />
       
       {loading && <div className="text-gray-500 text-center py-4">Searching...</div>}
@@ -3503,7 +3495,6 @@ const App = () => {
   const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null);
   const [primaryAssets, setPrimaryAssets] = useState<IAssetsResponse | null>(null);
   const [mobulaAssets, setMobulaAssets] = useState<MobulaAsset[]>([]);
-  const [mobulaDebug, setMobulaDebug] = useState<string>("");
   
   // Modals
   const [showAgentModal, setShowAgentModal] = useState(false);
@@ -3628,12 +3619,6 @@ const App = () => {
       const mergedAssets = Array.from(assetMap.values());
       console.log("[Mobula] Merged assets:", mergedAssets.length);
       setMobulaAssets(mergedAssets);
-      // Debug info for on-device diagnosis
-      // Find PUNCH in solana assets for debug
-      const punchAsset = solanaAssets.find(a => a.asset?.symbol?.toUpperCase() === 'PUNCH');
-      const punchDebug = punchAsset ? ` | PUNCH: bal=${punchAsset.token_balance} est=${punchAsset.estimated_balance}` : ' | PUNCH: not found';
-      const debugInfo = `EVM: ${evmAssets.length} | SOL: ${solanaAssets.length} [${solanaAssets.map(a => a.asset?.symbol).join(',')}]${punchDebug} | Merged: ${mergedAssets.length}`;
-      setMobulaDebug(debugInfo);
     } catch (error) {
       console.error("Failed to fetch Mobula assets:", error);
     }
@@ -3813,7 +3798,6 @@ const App = () => {
           onConvert={() => setShowConvertModal(true)}
           onPerps={() => setShowPerpsModal(true)}
           onTokenSelect={(token) => setHomeSelectedToken(token)}
-          mobulaDebug={mobulaDebug}
           onRefresh={async () => {
             await fetchAssets();
             await fetchMobulaAssets();
