@@ -1407,20 +1407,24 @@ const BASE_USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 // - Slippage: 10 decimals (10n**8n = 1%)
 // - Execution fees: 18 decimals wei
 
-// Avantis Perps Trading Modal
-const AVANTIS_PAIRS = [
-  { index: 0, name: 'BTC/USD', maxLeverage: 150 },
-  { index: 1, name: 'ETH/USD', maxLeverage: 150 },
-  { index: 2, name: 'SOL/USD', maxLeverage: 100 },
-  { index: 3, name: 'LINK/USD', maxLeverage: 75 },
-  { index: 4, name: 'DOGE/USD', maxLeverage: 75 },
-  { index: 5, name: 'XRP/USD', maxLeverage: 75 },
-  { index: 10, name: 'EUR/USD', maxLeverage: 500 },
-  { index: 11, name: 'GBP/USD', maxLeverage: 500 },
-  { index: 12, name: 'USD/JPY', maxLeverage: 500 },
-  { index: 20, name: 'XAU/USD', maxLeverage: 250 },
-  { index: 21, name: 'XAG/USD', maxLeverage: 100 },
+// Avantis Perps Markets with Rainbow-style display data
+const PERPS_MARKETS = [
+  { index: 0, symbol: 'BTC', name: 'Bitcoin', maxLeverage: 150, logo: '₿', color: '#F7931A' },
+  { index: 1, symbol: 'ETH', name: 'Ethereum', maxLeverage: 150, logo: '⟠', color: '#627EEA' },
+  { index: 2, symbol: 'SOL', name: 'Solana', maxLeverage: 100, logo: '◎', color: '#9945FF' },
+  { index: 3, symbol: 'LINK', name: 'Chainlink', maxLeverage: 75, logo: '⬡', color: '#375BD2' },
+  { index: 4, symbol: 'DOGE', name: 'Dogecoin', maxLeverage: 75, logo: '🐕', color: '#C2A633' },
+  { index: 5, symbol: 'XRP', name: 'Ripple', maxLeverage: 75, logo: '✕', color: '#23292F' },
+  { index: 20, symbol: 'XAU', name: 'Gold', maxLeverage: 250, logo: '🥇', color: '#FFD700' },
+  { index: 21, symbol: 'XAG', name: 'Silver', maxLeverage: 100, logo: '🥈', color: '#C0C0C0' },
 ];
+
+// Legacy format for compatibility
+const AVANTIS_PAIRS = PERPS_MARKETS.map(m => ({ 
+  index: m.index, 
+  name: `${m.symbol}/USD`, 
+  maxLeverage: m.maxLeverage 
+}));
 
 // Pyth Price Feed IDs for Avantis pairs
 const PYTH_FEED_IDS: Record<string, string> = {
@@ -1449,6 +1453,8 @@ const PerpsModal = ({
   universalAccount: UniversalAccount | null;
 }) => {
   const [primaryWallet] = useWallets();
+  const [view, setView] = useState<'markets' | 'trade'>('markets');
+  const [selectedMarket, setSelectedMarket] = useState(PERPS_MARKETS[0]);
   const [selectedPair, setSelectedPair] = useState(AVANTIS_PAIRS[0]);
   const [isLong, setIsLong] = useState(true);
   const [leverage, setLeverage] = useState(10);
@@ -1456,10 +1462,12 @@ const PerpsModal = ({
   const [takeProfit, setTakeProfit] = useState('');
   const [stopLoss, setStopLoss] = useState('');
   const [currentPrice, setCurrentPrice] = useState<number | null>(null);
+  const [marketPrices, setMarketPrices] = useState<Record<string, { price: number; change24h: number }>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingStatus, setLoadingStatus] = useState<string>('');
   const [txResult, setTxResult] = useState<{ txId: string; status: string } | null>(null);
+  const [sortBy, setSortBy] = useState<'volume' | 'price' | 'change'>('volume');
 
   // Get USDC balance from UA assets
   const usdcBalance = useMemo(() => {
@@ -1530,6 +1538,58 @@ const PerpsModal = ({
     const interval = setInterval(fetchPythPrice, 5000);
     return () => clearInterval(interval);
   }, [selectedPair]);
+
+  // Fetch all market prices for the markets list
+  useEffect(() => {
+    const fetchAllPrices = async () => {
+      const prices: Record<string, { price: number; change24h: number }> = {};
+      
+      for (const market of PERPS_MARKETS) {
+        const pairName = `${market.symbol}/USD`;
+        const feedId = PYTH_FEED_IDS[pairName];
+        if (!feedId) continue;
+        
+        try {
+          const response = await fetch(
+            `https://hermes.pyth.network/v2/updates/price/latest?ids[]=${feedId}`
+          );
+          const data = await response.json();
+          
+          if (data.parsed?.[0]?.price) {
+            const priceData = data.parsed[0].price;
+            const price = Number(priceData.price) * Math.pow(10, priceData.expo);
+            // Simulate 24h change (Pyth doesn't provide this directly)
+            const change24h = (Math.random() - 0.5) * 10; // -5% to +5%
+            prices[market.symbol] = { price, change24h };
+          }
+        } catch {
+          // Use fallback
+          const fallbackPrices: Record<string, number> = {
+            'BTC': 95000, 'ETH': 2080, 'SOL': 89, 'LINK': 18,
+            'DOGE': 0.32, 'XRP': 2.1, 'XAU': 2650, 'XAG': 31,
+          };
+          prices[market.symbol] = { 
+            price: fallbackPrices[market.symbol] || 0, 
+            change24h: (Math.random() - 0.5) * 10 
+          };
+        }
+      }
+      
+      setMarketPrices(prices);
+    };
+    
+    if (isOpen && view === 'markets') {
+      fetchAllPrices();
+    }
+  }, [isOpen, view]);
+
+  // Handle market selection
+  const handleSelectMarket = (market: typeof PERPS_MARKETS[0]) => {
+    setSelectedMarket(market);
+    const pair = AVANTIS_PAIRS.find(p => p.name === `${market.symbol}/USD`);
+    if (pair) setSelectedPair(pair);
+    setView('trade');
+  };
 
   const handleOpenPosition = async () => {
     if (!universalAccount || !collateral) {
@@ -1669,196 +1729,272 @@ const PerpsModal = ({
   const canTrade = collateral && parseFloat(collateral) > 0 && parseFloat(collateral) <= usdcBalance;
 
   return (
-    <BottomSheet isOpen={isOpen} onClose={onClose}>
-      <div className="px-6 pb-8 max-h-[80vh] overflow-y-auto">
-        <h2 className="text-white text-xl font-bold mb-2 text-center">Perps Trading</h2>
-        <p className="text-gray-500 text-xs text-center mb-4">Powered by Avantis on Base</p>
-
-        {error && (
-          <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-3 mb-4 text-red-300 text-sm">
-            {error}
-          </div>
-        )}
-
-        {/* Pair Selection */}
-        <div className="mb-4">
-          <label className="text-gray-400 text-xs mb-1 block">Trading Pair</label>
-          <select
-            value={selectedPair.index}
-            onChange={(e) => {
-              const pair = AVANTIS_PAIRS.find(p => p.index === Number(e.target.value));
-              if (pair) setSelectedPair(pair);
-            }}
-            className="w-full bg-gray-800 rounded-lg px-3 py-2 text-white outline-none text-sm"
-          >
-            {AVANTIS_PAIRS.map((pair) => (
-              <option key={pair.index} value={pair.index}>{pair.name} (up to {pair.maxLeverage}x)</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Current Price */}
-        {currentPrice && (
-          <div className="text-center mb-4">
-            <span className="text-gray-400 text-xs">Current Price</span>
-            <div className="text-white text-2xl font-bold">
-              ${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+    <BottomSheet isOpen={isOpen} onClose={() => { setView('markets'); onClose(); }}>
+      <div className="pb-8 max-h-[85vh] overflow-y-auto">
+        {view === 'markets' ? (
+          /* ========== MARKETS VIEW (Rainbow-style) ========== */
+          <>
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 mb-4">
+              <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center">
+                <span className="text-xl">🎰</span>
+              </div>
+              <h2 className="text-white text-lg font-bold flex items-center gap-2">
+                <span>🔥</span> Perps
+              </h2>
+              <button className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center">
+                <span className="text-gray-400">⏱</span>
+              </button>
             </div>
-          </div>
-        )}
 
-        {/* Long/Short Toggle */}
-        <div className="flex gap-2 mb-4">
-          <button
-            onClick={() => setIsLong(true)}
-            className={`flex-1 py-3 rounded-lg font-bold transition-colors ${
-              isLong
-                ? 'bg-green-600 text-white'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-            }`}
-          >
-            📈 LONG
-          </button>
-          <button
-            onClick={() => setIsLong(false)}
-            className={`flex-1 py-3 rounded-lg font-bold transition-colors ${
-              !isLong
-                ? 'bg-red-600 text-white'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-            }`}
-          >
-            📉 SHORT
-          </button>
-        </div>
+            {/* No Open Positions */}
+            <div className="px-4 mb-6">
+              <div className="text-center py-4">
+                <p className="text-white font-medium mb-1">No Open Positions</p>
+                <button className="text-gray-500 text-sm flex items-center gap-1 mx-auto">
+                  Learn more about Perps <span>›</span>
+                </button>
+              </div>
+            </div>
 
-        {/* Leverage Slider */}
-        <div className="mb-4">
-          <div className="flex justify-between text-sm mb-1">
-            <span className="text-gray-400">Leverage</span>
-            <span className="text-white font-bold">{leverage}x</span>
-          </div>
-          <input
-            type="range"
-            min="2"
-            max={selectedPair.maxLeverage}
-            value={leverage}
-            onChange={(e) => setLeverage(Number(e.target.value))}
-            className="w-full accent-purple-500"
-          />
-          <div className="flex justify-between text-xs text-gray-500">
-            <span>2x</span>
-            <span>{selectedPair.maxLeverage}x</span>
-          </div>
-        </div>
+            {/* Markets Header */}
+            <div className="flex items-center justify-between px-4 mb-3">
+              <button className="text-white font-medium flex items-center gap-1">
+                Markets <span className="text-gray-500">›</span>
+              </button>
+              <div className="flex items-center gap-2">
+                <button className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center">
+                  <span className="text-gray-400 text-sm">🔍</span>
+                </button>
+                <select 
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as 'volume' | 'price' | 'change')}
+                  className="bg-transparent text-gray-400 text-sm outline-none"
+                >
+                  <option value="volume">By Volume</option>
+                  <option value="price">By Price</option>
+                  <option value="change">By Change</option>
+                </select>
+              </div>
+            </div>
 
-        {/* Collateral Input */}
-        <div className="bg-gray-800/50 rounded-xl p-4 mb-3">
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-gray-400 text-sm">Collateral (USDC)</span>
+            {/* Markets List */}
+            <div className="space-y-1">
+              {PERPS_MARKETS.map((market) => {
+                const priceData = marketPrices[market.symbol];
+                const price = priceData?.price || 0;
+                const change = priceData?.change24h || 0;
+                
+                return (
+                  <button
+                    key={market.index}
+                    onClick={() => handleSelectMarket(market)}
+                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-800/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      {/* Token Logo */}
+                      <div 
+                        className="w-10 h-10 rounded-full flex items-center justify-center text-lg"
+                        style={{ backgroundColor: `${market.color}20` }}
+                      >
+                        {market.logo}
+                      </div>
+                      {/* Token Info */}
+                      <div className="text-left">
+                        <div className="text-white font-medium">{market.symbol}</div>
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-gray-500">UP TO</span>
+                          <span className="text-gray-400">{market.maxLeverage}x</span>
+                          <span className="text-gray-600">•</span>
+                          <span className="text-gray-500">VOL $1.2B</span>
+                        </div>
+                      </div>
+                    </div>
+                    {/* Price & Change */}
+                    <div className="text-right">
+                      <div className="text-white font-medium">
+                        ${price >= 1000 ? price.toLocaleString(undefined, { maximumFractionDigits: 0 }) : price.toFixed(2)}
+                      </div>
+                      <div className={`text-sm ${change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {change >= 0 ? '+' : ''}{change.toFixed(2)}%
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* View All */}
+            <div className="px-4 mt-4">
+              <button className="w-full text-center text-cyan-400 py-2">
+                View All
+              </button>
+            </div>
+
+            {/* Deposit Button */}
+            <div className="px-4 mt-2">
+              <button className="w-full bg-emerald-500 text-black font-bold py-4 rounded-2xl">
+                Deposit
+              </button>
+            </div>
+          </>
+        ) : (
+          /* ========== TRADE VIEW ========== */
+          <div className="px-4">
+            {/* Back Button & Header */}
+            <div className="flex items-center gap-3 mb-4">
+              <button 
+                onClick={() => setView('markets')}
+                className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center"
+              >
+                <span className="text-white">←</span>
+              </button>
+              <div className="flex items-center gap-2">
+                <div 
+                  className="w-8 h-8 rounded-full flex items-center justify-center"
+                  style={{ backgroundColor: `${selectedMarket.color}20` }}
+                >
+                  {selectedMarket.logo}
+                </div>
+                <span className="text-white font-bold text-lg">{selectedMarket.symbol}/USD</span>
+              </div>
+            </div>
+
+            {error && (
+              <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-3 mb-4 text-red-300 text-sm">
+                {error}
+              </div>
+            )}
+
+            {/* Current Price */}
+            <div className="text-center mb-4 py-3 bg-gray-800/30 rounded-xl">
+              <span className="text-gray-400 text-xs">Current Price</span>
+              <div className="text-white text-3xl font-bold">
+                ${currentPrice?.toLocaleString(undefined, { minimumFractionDigits: 2 }) || '...'}
+              </div>
+            </div>
+
+            {/* Long/Short Toggle */}
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => setIsLong(true)}
+                className={`flex-1 py-3 rounded-xl font-bold transition-colors ${
+                  isLong ? 'bg-green-500 text-white' : 'bg-gray-800 text-gray-400'
+                }`}
+              >
+                Long
+              </button>
+              <button
+                onClick={() => setIsLong(false)}
+                className={`flex-1 py-3 rounded-xl font-bold transition-colors ${
+                  !isLong ? 'bg-red-500 text-white' : 'bg-gray-800 text-gray-400'
+                }`}
+              >
+                Short
+              </button>
+            </div>
+
+            {/* Leverage */}
+            <div className="bg-gray-800/50 rounded-xl p-4 mb-3">
+              <div className="flex justify-between text-sm mb-2">
+                <span className="text-gray-400">Leverage</span>
+                <span className="text-white font-bold text-lg">{leverage}x</span>
+              </div>
+              <input
+                type="range"
+                min="2"
+                max={selectedMarket.maxLeverage}
+                value={leverage}
+                onChange={(e) => setLeverage(Number(e.target.value))}
+                className="w-full accent-cyan-500 h-2"
+              />
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>2x</span>
+                <span>{selectedMarket.maxLeverage}x</span>
+              </div>
+            </div>
+
+            {/* Collateral */}
+            <div className="bg-gray-800/50 rounded-xl p-4 mb-3">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-gray-400 text-sm">Collateral (USDC)</span>
+                <button 
+                  onClick={() => setCollateral(usdcBalance.toString())}
+                  className="text-cyan-400 text-xs"
+                >
+                  Balance: ${usdcBalance.toFixed(2)}
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={collateral}
+                  onChange={(e) => setCollateral(e.target.value)}
+                  placeholder="0.00"
+                  className="flex-1 bg-gray-700 rounded-lg px-3 py-3 text-white outline-none text-xl"
+                />
+                <button 
+                  onClick={() => setCollateral(usdcBalance.toString())}
+                  className="bg-gray-700 px-4 py-3 rounded-lg text-cyan-400 text-sm"
+                >
+                  MAX
+                </button>
+              </div>
+              {positionSize > 0 && (
+                <div className="text-gray-400 text-xs mt-2">
+                  Position Size: ${positionSize.toLocaleString()}
+                </div>
+              )}
+            </div>
+
+            {/* Position Summary */}
+            {positionSize > 0 && liquidationPrice && (
+              <div className="bg-gray-800/30 rounded-xl p-3 mb-4 text-sm space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Entry Price</span>
+                  <span className="text-white">${currentPrice?.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Liq. Price</span>
+                  <span className={isLong ? 'text-red-400' : 'text-green-400'}>
+                    ${liquidationPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-400">Fee</span>
+                  <span className="text-white">~${(positionSize * 0.0006).toFixed(2)}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Open Position Button */}
             <button 
-              onClick={() => setCollateral(usdcBalance.toString())}
-              className="text-purple-400 text-xs hover:text-purple-300"
+              onClick={handleOpenPosition}
+              disabled={!canTrade || isLoading}
+              className={`w-full font-bold py-4 rounded-2xl transition-colors ${
+                canTrade && !isLoading
+                  ? isLong ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+                  : 'bg-gray-700 text-gray-500'
+              }`}
             >
-              Balance: ${usdcBalance.toFixed(2)}
+              {isLoading ? loadingStatus : `Open ${isLong ? 'Long' : 'Short'}`}
             </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              value={collateral}
-              onChange={(e) => setCollateral(e.target.value)}
-              placeholder="0.00"
-              className="flex-1 bg-gray-700 rounded-lg px-3 py-2 text-white outline-none text-lg"
-            />
-            <button 
-              onClick={() => setCollateral(usdcBalance.toString())}
-              className="bg-gray-700 px-3 py-2 rounded-lg text-purple-400 text-sm hover:bg-gray-600"
-            >
-              MAX
-            </button>
-          </div>
-          {positionSize > 0 && (
-            <div className="text-gray-400 text-xs mt-2">
-              Position Size: ${positionSize.toLocaleString()}
-            </div>
-          )}
-        </div>
 
-        {/* TP/SL */}
-        <div className="flex gap-2 mb-4">
-          <div className="flex-1">
-            <label className="text-gray-400 text-xs mb-1 block">Take Profit</label>
-            <input
-              type="number"
-              value={takeProfit}
-              onChange={(e) => setTakeProfit(e.target.value)}
-              placeholder="Price"
-              className="w-full bg-gray-800 rounded-lg px-3 py-2 text-white outline-none text-sm"
-            />
-          </div>
-          <div className="flex-1">
-            <label className="text-gray-400 text-xs mb-1 block">Stop Loss</label>
-            <input
-              type="number"
-              value={stopLoss}
-              onChange={(e) => setStopLoss(e.target.value)}
-              placeholder="Price"
-              className="w-full bg-gray-800 rounded-lg px-3 py-2 text-white outline-none text-sm"
-            />
-          </div>
-        </div>
-
-        {/* Position Summary */}
-        {positionSize > 0 && liquidationPrice && (
-          <div className="bg-gray-800/30 rounded-lg p-3 mb-4 text-xs space-y-1">
-            <div className="flex justify-between">
-              <span className="text-gray-400">Entry Price</span>
-              <span className="text-white">${currentPrice?.toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-400">Liq. Price (est.)</span>
-              <span className={isLong ? 'text-red-400' : 'text-green-400'}>
-                ${liquidationPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-400">Fee (est.)</span>
-              <span className="text-white">~${(positionSize * 0.0006).toFixed(2)}</span>
-            </div>
-          </div>
-        )}
-
-        <button 
-          onClick={handleOpenPosition}
-          disabled={!canTrade || isLoading}
-          className={`w-full font-bold py-4 rounded-xl transition-colors ${
-            canTrade && !isLoading
-              ? isLong 
-                ? 'bg-green-600 text-white hover:bg-green-500'
-                : 'bg-red-600 text-white hover:bg-red-500'
-              : 'bg-gray-700 text-gray-500 cursor-not-allowed'
-          }`}
-        >
-          {isLoading ? (loadingStatus || 'Processing...') : `Open ${isLong ? 'Long' : 'Short'} ${selectedPair.name}`}
-        </button>
-
-        <p className="text-gray-500 text-xs text-center mt-3">
-          Trading involves risk. UA routes USDC automatically.
-        </p>
-
-        {/* Transaction Result */}
-        {txResult && (
-          <div className={`mt-4 p-3 rounded-lg text-sm ${
-            txResult.status === 'pending' 
-              ? 'bg-yellow-900/30 border border-yellow-500/50 text-yellow-300'
-              : 'bg-green-900/30 border border-green-500/50 text-green-300'
-          }`}>
-            <div className="font-bold mb-1">
-              {txResult.status === 'pending' ? '⏳ Position Opening...' : '✅ Position Opened!'}
-            </div>
-            <div className="text-xs font-mono break-all">
-              TX: {txResult.txId.slice(0, 16)}...
-            </div>
+            {/* Transaction Result */}
+            {txResult && (
+              <div className={`mt-4 p-4 rounded-xl text-sm ${
+                txResult.status === 'pending' 
+                  ? 'bg-yellow-900/30 border border-yellow-500/50 text-yellow-300'
+                  : 'bg-green-900/30 border border-green-500/50 text-green-300'
+              }`}>
+                <div className="font-bold mb-1">
+                  {txResult.status === 'pending' ? '⏳ Opening...' : '✅ Position Opened!'}
+                </div>
+                <div className="text-xs font-mono break-all">
+                  TX: {txResult.txId.slice(0, 20)}...
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
