@@ -1706,11 +1706,10 @@ const PerpsModal = ({
   const [sortBy, setSortBy] = useState<'volume' | 'price' | 'change'>('volume');
 
   // Get USDC balance from UA assets
+  // Use total UA balance - UA auto-converts any asset to USDC for collateral
   const usdcBalance = useMemo(() => {
-    if (!assets?.assets) return 0;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const usdc = assets.assets.find((a: any) => a.symbol === 'USDC') as any;
-    return usdc?.balance || 0;
+    if (!assets?.totalAmountInUSD) return 0;
+    return assets.totalAmountInUSD;
   }, [assets]);
 
   // Calculate position details
@@ -2158,7 +2157,7 @@ const PerpsModal = ({
                   onClick={() => setCollateral(usdcBalance.toString())}
                   className="text-cyan-400 text-xs"
                 >
-                  Balance: ${usdcBalance.toFixed(2)}
+                  UA Balance: ${usdcBalance.toFixed(2)}
                 </button>
               </div>
               <div className="flex items-center gap-2">
