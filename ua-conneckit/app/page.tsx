@@ -2138,29 +2138,23 @@ const PerpsModal = ({
         // TEST: OpenTrade with execution fee (ETH value)
         addDebug('TEST: OpenTrade with ETH execution fee');
         
-        // TEST: Try without execution fee to isolate the issue
-        tx = await universalAccount.createUniversalTransaction(
-          {
-            chainId: 8453, // Base mainnet
-            expectTokens: [
-              {
-                type: SUPPORTED_TOKEN_TYPE.USDC,
-                amount: collateralAmount.toString(),
-              },
-            ],
-            transactions: [
-              // openTrade WITHOUT execution fee (to test if ETH value is the issue)
-              {
-                to: AVANTIS_TRADING_ADDRESS,
-                data: openTradeCalldata,
-                value: '0x0',
-              },
-            ],
-          },
-          {
-            universalGas: true,
-          }
-        );
+        // Match Particle demo structure exactly - no second options object
+        tx = await universalAccount.createUniversalTransaction({
+          chainId: 8453, // Base mainnet
+          expectTokens: [
+            {
+              type: SUPPORTED_TOKEN_TYPE.USDC,
+              amount: collateralAmount.toString(),
+            },
+          ],
+          transactions: [
+            {
+              to: AVANTIS_TRADING_ADDRESS,
+              data: openTradeCalldata,
+              // No value field like demo does for non-payable
+            },
+          ],
+        });
         addDebug('Transaction created successfully!');
       } catch (createErr: unknown) {
         const errMsg = createErr instanceof Error ? createErr.message : String(createErr);
