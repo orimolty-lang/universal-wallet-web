@@ -1757,8 +1757,8 @@ const MULTICALL3_ABI = [
 // ALL Avantis Perps Markets (from SDK docs)
 const PERPS_MARKETS = [
   // Crypto (Group 0 & 1)
-  { index: 0, symbol: 'BTC', name: 'Bitcoin', maxLeverage: 150, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/bitcoin/info/logo.png', color: '#F7931A', group: 'crypto' },
-  { index: 1, symbol: 'ETH', name: 'Ethereum', maxLeverage: 150, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png', color: '#627EEA', group: 'crypto' },
+  { index: 0, symbol: 'BTC', name: 'Bitcoin', maxLeverage: 75, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/bitcoin/info/logo.png', color: '#F7931A', group: 'crypto' },
+  { index: 1, symbol: 'ETH', name: 'Ethereum', maxLeverage: 75, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png', color: '#627EEA', group: 'crypto' },
   { index: 2, symbol: 'SOL', name: 'Solana', maxLeverage: 100, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png', color: '#9945FF', group: 'crypto' },
   { index: 3, symbol: 'LINK', name: 'Chainlink', maxLeverage: 75, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x514910771AF9Ca656af840dff83E8264EcF986CA/logo.png', color: '#375BD2', group: 'crypto' },
   { index: 4, symbol: 'DOGE', name: 'Dogecoin', maxLeverage: 75, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/doge/info/logo.png', color: '#C2A633', group: 'crypto' },
@@ -2130,9 +2130,9 @@ const PerpsModal = ({
         console.log('[Perps] Approve target:', AVANTIS_TRADING_ADDRESS);
         console.log('[Perps] Approve amount:', approveAmount.toString());
         
-        // Single transaction - just the trade (assume approval exists or will fail clearly)
-        addDebug(`Single tx: openTrade only, no approve`);
+        // Full flow: approve + trade
         addDebug(`Trader: ${traderAddress}`);
+        addDebug(`Leverage: ${leverage}x (max: ${selectedPair.maxLeverage}x)`);
         
         tx = await universalAccount.createUniversalTransaction({
           chainId: 8453, // Base mainnet
@@ -2143,11 +2143,17 @@ const PerpsModal = ({
             },
           ],
           transactions: [
-            // ONLY the trade - no approve, no execution fee
+            // Transaction 1: Approve USDC to Avantis
+            {
+              to: BASE_USDC_ADDRESS,
+              data: approveCalldata,
+              value: '0',
+            },
+            // Transaction 2: Open trade
             {
               to: AVANTIS_TRADING_ADDRESS,
               data: openTradeCalldata,
-              value: '0',
+              value: '0', // No execution fee for now
             },
           ],
         });
