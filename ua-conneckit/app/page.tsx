@@ -2133,7 +2133,7 @@ const PerpsModal = ({
         // Full flow: approve + trade
         addDebug(`Trader: ${traderAddress}`);
         addDebug(`Leverage: ${leverage}x`);
-        addDebug(`Using tradeConfig: universalGas=true, slippage=5%`);
+        addDebug(`Using Particle demo structure (no universalGas option)`);
         
         // TEST: OpenTrade with execution fee (ETH value)
         addDebug('TEST: OpenTrade with ETH execution fee');
