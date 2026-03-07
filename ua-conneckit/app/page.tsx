@@ -2055,9 +2055,21 @@ const PerpsModal = ({
       
       let tx;
       try {
-        // Include both USDC (for collateral) and ETH (for execution fee) in expectTokens
-        // Particle will source these from user's unified balance across chains
-        const executionFeeETH = '0.0003'; // 0.0003 ETH for keeper/oracle fees
+        // Log all parameters for debugging
+        console.log('[Perps] === TRADE PARAMETERS ===');
+        console.log('[Perps] Trader address:', traderAddress);
+        console.log('[Perps] Pair index:', selectedPair.index);
+        console.log('[Perps] Collateral (USDC):', collateralAmount);
+        console.log('[Perps] Leverage:', leverage);
+        console.log('[Perps] Position size USDC (6 dec):', positionSizeUSDC.toString());
+        console.log('[Perps] Open price (10 dec):', openPriceScaled.toString());
+        console.log('[Perps] Is Long:', isLong);
+        console.log('[Perps] TP:', tpScaled.toString());
+        console.log('[Perps] SL:', slScaled.toString());
+        console.log('[Perps] Execution fee:', executionFee.toString());
+        console.log('[Perps] Approve calldata:', approveCalldata);
+        console.log('[Perps] Trade calldata:', openTradeCalldata);
+        console.log('[Perps] === END PARAMETERS ===');
         
         tx = await universalAccount.createUniversalTransaction({
           chainId: 8453, // Base mainnet
@@ -2065,10 +2077,6 @@ const PerpsModal = ({
             {
               type: SUPPORTED_TOKEN_TYPE.USDC,
               amount: collateralAmount.toString(),
-            },
-            {
-              type: SUPPORTED_TOKEN_TYPE.ETH,
-              amount: executionFeeETH, // ETH for execution fee
             },
           ],
           transactions: [
@@ -2082,7 +2090,7 @@ const PerpsModal = ({
             {
               to: AVANTIS_TRADING_ADDRESS,
               data: openTradeCalldata,
-              value: '0x' + executionFee.toString(16), // Hex format for ETH value
+              value: executionFee.toString(), // Wei string format
             },
           ],
         });
@@ -2142,12 +2150,17 @@ const PerpsModal = ({
       
     } catch (err) {
       console.error('[Perps] Error:', err);
+      console.error('[Perps] Full error details:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
+      
       // Parse common error messages for better UX
       let errorMessage = 'Failed to open position';
       if (err instanceof Error) {
         const msg = err.message.toLowerCase();
+        const fullMsg = err.message; // Keep original for display
+        
         if (msg.includes('simulation') || msg.includes('revert')) {
-          errorMessage = 'Transaction simulation failed. This may be due to insufficient USDC balance, invalid leverage, or market conditions.';
+          // Show full error for debugging
+          errorMessage = `Simulation failed: ${fullMsg.slice(0, 200)}`;
         } else if (msg.includes('insufficient') || msg.includes('balance')) {
           errorMessage = 'Insufficient balance for this trade.';
         } else if (msg.includes('allowance')) {
