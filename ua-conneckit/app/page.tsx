@@ -2705,7 +2705,6 @@ const HomeTab = ({
           { icon: "↓", label: "Receive", action: onReceive },
           { icon: "↑", label: "Send", action: onSend },
           { icon: "⇄", label: "Convert", action: onConvert },
-          { icon: "📊", label: "Perps", action: onPerps },
         ].map(({ icon, label, action }) => (
           <button key={label} onClick={action} className="flex flex-col items-center gap-2">
             <div className="w-14 h-14 rounded-full bg-accent-dynamic flex items-center justify-center text-black text-xl font-bold">
@@ -2863,6 +2862,27 @@ const HomeTab = ({
             </button>
           </div>
         )}
+      </div>
+      
+      {/* Perps Menu Item */}
+      <div className="px-4 mt-6 mb-24">
+        <button 
+          onClick={onPerps}
+          className="w-full flex items-center justify-between p-4 bg-gray-900 rounded-2xl border border-gray-800 hover:border-accent-dynamic/50 transition-colors"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-accent-dynamic-20 flex items-center justify-center">
+              <span className="text-2xl">📊</span>
+            </div>
+            <div className="text-left">
+              <div className="text-white font-semibold">Perps</div>
+              <div className="text-gray-500 text-sm">Trade perpetual futures</div>
+            </div>
+          </div>
+          <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
       </div>
     </div>
   );
