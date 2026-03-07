@@ -1700,6 +1700,38 @@ const AVANTIS_TRADING_ADDRESS = '0x44914408af82bC9983bbb330e3578E1105e11d4e';
 // USDC on Base
 const BASE_USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 
+// Multicall3 on Base (standard address across all chains)
+const MULTICALL3_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11';
+const MULTICALL3_ABI = [
+  {
+    name: 'aggregate3Value',
+    type: 'function',
+    stateMutability: 'payable',
+    inputs: [
+      {
+        name: 'calls',
+        type: 'tuple[]',
+        components: [
+          { name: 'target', type: 'address' },
+          { name: 'allowFailure', type: 'bool' },
+          { name: 'value', type: 'uint256' },
+          { name: 'callData', type: 'bytes' },
+        ],
+      },
+    ],
+    outputs: [
+      {
+        name: 'returnData',
+        type: 'tuple[]',
+        components: [
+          { name: 'success', type: 'bool' },
+          { name: 'returnData', type: 'bytes' },
+        ],
+      },
+    ],
+  },
+] as const;
+
 // Decimal conventions from Avantis SDK docs:
 // - USDC amounts: 6 decimals (100n * 10n**6n = 100 USDC)
 // - Prices: 10 decimals (50000n * 10n**10n = $50,000)
@@ -2067,9 +2099,30 @@ const PerpsModal = ({
         console.log('[Perps] TP:', tpScaled.toString());
         console.log('[Perps] SL:', slScaled.toString());
         console.log('[Perps] Execution fee:', executionFee.toString());
-        console.log('[Perps] Approve calldata:', approveCalldata);
-        console.log('[Perps] Trade calldata:', openTradeCalldata);
         console.log('[Perps] === END PARAMETERS ===');
+        
+        // Use Multicall3 to bundle approve + trade atomically
+        // This ensures simulation sees both calls as one atomic operation
+        const multicallData = encodeFunctionData({
+          abi: MULTICALL3_ABI,
+          functionName: 'aggregate3Value',
+          args: [[
+            {
+              target: BASE_USDC_ADDRESS as `0x${string}`,
+              allowFailure: false,
+              value: BigInt(0),
+              callData: approveCalldata as `0x${string}`,
+            },
+            {
+              target: AVANTIS_TRADING_ADDRESS as `0x${string}`,
+              allowFailure: false,
+              value: executionFee,
+              callData: openTradeCalldata as `0x${string}`,
+            },
+          ]],
+        });
+        
+        console.log('[Perps] Multicall3 data encoded');
         
         tx = await universalAccount.createUniversalTransaction({
           chainId: 8453, // Base mainnet
@@ -2080,17 +2133,11 @@ const PerpsModal = ({
             },
           ],
           transactions: [
-            // Transaction 1: Approve USDC
+            // Single Multicall3 transaction (atomic approve + trade)
             {
-              to: BASE_USDC_ADDRESS,
-              data: approveCalldata,
-              value: '0',
-            },
-            // Transaction 2: Open Trade with execution fee
-            {
-              to: AVANTIS_TRADING_ADDRESS,
-              data: openTradeCalldata,
-              value: executionFee.toString(), // Wei string format
+              to: MULTICALL3_ADDRESS,
+              data: multicallData,
+              value: executionFee.toString(), // ETH for execution fee
             },
           ],
         });
