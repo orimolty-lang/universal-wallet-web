@@ -2010,27 +2010,34 @@ const PerpsModal = ({
         slScaled: slScaled.toString(),
       });
 
-      // Get trader address - MUST be the smart account address that will send the tx
-      // If we can't get it, we cannot proceed (zero address will fail)
+      // Get trader address - try BOTH smart account and EOA to see which works
+      // The simulation might expect a different address than the actual execution
       let traderAddress: string;
+      let smartAccountAddress: string | undefined;
+      
+      // Get both addresses for debugging
       try {
         const options = await universalAccount.getSmartAccountOptions();
-        if (!options?.smartAccountAddress) {
-          throw new Error('Smart account not initialized');
-        }
-        traderAddress = options.smartAccountAddress;
-        console.log('[Perps] Using smart account as trader:', traderAddress);
+        smartAccountAddress = options?.smartAccountAddress;
+        console.log('[Perps] Smart account address:', smartAccountAddress);
       } catch (err) {
-        // Fallback: try using the connected wallet address
-        // This might work if the contract accepts tx.origin
-        const walletClient = primaryWallet?.getWalletClient?.();
-        if (walletClient?.account?.address) {
-          traderAddress = walletClient.account.address;
-          console.log('[Perps] Fallback: using wallet address as trader:', traderAddress);
-        } else {
-          console.error('[Perps] Cannot get trader address:', err);
-          throw new Error('Could not determine trader address. Please reconnect your wallet.');
-        }
+        console.log('[Perps] Could not get smart account:', err);
+      }
+      
+      const walletClient = primaryWallet?.getWalletClient?.();
+      const eoaAddress = walletClient?.account?.address;
+      console.log('[Perps] EOA address:', eoaAddress);
+      
+      // TRY EOA ADDRESS - the simulation might expect this
+      // The actual execution will use the smart account, but simulation might differ
+      if (eoaAddress) {
+        traderAddress = eoaAddress;
+        console.log('[Perps] TESTING: Using EOA as trader:', traderAddress);
+      } else if (smartAccountAddress) {
+        traderAddress = smartAccountAddress;
+        console.log('[Perps] Using smart account as trader:', traderAddress);
+      } else {
+        throw new Error('Could not determine trader address. Please reconnect your wallet.');
       }
 
       // Step 1: Encode USDC approval to Avantis Trading contract (REQUIRED!)
