@@ -2135,34 +2135,29 @@ const PerpsModal = ({
         addDebug(`Leverage: ${leverage}x`);
         addDebug(`Using tradeConfig: universalGas=true, slippage=5%`);
         
+        // TEST: Try ONLY approve transaction first
+        addDebug('TEST: Approve-only transaction');
+        
         tx = await universalAccount.createUniversalTransaction(
           {
             chainId: 8453, // Base mainnet
             expectTokens: [
               {
                 type: SUPPORTED_TOKEN_TYPE.USDC,
-                amount: collateralAmount.toString(),
+                amount: '0.01', // Minimal amount for approve
               },
             ],
             transactions: [
-              // Transaction 1: Approve USDC to Avantis
+              // ONLY approve - test if this works
               {
                 to: BASE_USDC_ADDRESS,
                 data: approveCalldata,
                 value: '0',
               },
-              // Transaction 2: Open trade
-              {
-                to: AVANTIS_TRADING_ADDRESS,
-                data: openTradeCalldata,
-                value: '0',
-              },
             ],
           },
           {
-            // Try with universalGas enabled
             universalGas: true,
-            slippageBps: 500, // 5% slippage
           }
         );
         addDebug('Transaction created successfully!');
