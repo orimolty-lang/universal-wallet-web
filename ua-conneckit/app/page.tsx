@@ -1671,13 +1671,25 @@ const AVANTIS_TRADING_ABI = [
           { name: 'leverage', type: 'uint256' },
           { name: 'tp', type: 'uint256' },
           { name: 'sl', type: 'uint256' },
-          { name: 'timestamp', type: 'uint256' }, // Required by contract!
+          { name: 'timestamp', type: 'uint256' },
         ],
       },
       { name: 'orderType', type: 'uint8' },
       { name: 'slippageP', type: 'uint256' },
     ],
     outputs: [{ name: 'orderId', type: 'uint256' }],
+  },
+  // delegatedAction allows smart wallets to execute trades
+  // This is how Base App smart wallet works with Avantis
+  {
+    name: 'delegatedAction',
+    type: 'function',
+    stateMutability: 'payable',
+    inputs: [
+      { name: 'trader', type: 'address' },
+      { name: 'call_data', type: 'bytes' },
+    ],
+    outputs: [{ name: '', type: 'bytes' }],
   },
 ] as const;
 
@@ -2010,34 +2022,19 @@ const PerpsModal = ({
         slScaled: slScaled.toString(),
       });
 
-      // Get trader address - try BOTH smart account and EOA to see which works
-      // The simulation might expect a different address than the actual execution
+      // Get trader address - MUST be the smart account address
+      // This is the address that will be msg.sender when the transaction executes
       let traderAddress: string;
-      let smartAccountAddress: string | undefined;
-      
-      // Get both addresses for debugging
       try {
         const options = await universalAccount.getSmartAccountOptions();
-        smartAccountAddress = options?.smartAccountAddress;
-        console.log('[Perps] Smart account address:', smartAccountAddress);
-      } catch (err) {
-        console.log('[Perps] Could not get smart account:', err);
-      }
-      
-      const walletClient = primaryWallet?.getWalletClient?.();
-      const eoaAddress = walletClient?.account?.address;
-      console.log('[Perps] EOA address:', eoaAddress);
-      
-      // TRY EOA ADDRESS - the simulation might expect this
-      // The actual execution will use the smart account, but simulation might differ
-      if (eoaAddress) {
-        traderAddress = eoaAddress;
-        console.log('[Perps] TESTING: Using EOA as trader:', traderAddress);
-      } else if (smartAccountAddress) {
-        traderAddress = smartAccountAddress;
+        if (!options?.smartAccountAddress) {
+          throw new Error('Smart account not initialized');
+        }
+        traderAddress = options.smartAccountAddress;
         console.log('[Perps] Using smart account as trader:', traderAddress);
-      } else {
-        throw new Error('Could not determine trader address. Please reconnect your wallet.');
+      } catch (err) {
+        console.error('[Perps] Cannot get trader address:', err);
+        throw new Error('Could not determine smart account address. Please reconnect your wallet.');
       }
 
       // Step 1: Encode USDC approval to Avantis Trading contract (REQUIRED!)
@@ -2051,14 +2048,14 @@ const PerpsModal = ({
       
       console.log('[Perps] USDC approval calldata:', approveCalldata);
 
-      // Step 2: Encode the openTrade call
+      // Step 2: Encode the openTrade call (inner calldata)
       const timestamp = BigInt(Math.floor(Date.now() / 1000)); // Unix timestamp in seconds
-      const openTradeCalldata = encodeFunctionData({
+      const innerOpenTradeCalldata = encodeFunctionData({
         abi: AVANTIS_TRADING_ABI,
         functionName: 'openTrade',
         args: [
           {
-            trader: traderAddress as `0x${string}`, // Must match msg.sender (smart account)
+            trader: traderAddress as `0x${string}`,
             pairIndex: BigInt(selectedPair.index),
             index: BigInt(0), // Contract finds first empty index
             initialPosToken: BigInt(0), // Not used for USDC collateral
@@ -2068,14 +2065,27 @@ const PerpsModal = ({
             leverage: leverageScaled,
             tp: tpScaled,
             sl: slScaled,
-            timestamp: timestamp, // Required by contract
+            timestamp: timestamp,
           },
           0, // orderType: 0 = MARKET
           slippageP,
         ],
       });
 
-      console.log('[Perps] OpenTrade calldata:', openTradeCalldata);
+      console.log('[Perps] Inner openTrade calldata:', innerOpenTradeCalldata);
+
+      // Step 3: Wrap with delegatedAction - this is how Base App smart wallet works!
+      // delegatedAction(trader, call_data) allows smart wallets to execute trades
+      const openTradeCalldata = encodeFunctionData({
+        abi: AVANTIS_TRADING_ABI,
+        functionName: 'delegatedAction',
+        args: [
+          traderAddress as `0x${string}`, // trader = smart account
+          innerOpenTradeCalldata as `0x${string}`, // the openTrade call
+        ],
+      });
+
+      console.log('[Perps] DelegatedAction calldata:', openTradeCalldata);
       setLoadingStatus('Creating transaction...');
 
       // Create universal transaction via UA with BOTH transactions:
