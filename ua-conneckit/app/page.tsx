@@ -1671,12 +1671,13 @@ const AVANTIS_TRADING_ABI = [
           { name: 'leverage', type: 'uint256' },
           { name: 'tp', type: 'uint256' },
           { name: 'sl', type: 'uint256' },
+          { name: 'timestamp', type: 'uint256' }, // Required by contract!
         ],
       },
       { name: 'orderType', type: 'uint8' },
       { name: 'slippageP', type: 'uint256' },
     ],
-    outputs: [],
+    outputs: [{ name: 'orderId', type: 'uint256' }],
   },
 ] as const;
 
@@ -1942,8 +1943,19 @@ const PerpsModal = ({
 
     try {
       const collateralAmount = parseFloat(collateral);
-      const tpPrice = takeProfit ? parseFloat(takeProfit) : 0;
-      const slPrice = stopLoss ? parseFloat(stopLoss) : 0;
+      
+      // TP is REQUIRED by Avantis - auto-calculate if not provided
+      // Default: 10% profit target for longs, 10% below for shorts
+      let tpPrice = takeProfit ? parseFloat(takeProfit) : 0;
+      if (tpPrice === 0 && currentPrice) {
+        // Auto-set TP at 10% profit
+        tpPrice = isLong 
+          ? currentPrice * 1.10  // Long: TP 10% above entry
+          : currentPrice * 0.90; // Short: TP 10% below entry
+        console.log('[Perps] Auto-calculated TP:', tpPrice);
+      }
+      
+      const slPrice = stopLoss ? parseFloat(stopLoss) : 0; // SL can be 0 (no stop loss)
       
       console.log('[Perps] Opening position:', {
         pair: selectedPair.name,
@@ -2009,6 +2021,7 @@ const PerpsModal = ({
       console.log('[Perps] USDC approval calldata:', approveCalldata);
 
       // Step 2: Encode the openTrade call
+      const timestamp = BigInt(Math.floor(Date.now() / 1000)); // Unix timestamp in seconds
       const openTradeCalldata = encodeFunctionData({
         abi: AVANTIS_TRADING_ABI,
         functionName: 'openTrade',
@@ -2024,6 +2037,7 @@ const PerpsModal = ({
             leverage: leverageScaled,
             tp: tpScaled,
             sl: slScaled,
+            timestamp: timestamp, // Required by contract
           },
           0, // orderType: 0 = MARKET
           slippageP,
