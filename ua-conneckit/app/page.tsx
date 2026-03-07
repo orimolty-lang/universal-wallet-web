@@ -1943,19 +1943,8 @@ const PerpsModal = ({
 
     try {
       const collateralAmount = parseFloat(collateral);
-      
-      // TP is REQUIRED by Avantis - auto-calculate if not provided
-      // Default: 10% profit target for longs, 10% below for shorts
-      let tpPrice = takeProfit ? parseFloat(takeProfit) : 0;
-      if (tpPrice === 0 && currentPrice) {
-        // Auto-set TP at 10% profit
-        tpPrice = isLong 
-          ? currentPrice * 1.10  // Long: TP 10% above entry
-          : currentPrice * 0.90; // Short: TP 10% below entry
-        console.log('[Perps] Auto-calculated TP:', tpPrice);
-      }
-      
-      const slPrice = stopLoss ? parseFloat(stopLoss) : 0; // SL can be 0 (no stop loss)
+      const tpPrice = takeProfit ? parseFloat(takeProfit) : 0; // TP is optional (0 = no TP)
+      const slPrice = stopLoss ? parseFloat(stopLoss) : 0; // SL is optional (0 = no SL)
       
       console.log('[Perps] Opening position:', {
         pair: selectedPair.name,
