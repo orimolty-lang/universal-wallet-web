@@ -2138,6 +2138,7 @@ const PerpsModal = ({
         // TEST: OpenTrade with execution fee (ETH value)
         addDebug('TEST: OpenTrade with ETH execution fee');
         
+        // TEST: Try without execution fee to isolate the issue
         tx = await universalAccount.createUniversalTransaction(
           {
             chainId: 8453, // Base mainnet
@@ -2146,17 +2147,13 @@ const PerpsModal = ({
                 type: SUPPORTED_TOKEN_TYPE.USDC,
                 amount: collateralAmount.toString(),
               },
-              {
-                type: SUPPORTED_TOKEN_TYPE.ETH,
-                amount: '0.0001', // Execution fee (~$0.20)
-              },
             ],
             transactions: [
-              // openTrade with execution fee
+              // openTrade WITHOUT execution fee (to test if ETH value is the issue)
               {
                 to: AVANTIS_TRADING_ADDRESS,
                 data: openTradeCalldata,
-                value: '0x' + executionFee.toString(16), // 0.0001 ETH in hex
+                value: '0x0',
               },
             ],
           },
