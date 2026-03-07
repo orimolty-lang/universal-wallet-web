@@ -2083,20 +2083,11 @@ const PerpsModal = ({
         ],
       });
 
-      console.log('[Perps] Inner openTrade calldata:', innerOpenTradeCalldata);
+      // Use direct openTrade call (not delegatedAction)
+      // Particle's simulation should set msg.sender = smart account
+      const openTradeCalldata = innerOpenTradeCalldata;
 
-      // Step 3: Wrap with delegatedAction - this is how Base App smart wallet works!
-      // delegatedAction(trader, call_data) allows smart wallets to execute trades
-      const openTradeCalldata = encodeFunctionData({
-        abi: AVANTIS_TRADING_ABI,
-        functionName: 'delegatedAction',
-        args: [
-          traderAddress as `0x${string}`, // trader = smart account
-          innerOpenTradeCalldata as `0x${string}`, // the openTrade call
-        ],
-      });
-
-      addDebug(`DelegatedAction calldata length: ${openTradeCalldata.length}`);
+      addDebug(`OpenTrade calldata length: ${openTradeCalldata.length}`);
       addDebug(`Position USDC: ${positionSizeUSDC.toString()}, Price: ${openPriceScaled.toString()}`);
       setLoadingStatus('Creating transaction...');
 
@@ -2139,12 +2130,20 @@ const PerpsModal = ({
         console.log('[Perps] Approve target:', AVANTIS_TRADING_ADDRESS);
         console.log('[Perps] Approve amount:', approveAmount.toString());
         
+        // Include ETH in expectTokens for execution fee
+        const execFeeEth = '0.001'; // 0.001 ETH should be enough
+        addDebug(`ExpectTokens: ${collateralAmount} USDC + ${execFeeEth} ETH`);
+        
         tx = await universalAccount.createUniversalTransaction({
           chainId: 8453, // Base mainnet
           expectTokens: [
             {
               type: SUPPORTED_TOKEN_TYPE.USDC,
               amount: collateralAmount.toString(),
+            },
+            {
+              type: SUPPORTED_TOKEN_TYPE.ETH,
+              amount: execFeeEth,
             },
           ],
           transactions: [
@@ -2154,11 +2153,11 @@ const PerpsModal = ({
               data: approveCalldata,
               value: '0',
             },
-            // Transaction 2: Open trade (no execution fee for now)
+            // Transaction 2: Open trade with execution fee
             {
               to: AVANTIS_TRADING_ADDRESS,
               data: openTradeCalldata,
-              value: '0',
+              value: executionFee.toString(),
             },
           ],
         });
