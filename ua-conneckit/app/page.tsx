@@ -1618,7 +1618,7 @@ const ConvertModal = ({
   );
 };
 
-// Avantis Trading Contract ABI (openTrade function)
+// Avantis Trading Contract ABI (openTrade + approve)
 // Verified from Basescan and official SDK docs
 const AVANTIS_TRADING_ABI = [
   {
@@ -1649,10 +1649,23 @@ const AVANTIS_TRADING_ABI = [
   },
 ] as const;
 
+// ERC20 approve ABI for USDC approval
+const ERC20_APPROVE_ABI = [
+  {
+    name: 'approve',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'spender', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    outputs: [{ name: '', type: 'bool' }],
+  },
+] as const;
+
 // Avantis Trading contract on Base mainnet (verified on Basescan)
 const AVANTIS_TRADING_ADDRESS = '0x44914408af82bC9983bbb330e3578E1105e11d4e';
-// USDC on Base (for reference, UA handles routing)
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// USDC on Base
 const BASE_USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 
 // Decimal conventions from Avantis SDK docs:
@@ -1662,16 +1675,35 @@ const BASE_USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 // - Slippage: 10 decimals (10n**8n = 1%)
 // - Execution fees: 18 decimals wei
 
-// Avantis Perps Markets with Rainbow-style display data
+// ALL Avantis Perps Markets (from SDK docs)
 const PERPS_MARKETS = [
-  { index: 0, symbol: 'BTC', name: 'Bitcoin', maxLeverage: 150, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/bitcoin/info/logo.png', color: '#F7931A' },
-  { index: 1, symbol: 'ETH', name: 'Ethereum', maxLeverage: 150, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png', color: '#627EEA' },
-  { index: 2, symbol: 'SOL', name: 'Solana', maxLeverage: 100, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png', color: '#9945FF' },
-  { index: 3, symbol: 'LINK', name: 'Chainlink', maxLeverage: 75, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x514910771AF9Ca656af840dff83E8264EcF986CA/logo.png', color: '#375BD2' },
-  { index: 4, symbol: 'DOGE', name: 'Dogecoin', maxLeverage: 75, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/doge/info/logo.png', color: '#C2A633' },
-  { index: 5, symbol: 'XRP', name: 'Ripple', maxLeverage: 75, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/xrp/info/logo.png', color: '#23292F' },
-  { index: 20, symbol: 'XAU', name: 'Gold', maxLeverage: 250, logo: 'https://s2.coinmarketcap.com/static/img/coins/64x64/5176.png', color: '#FFD700' },
-  { index: 21, symbol: 'XAG', name: 'Silver', maxLeverage: 100, logo: 'https://s2.coinmarketcap.com/static/img/coins/64x64/5180.png', color: '#C0C0C0' },
+  // Crypto (Group 0 & 1)
+  { index: 0, symbol: 'BTC', name: 'Bitcoin', maxLeverage: 150, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/bitcoin/info/logo.png', color: '#F7931A', group: 'crypto' },
+  { index: 1, symbol: 'ETH', name: 'Ethereum', maxLeverage: 150, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png', color: '#627EEA', group: 'crypto' },
+  { index: 2, symbol: 'SOL', name: 'Solana', maxLeverage: 100, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png', color: '#9945FF', group: 'crypto' },
+  { index: 3, symbol: 'LINK', name: 'Chainlink', maxLeverage: 75, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x514910771AF9Ca656af840dff83E8264EcF986CA/logo.png', color: '#375BD2', group: 'crypto' },
+  { index: 4, symbol: 'DOGE', name: 'Dogecoin', maxLeverage: 75, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/doge/info/logo.png', color: '#C2A633', group: 'crypto' },
+  { index: 5, symbol: 'XRP', name: 'Ripple', maxLeverage: 75, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/xrp/info/logo.png', color: '#23292F', group: 'crypto' },
+  { index: 6, symbol: 'BNB', name: 'BNB', maxLeverage: 75, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/binance/info/logo.png', color: '#F3BA2F', group: 'crypto' },
+  { index: 7, symbol: 'ADA', name: 'Cardano', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/cardano/info/logo.png', color: '#0033AD', group: 'crypto' },
+  { index: 8, symbol: 'AVAX', name: 'Avalanche', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/avalanchec/info/logo.png', color: '#E84142', group: 'crypto' },
+  { index: 9, symbol: 'MATIC', name: 'Polygon', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png', color: '#8247E5', group: 'crypto' },
+  { index: 10, symbol: 'ARB', name: 'Arbitrum', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png', color: '#28A0F0', group: 'crypto' },
+  { index: 11, symbol: 'OP', name: 'Optimism', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/optimism/info/logo.png', color: '#FF0420', group: 'crypto' },
+  { index: 12, symbol: 'NEAR', name: 'NEAR', maxLeverage: 50, logo: 'https://cryptologos.cc/logos/near-protocol-near-logo.png', color: '#00C08B', group: 'crypto' },
+  { index: 13, symbol: 'AAVE', name: 'Aave', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9/logo.png', color: '#B6509E', group: 'crypto' },
+  { index: 14, symbol: 'UNI', name: 'Uniswap', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984/logo.png', color: '#FF007A', group: 'crypto' },
+  { index: 15, symbol: 'PEPE', name: 'Pepe', maxLeverage: 25, logo: 'https://assets.coingecko.com/coins/images/29850/small/pepe-token.jpeg', color: '#479F53', group: 'crypto' },
+  { index: 16, symbol: 'WIF', name: 'dogwifhat', maxLeverage: 25, logo: 'https://assets.coingecko.com/coins/images/33566/small/wif.png', color: '#D4A96D', group: 'crypto' },
+  { index: 17, symbol: 'SUI', name: 'Sui', maxLeverage: 50, logo: 'https://assets.coingecko.com/coins/images/26375/small/sui_asset.jpeg', color: '#6FBCF0', group: 'crypto' },
+  { index: 18, symbol: 'TRX', name: 'Tron', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/tron/info/logo.png', color: '#FF0013', group: 'crypto' },
+  // Forex (Group 2)
+  { index: 30, symbol: 'EUR', name: 'Euro', maxLeverage: 500, logo: 'https://flagcdn.com/w80/eu.png', color: '#003399', group: 'forex' },
+  { index: 31, symbol: 'GBP', name: 'British Pound', maxLeverage: 500, logo: 'https://flagcdn.com/w80/gb.png', color: '#012169', group: 'forex' },
+  { index: 32, symbol: 'JPY', name: 'Japanese Yen', maxLeverage: 500, logo: 'https://flagcdn.com/w80/jp.png', color: '#BC002D', group: 'forex' },
+  // Commodities (Group 3)
+  { index: 20, symbol: 'XAU', name: 'Gold', maxLeverage: 250, logo: 'https://s2.coinmarketcap.com/static/img/coins/64x64/5176.png', color: '#FFD700', group: 'commodities' },
+  { index: 21, symbol: 'XAG', name: 'Silver', maxLeverage: 100, logo: 'https://s2.coinmarketcap.com/static/img/coins/64x64/5180.png', color: '#C0C0C0', group: 'commodities' },
 ];
 
 // Legacy format for compatibility
@@ -1681,17 +1713,33 @@ const AVANTIS_PAIRS = PERPS_MARKETS.map(m => ({
   maxLeverage: m.maxLeverage 
 }));
 
-// Pyth Price Feed IDs for Avantis pairs
+// Pyth Price Feed IDs for ALL Avantis pairs
 const PYTH_FEED_IDS: Record<string, string> = {
+  // Crypto
   'BTC/USD': '0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43',
   'ETH/USD': '0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace',
   'SOL/USD': '0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d',
   'LINK/USD': '0x8ac0c70fff57e9aefdf5edf44b51d62c2d433653cbb2cf5cc06bb115af04d221',
   'DOGE/USD': '0xdcef50dd0a4cd2dcc17e45df1676dcb336a11a61c69df7a0299b0150c672d25c',
   'XRP/USD': '0xec5d399846a9209f3fe5881d70aae9268c94339ff9817e8d18ff19fa05eaea1c',
+  'BNB/USD': '0x2f95862b045670cd22bee3114c39763a4a08beeb663b145d283c31d7d1101c4f',
+  'ADA/USD': '0x2a01deaec9e51a579277b34b122399984d0bbf57e2458a7e42fecd2829867a0d',
+  'AVAX/USD': '0x93da3352f9f1d105fdfe4971cfa80e9dd777bfc5d0f683ebb6e1294b92137bb7',
+  'MATIC/USD': '0x5de33440f6b82ae2d2f23e6a5a50a5d48e7e5b5d05c0c84c3c8c6a1b3b7e0e8b',
+  'ARB/USD': '0x3fa4252848f9f0a1480be62745a4629d9eb1322aebab8a791e344b3b9c1adcf5',
+  'OP/USD': '0x385f64d993f7b77d8182ed5003d97c60aa3361f3cecfe711544d2d59165e9bdf',
+  'NEAR/USD': '0xc415de8d2eba7db216527dff4b60e8f3a5311c740dadb233e13e12547e226750',
+  'AAVE/USD': '0x2b9ab1e972a281585084148ba1389800799bd4be63b957507db1349314e47445',
+  'UNI/USD': '0x78d185a741d07edb3412b09008b7c5cfb9bbbd7d568bf00ba737b456ba171501',
+  'PEPE/USD': '0xd69731a2e74ac1ce884fc3890f7ee324b6deb66147055249568869ed700882e4',
+  'WIF/USD': '0x4ca4beeca86f0d164160323817a4e42b10010a724c2217c6ee41b54cd4cc61fc',
+  'SUI/USD': '0x23d7315113f5b1d3ba7a83604c44b94d79f4fd69af77f804fc7f920a6dc65744',
+  'TRX/USD': '0x67aed5a24fdad045475e7195c98a98aea119c763f272d4523f5bac93a4f33c2b',
+  // Forex
   'EUR/USD': '0xa995d00bb36a63cef7fd2c287dc105fc8f3d93779f062f09551b0af3e81ec30b',
   'GBP/USD': '0x84c2dde9633d93d1bcad84e7dc41c9d56578b7ec52fabedc1f335d673df0a7c1',
-  'USD/JPY': '0xef2c98c804ba503c6a707e38be4dfbb16683775f195b091252bf24693042fd52',
+  'JPY/USD': '0xef2c98c804ba503c6a707e38be4dfbb16683775f195b091252bf24693042fd52',
+  // Commodities
   'XAU/USD': '0x765d2ba906dbc32ca17cc11f5310a89e9ee1f6420508c63861f2f8ba4ee34bb2',
   'XAG/USD': '0xf2fb02c32b055c805e7238d628e5e9dadef274376114eb1f012337cabe93871e',
 };
@@ -1905,8 +1953,19 @@ const PerpsModal = ({
         console.log('[Perps] Could not get smart account, using zero address');
       }
 
-      // Encode the openTrade call
-      const calldata = encodeFunctionData({
+      // Step 1: Encode USDC approval to Avantis Trading contract (REQUIRED!)
+      // Approve slightly more than needed to account for fees
+      const approveAmount = BigInt(Math.floor(collateralAmount * 1.1 * 1e6)); // +10% buffer
+      const approveCalldata = encodeFunctionData({
+        abi: ERC20_APPROVE_ABI,
+        functionName: 'approve',
+        args: [AVANTIS_TRADING_ADDRESS as `0x${string}`, approveAmount],
+      });
+      
+      console.log('[Perps] USDC approval calldata:', approveCalldata);
+
+      // Step 2: Encode the openTrade call
+      const openTradeCalldata = encodeFunctionData({
         abi: AVANTIS_TRADING_ABI,
         functionName: 'openTrade',
         args: [
@@ -1927,21 +1986,32 @@ const PerpsModal = ({
         ],
       });
 
-      console.log('[Perps] Encoded calldata:', calldata);
+      console.log('[Perps] OpenTrade calldata:', openTradeCalldata);
       setLoadingStatus('Creating transaction...');
 
-      // Create universal transaction via UA
+      // Create universal transaction via UA with BOTH transactions:
+      // 1. Approve USDC to Avantis
+      // 2. Open the trade
       const tx = await universalAccount.createUniversalTransaction({
         chainId: 8453, // Base mainnet
         expectTokens: [{
           type: SUPPORTED_TOKEN_TYPE.USDC,
           amount: collateralAmount.toString(),
         }],
-        transactions: [{
-          to: AVANTIS_TRADING_ADDRESS,
-          data: calldata,
-          value: executionFee.toString(),
-        }],
+        transactions: [
+          // Transaction 1: Approve USDC
+          {
+            to: BASE_USDC_ADDRESS,
+            data: approveCalldata,
+            value: '0',
+          },
+          // Transaction 2: Open Trade
+          {
+            to: AVANTIS_TRADING_ADDRESS,
+            data: openTradeCalldata,
+            value: executionFee.toString(),
+          },
+        ],
       });
 
       console.log('[Perps] UA transaction created:', tx);
@@ -3105,9 +3175,13 @@ const SearchTab = ({
 // Browser Tab (dApp Browser)
 const BrowserTab = () => {
   const [inputUrl, setInputUrl] = useState("");
+  const [currentUrl, setCurrentUrl] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   
   const quickLinks = [
-    { name: "UniversalX", url: "https://universalx.app", icon: "⚡", description: "Native UA trading" },
+    { name: "Avantis", url: "https://foundation.avantisfi.com", icon: "📈", description: "Perps trading" },
     { name: "DefiLlama", url: "https://defillama.com", icon: "🦙", description: "DeFi analytics" },
     { name: "Dexscreener", url: "https://dexscreener.com", icon: "📊", description: "DEX charts" },
     { name: "CoinGecko", url: "https://coingecko.com", icon: "🦎", description: "Token data" },
@@ -3115,10 +3189,78 @@ const BrowserTab = () => {
     { name: "Etherscan", url: "https://etherscan.io", icon: "⟠", description: "ETH explorer" },
   ];
 
-  const openInNewTab = (url: string) => {
-    window.open(url, '_blank', 'noopener,noreferrer');
+  const navigateTo = (url: string) => {
+    const fullUrl = url.startsWith("http") ? url : `https://${url}`;
+    setCurrentUrl(fullUrl);
+    setInputUrl(fullUrl);
+    setIsLoading(true);
+    setLoadError(false);
   };
 
+  const closeBrowser = () => {
+    setCurrentUrl(null);
+    setInputUrl("");
+    setLoadError(false);
+  };
+
+  // If browsing a site, show embedded browser
+  if (currentUrl) {
+    return (
+      <div className="flex-1 flex flex-col bg-[#0a0a0a]" style={{ marginBottom: '80px' }}>
+        {/* Browser Header */}
+        <div className="flex items-center gap-2 px-3 py-2 bg-gray-900 border-b border-gray-800">
+          <button 
+            onClick={closeBrowser}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-800 text-white"
+          >
+            ✕
+          </button>
+          <div className="flex-1 bg-gray-800 rounded-full px-3 py-1.5 flex items-center gap-2">
+            {isLoading && <div className="w-3 h-3 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />}
+            <span className="text-gray-400 text-xs truncate">{currentUrl}</span>
+          </div>
+          <button 
+            onClick={() => window.open(currentUrl, '_blank')}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-800 text-white text-sm"
+            title="Open in browser"
+          >
+            ↗
+          </button>
+        </div>
+
+        {/* Browser Frame */}
+        <div className="flex-1 relative">
+          {loadError ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 p-6">
+              <span className="text-4xl mb-4">🔒</span>
+              <p className="text-white font-medium mb-2">Site cannot be embedded</p>
+              <p className="text-gray-400 text-sm text-center mb-4">
+                This site blocks in-app browsers for security. Open it externally instead.
+              </p>
+              <button
+                onClick={() => window.open(currentUrl, '_blank')}
+                className="bg-cyan-500 text-white px-6 py-2 rounded-xl font-medium"
+              >
+                Open in Browser
+              </button>
+            </div>
+          ) : (
+            <iframe
+              ref={iframeRef}
+              src={currentUrl}
+              className="w-full h-full border-0 bg-white"
+              title="dApp Browser"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+              onLoad={() => setIsLoading(false)}
+              onError={() => { setLoadError(true); setIsLoading(false); }}
+            />
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Home view
   return (
     <div className="flex-1 flex flex-col bg-[#0a0a0a] pb-24 overflow-auto">
       {/* Header */}
@@ -3138,30 +3280,17 @@ const BrowserTab = () => {
             className="flex-1 bg-gray-900 rounded-xl px-4 py-2.5 text-white text-sm outline-none"
             onKeyPress={(e) => {
               if (e.key === "Enter" && inputUrl.trim()) {
-                const newUrl = inputUrl.startsWith("http") ? inputUrl : `https://${inputUrl}`;
-                openInNewTab(newUrl);
+                navigateTo(inputUrl.trim());
               }
             }}
           />
           <button 
-            onClick={() => {
-              if (inputUrl.trim()) {
-                const newUrl = inputUrl.startsWith("http") ? inputUrl : `https://${inputUrl}`;
-                openInNewTab(newUrl);
-              }
-            }}
+            onClick={() => inputUrl.trim() && navigateTo(inputUrl.trim())}
             className="bg-cyan-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium"
           >
-            Open
+            Go
           </button>
         </div>
-      </div>
-
-      {/* Info Banner */}
-      <div className="mx-4 mb-4 bg-purple-500/10 border border-purple-500/30 rounded-xl p-3">
-        <p className="text-purple-300 text-xs">
-          💡 Most dApps don&apos;t support wallet injection in embedded browsers yet. Use quick links below or open dApps directly and connect via WalletConnect.
-        </p>
       </div>
 
       {/* Quick Links */}
@@ -3171,7 +3300,7 @@ const BrowserTab = () => {
           {quickLinks.map((link) => (
             <button
               key={link.name}
-              onClick={() => openInNewTab(link.url)}
+              onClick={() => navigateTo(link.url)}
               className="w-full flex items-center gap-3 p-3 bg-gray-900 rounded-xl hover:bg-gray-800 transition-colors"
             >
               <span className="text-2xl w-10 h-10 flex items-center justify-center bg-gray-800 rounded-lg">{link.icon}</span>
@@ -3179,22 +3308,17 @@ const BrowserTab = () => {
                 <span className="text-white font-medium">{link.name}</span>
                 <p className="text-gray-500 text-xs">{link.description}</p>
               </div>
-              <span className="text-gray-500">↗</span>
+              <span className="text-gray-500">→</span>
             </button>
           ))}
         </div>
       </div>
 
-      {/* WalletConnect Guide */}
-      <div className="px-4 mt-6">
-        <div className="bg-gray-900 rounded-xl p-4">
-          <h3 className="text-white font-medium mb-2">Connect to Any dApp</h3>
-          <ol className="text-gray-400 text-sm space-y-2">
-            <li className="flex gap-2"><span className="text-cyan-400">1.</span> Open any dApp in your browser</li>
-            <li className="flex gap-2"><span className="text-cyan-400">2.</span> Select &quot;WalletConnect&quot; to connect</li>
-            <li className="flex gap-2"><span className="text-cyan-400">3.</span> Scan QR code with Omni or paste link</li>
-          </ol>
-        </div>
+      {/* Note */}
+      <div className="px-4 mt-4">
+        <p className="text-gray-600 text-xs text-center">
+          Some sites may not load due to security restrictions. Use ↗ to open externally.
+        </p>
       </div>
     </div>
   );
