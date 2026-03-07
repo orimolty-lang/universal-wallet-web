@@ -2104,9 +2104,9 @@ const PerpsModal = ({
         console.log('[Perps] Execution fee:', executionFee.toString());
         console.log('[Perps] === END PARAMETERS ===');
         
-        // Try JUST the trade - skip approve for now to test if that's the issue
-        // The UA might already have USDC allowance from previous attempts
-        console.log('[Perps] Sending trade only (no approve) to test...');
+        // Test with ZERO execution fee to see if that's the simulation blocker
+        // NOTE: This might fail on-chain but will help identify if ETH value is the issue
+        console.log('[Perps] Testing with value: 0 (no execution fee)...');
         
         tx = await universalAccount.createUniversalTransaction({
           chainId: 8453, // Base mainnet
@@ -2117,11 +2117,11 @@ const PerpsModal = ({
             },
           ],
           transactions: [
-            // ONLY the trade - no approve
+            // Trade with zero value to test simulation
             {
               to: AVANTIS_TRADING_ADDRESS,
               data: openTradeCalldata,
-              value: executionFee.toString(),
+              value: '0', // Zero ETH to test if this passes simulation
             },
           ],
         });
