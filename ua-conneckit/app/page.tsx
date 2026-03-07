@@ -2055,14 +2055,20 @@ const PerpsModal = ({
       
       let tx;
       try {
-        // Try without ETH in expectTokens first - UA smart account may already have ETH
-        // The execution fee (0.0001 ETH) is small
+        // Include both USDC (for collateral) and ETH (for execution fee) in expectTokens
+        // Particle will source these from user's unified balance across chains
+        const executionFeeETH = '0.0003'; // 0.0003 ETH for keeper/oracle fees
+        
         tx = await universalAccount.createUniversalTransaction({
           chainId: 8453, // Base mainnet
           expectTokens: [
             {
               type: SUPPORTED_TOKEN_TYPE.USDC,
               amount: collateralAmount.toString(),
+            },
+            {
+              type: SUPPORTED_TOKEN_TYPE.ETH,
+              amount: executionFeeETH, // ETH for execution fee
             },
           ],
           transactions: [
@@ -2076,7 +2082,7 @@ const PerpsModal = ({
             {
               to: AVANTIS_TRADING_ADDRESS,
               data: openTradeCalldata,
-              value: executionFee.toString(), // Native ETH for Pyth oracle keeper
+              value: '0x' + executionFee.toString(16), // Hex format for ETH value
             },
           ],
         });
