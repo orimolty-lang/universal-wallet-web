@@ -26,6 +26,8 @@ export const ParticleConnectkit = ({ children }: React.PropsWithChildren) => {
     clientKey,
     appId,
     appearance: {
+      // NOTE: Apple Sign-in shows "UniversalX" because it's set in Particle dashboard project settings
+      // To fix: Go to dashboard.particle.network > Your Project > Settings > App Name > Change to "Omni"
       splitEmailAndPhone: false,
       collapseWalletList: false,
       hideContinueButton: true,
