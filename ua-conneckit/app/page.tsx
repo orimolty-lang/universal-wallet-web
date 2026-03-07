@@ -1747,6 +1747,18 @@ const MULTICALL3_ABI = [
   },
 ] as const;
 
+// Pyth Oracle on Base (used by Avantis for price feeds)
+const PYTH_CONTRACT_ADDRESS = '0x8250f4aF4B972684F7b336503E2D6dFeDeB1487a';
+const PYTH_ABI = [
+  {
+    name: 'getUpdateFee',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'updateDataSize', type: 'uint256' }],
+    outputs: [{ name: 'feeAmount', type: 'uint256' }],
+  },
+] as const;
+
 // Decimal conventions from Avantis SDK docs:
 // - USDC amounts: 6 decimals (100n * 10n**6n = 100 USDC)
 // - Prices: 10 decimals (50000n * 10n**10n = $50,000)
@@ -2024,7 +2036,40 @@ const PerpsModal = ({
       const tpScaled = tpPrice > 0 ? BigInt(Math.floor(tpPrice * 1e10)) : BigInt(0);
       const slScaled = slPrice > 0 ? BigInt(Math.floor(slPrice * 1e10)) : BigInt(0);
       const slippageP = BigInt(1e8); // 1% slippage (1e8 / 1e10 = 0.01 = 1%)
-      const executionFee = BigInt(1e14); // 0.0001 ETH for Pyth oracle keeper
+      
+      // Query Pyth for dynamic execution fee
+      let executionFee: bigint;
+      try {
+        addDebug('Querying Pyth for execution fee...');
+        const pythCalldata = encodeFunctionData({
+          abi: PYTH_ABI,
+          functionName: 'getUpdateFee',
+          args: [BigInt(1)], // 1 price feed update
+        });
+        const pythResponse = await fetch('https://mainnet.base.org', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'eth_call',
+            params: [{ to: PYTH_CONTRACT_ADDRESS, data: pythCalldata }, 'latest'],
+            id: 1,
+          }),
+        });
+        const pythResult = await pythResponse.json();
+        if (pythResult.result) {
+          executionFee = BigInt(pythResult.result);
+          // Add 20% buffer for safety
+          executionFee = (executionFee * BigInt(120)) / BigInt(100);
+          addDebug(`Pyth fee: ${(Number(executionFee) / 1e18).toFixed(6)} ETH`);
+        } else {
+          throw new Error('Pyth returned no result');
+        }
+      } catch (pythErr) {
+        console.warn('[Perps] Failed to query Pyth fee, using fallback:', pythErr);
+        executionFee = BigInt(5e14); // Fallback: 0.0005 ETH
+        addDebug(`Using fallback fee: 0.0005 ETH`);
+      }
 
       console.log('[Perps] Scaled values:', {
         openPriceScaled: openPriceScaled.toString(),
@@ -2133,11 +2178,12 @@ const PerpsModal = ({
         // Full flow: batched approve + trade
         addDebug(`Trader: ${traderAddress}`);
         addDebug(`Leverage: ${leverage}x`);
-        addDebug(`Using batched approve+trade with ETH execution fee`);
+        addDebug(`Using batched approve+trade with dynamic Pyth fee`);
         
-        const execFeeForTx = BigInt(1e16); // 0.01 ETH for execution
-        const executionFeeHex = '0x' + execFeeForTx.toString(16);
-        addDebug(`Execution fee: ${executionFeeHex}`);
+        // Use the dynamically queried Pyth fee (with 20% buffer already applied)
+        const executionFeeHex = '0x' + executionFee.toString(16);
+        const executionFeeEth = (Number(executionFee) / 1e18).toFixed(6);
+        addDebug(`Execution fee: ${executionFeeEth} ETH`);
         
         // Batched: approve + openTrade in same tx
         tx = await universalAccount.createUniversalTransaction({
@@ -2145,7 +2191,7 @@ const PerpsModal = ({
           expectTokens: [
             {
               type: SUPPORTED_TOKEN_TYPE.ETH,
-              amount: '0.01', // ETH for execution fee
+              amount: executionFeeEth, // Dynamic Pyth fee
             },
             {
               type: SUPPORTED_TOKEN_TYPE.USDC,
