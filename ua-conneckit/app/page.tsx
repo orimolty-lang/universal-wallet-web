@@ -1757,8 +1757,8 @@ const MULTICALL3_ABI = [
 // ALL Avantis Perps Markets (from SDK docs)
 const PERPS_MARKETS = [
   // Crypto (Group 0 & 1)
-  { index: 0, symbol: 'BTC', name: 'Bitcoin', maxLeverage: 75, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/bitcoin/info/logo.png', color: '#F7931A', group: 'crypto' },
-  { index: 1, symbol: 'ETH', name: 'Ethereum', maxLeverage: 75, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png', color: '#627EEA', group: 'crypto' },
+  { index: 0, symbol: 'BTC', name: 'Bitcoin', maxLeverage: 500, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/bitcoin/info/logo.png', color: '#F7931A', group: 'crypto' },
+  { index: 1, symbol: 'ETH', name: 'Ethereum', maxLeverage: 500, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png', color: '#627EEA', group: 'crypto' },
   { index: 2, symbol: 'SOL', name: 'Solana', maxLeverage: 100, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png', color: '#9945FF', group: 'crypto' },
   { index: 3, symbol: 'LINK', name: 'Chainlink', maxLeverage: 75, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x514910771AF9Ca656af840dff83E8264EcF986CA/logo.png', color: '#375BD2', group: 'crypto' },
   { index: 4, symbol: 'DOGE', name: 'Dogecoin', maxLeverage: 75, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/doge/info/logo.png', color: '#C2A633', group: 'crypto' },
@@ -2132,31 +2132,39 @@ const PerpsModal = ({
         
         // Full flow: approve + trade
         addDebug(`Trader: ${traderAddress}`);
-        addDebug(`Leverage: ${leverage}x (max: ${selectedPair.maxLeverage}x)`);
+        addDebug(`Leverage: ${leverage}x`);
+        addDebug(`Using tradeConfig: universalGas=true, slippage=5%`);
         
-        tx = await universalAccount.createUniversalTransaction({
-          chainId: 8453, // Base mainnet
-          expectTokens: [
-            {
-              type: SUPPORTED_TOKEN_TYPE.USDC,
-              amount: collateralAmount.toString(),
-            },
-          ],
-          transactions: [
-            // Transaction 1: Approve USDC to Avantis
-            {
-              to: BASE_USDC_ADDRESS,
-              data: approveCalldata,
-              value: '0',
-            },
-            // Transaction 2: Open trade
-            {
-              to: AVANTIS_TRADING_ADDRESS,
-              data: openTradeCalldata,
-              value: '0', // No execution fee for now
-            },
-          ],
-        });
+        tx = await universalAccount.createUniversalTransaction(
+          {
+            chainId: 8453, // Base mainnet
+            expectTokens: [
+              {
+                type: SUPPORTED_TOKEN_TYPE.USDC,
+                amount: collateralAmount.toString(),
+              },
+            ],
+            transactions: [
+              // Transaction 1: Approve USDC to Avantis
+              {
+                to: BASE_USDC_ADDRESS,
+                data: approveCalldata,
+                value: '0',
+              },
+              // Transaction 2: Open trade
+              {
+                to: AVANTIS_TRADING_ADDRESS,
+                data: openTradeCalldata,
+                value: '0',
+              },
+            ],
+          },
+          {
+            // Try with universalGas enabled
+            universalGas: true,
+            slippageBps: 500, // 5% slippage
+          }
+        );
         addDebug('Transaction created successfully!');
       } catch (createErr: unknown) {
         const errMsg = createErr instanceof Error ? createErr.message : String(createErr);
