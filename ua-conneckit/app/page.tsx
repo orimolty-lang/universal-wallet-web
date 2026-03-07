@@ -2040,11 +2040,20 @@ const PerpsModal = ({
         chainId: 8453,
         collateralAmount: collateralAmount.toString(),
         executionFee: executionFee.toString(),
+        executionFeeHex: '0x' + executionFee.toString(16),
         traderAddress,
+        pairIndex: selectedPair.index,
+        leverage,
+        isLong,
+        positionSizeUSDC: positionSizeUSDC.toString(),
+        openPrice: openPriceScaled.toString(),
+        approveAmount: approveAmount.toString(),
       });
       
       let tx;
       try {
+        // Try without ETH in expectTokens first - UA smart account may already have ETH
+        // The execution fee (0.0001 ETH) is small
         tx = await universalAccount.createUniversalTransaction({
           chainId: 8453, // Base mainnet
           expectTokens: [
@@ -2052,34 +2061,37 @@ const PerpsModal = ({
               type: SUPPORTED_TOKEN_TYPE.USDC,
               amount: collateralAmount.toString(),
             },
-            // Also need native ETH for execution fee
-            {
-              type: SUPPORTED_TOKEN_TYPE.ETH,
-              amount: '0.0002', // 0.0002 ETH buffer for execution fee
-            },
           ],
           transactions: [
             // Transaction 1: Approve USDC
             {
               to: BASE_USDC_ADDRESS,
               data: approveCalldata,
-              value: '0x0',
+              value: '0',
             },
             // Transaction 2: Open Trade with execution fee
             {
               to: AVANTIS_TRADING_ADDRESS,
               data: openTradeCalldata,
-              value: '0x' + executionFee.toString(16), // Hex format
+              value: executionFee.toString(), // Native ETH for Pyth oracle keeper
             },
           ],
         });
+        console.log('[Perps] Transaction created successfully:', tx);
       } catch (createErr: unknown) {
         console.error('[Perps] createUniversalTransaction failed:', createErr);
+        console.error('[Perps] Full error object:', JSON.stringify(createErr, null, 2));
         const errMsg = createErr instanceof Error ? createErr.message : String(createErr);
-        if (errMsg.includes('simulation') || errMsg.includes('revert')) {
-          throw new Error(`Transaction would fail: ${errMsg}. Make sure you have enough USDC and ETH.`);
+        
+        // Check for specific errors
+        if (errMsg.toLowerCase().includes('insufficient') || errMsg.toLowerCase().includes('balance')) {
+          throw new Error('Insufficient balance. Make sure you have enough USDC and a small amount of ETH.');
+        } else if (errMsg.toLowerCase().includes('simulation') || errMsg.toLowerCase().includes('revert')) {
+          throw new Error(`Transaction simulation failed. This could be due to: invalid leverage, position too small, or smart account issue. Error: ${errMsg}`);
+        } else if (errMsg.toLowerCase().includes('trader')) {
+          throw new Error('Smart account address mismatch. Try disconnecting and reconnecting your wallet.');
         }
-        throw createErr;
+        throw new Error(`Failed to create transaction: ${errMsg}`);
       }
 
       console.log('[Perps] UA transaction created:', tx);
