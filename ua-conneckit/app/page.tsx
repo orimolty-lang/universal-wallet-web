@@ -2130,9 +2130,9 @@ const PerpsModal = ({
         console.log('[Perps] Approve target:', AVANTIS_TRADING_ADDRESS);
         console.log('[Perps] Approve amount:', approveAmount.toString());
         
-        // Include ETH in expectTokens for execution fee
-        const execFeeEth = '0.001'; // 0.001 ETH should be enough
-        addDebug(`ExpectTokens: ${collateralAmount} USDC + ${execFeeEth} ETH`);
+        // Single transaction - just the trade (assume approval exists or will fail clearly)
+        addDebug(`Single tx: openTrade only, no approve`);
+        addDebug(`Trader: ${traderAddress}`);
         
         tx = await universalAccount.createUniversalTransaction({
           chainId: 8453, // Base mainnet
@@ -2141,23 +2141,13 @@ const PerpsModal = ({
               type: SUPPORTED_TOKEN_TYPE.USDC,
               amount: collateralAmount.toString(),
             },
-            {
-              type: SUPPORTED_TOKEN_TYPE.ETH,
-              amount: execFeeEth,
-            },
           ],
           transactions: [
-            // Transaction 1: Approve USDC to Avantis
-            {
-              to: BASE_USDC_ADDRESS,
-              data: approveCalldata,
-              value: '0',
-            },
-            // Transaction 2: Open trade with execution fee
+            // ONLY the trade - no approve, no execution fee
             {
               to: AVANTIS_TRADING_ADDRESS,
               data: openTradeCalldata,
-              value: executionFee.toString(),
+              value: '0',
             },
           ],
         });
