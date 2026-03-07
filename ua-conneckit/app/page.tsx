@@ -2183,6 +2183,17 @@ const PerpsModal = ({
       console.error('[Perps] Error:', err);
       console.error('[Perps] Full error details:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
       
+      // Try to extract more details from the error
+      let errorDetails = '';
+      if (err && typeof err === 'object') {
+        // Check for nested error info
+        const anyErr = err as Record<string, unknown>;
+        if (anyErr.data) errorDetails += ` Data: ${JSON.stringify(anyErr.data)}`;
+        if (anyErr.reason) errorDetails += ` Reason: ${anyErr.reason}`;
+        if (anyErr.code) errorDetails += ` Code: ${anyErr.code}`;
+      }
+      console.error('[Perps] Error details:', errorDetails);
+      
       // Parse common error messages for better UX
       let errorMessage = 'Failed to open position';
       if (err instanceof Error) {
@@ -2190,8 +2201,8 @@ const PerpsModal = ({
         const fullMsg = err.message; // Keep original for display
         
         if (msg.includes('simulation') || msg.includes('revert')) {
-          // Show full error for debugging
-          errorMessage = `Simulation failed: ${fullMsg.slice(0, 200)}`;
+          // Show full error for debugging + trader address for verification
+          errorMessage = `Simulation failed: ${fullMsg.slice(0, 100)}${errorDetails ? ' ' + errorDetails : ''}`;
         } else if (msg.includes('insufficient') || msg.includes('balance')) {
           errorMessage = 'Insufficient balance for this trade.';
         } else if (msg.includes('allowance')) {
