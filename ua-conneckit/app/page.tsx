@@ -1848,6 +1848,14 @@ const PerpsModal = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingStatus, setLoadingStatus] = useState<string>('');
+  const [debugLog, setDebugLog] = useState<string[]>([]);
+  const [showDebug, setShowDebug] = useState(false);
+  
+  // Helper to add debug messages
+  const addDebug = (msg: string) => {
+    console.log('[Perps Debug]', msg);
+    setDebugLog(prev => [...prev.slice(-20), `${new Date().toLocaleTimeString()}: ${msg}`]);
+  };
   const [txResult, setTxResult] = useState<{ txId: string; status: string } | null>(null);
   const [sortBy, setSortBy] = useState<'volume' | 'price' | 'change'>('volume');
 
@@ -1987,11 +1995,15 @@ const PerpsModal = ({
     setError(null);
     setLoadingStatus('Preparing position...');
     setTxResult(null);
+    setDebugLog([]); // Clear previous logs
 
     try {
       const collateralAmount = parseFloat(collateral);
-      const tpPrice = takeProfit ? parseFloat(takeProfit) : 0; // TP is optional (0 = no TP)
-      const slPrice = stopLoss ? parseFloat(stopLoss) : 0; // SL is optional (0 = no SL)
+      const tpPrice = takeProfit ? parseFloat(takeProfit) : 0;
+      const slPrice = stopLoss ? parseFloat(stopLoss) : 0;
+      
+      addDebug(`Collateral: $${collateralAmount}, Leverage: ${leverage}x`);
+      addDebug(`Pair: ${selectedPair.name}, Direction: ${isLong ? 'LONG' : 'SHORT'}`);
       
       console.log('[Perps] Opening position:', {
         pair: selectedPair.name,
@@ -2023,7 +2035,6 @@ const PerpsModal = ({
       });
 
       // Get trader address - MUST be the smart account address
-      // This is the address that will be msg.sender when the transaction executes
       let traderAddress: string;
       try {
         const options = await universalAccount.getSmartAccountOptions();
@@ -2031,9 +2042,9 @@ const PerpsModal = ({
           throw new Error('Smart account not initialized');
         }
         traderAddress = options.smartAccountAddress;
-        console.log('[Perps] Using smart account as trader:', traderAddress);
+        addDebug(`Smart Account: ${traderAddress.slice(0, 10)}...${traderAddress.slice(-8)}`);
       } catch (err) {
-        console.error('[Perps] Cannot get trader address:', err);
+        addDebug(`ERROR getting smart account: ${err}`);
         throw new Error('Could not determine smart account address. Please reconnect your wallet.');
       }
 
@@ -2085,7 +2096,8 @@ const PerpsModal = ({
         ],
       });
 
-      console.log('[Perps] DelegatedAction calldata:', openTradeCalldata);
+      addDebug(`DelegatedAction calldata length: ${openTradeCalldata.length}`);
+      addDebug(`Position USDC: ${positionSizeUSDC.toString()}, Price: ${openPriceScaled.toString()}`);
       setLoadingStatus('Creating transaction...');
 
       // Create universal transaction via UA with BOTH transactions:
@@ -2150,11 +2162,10 @@ const PerpsModal = ({
             },
           ],
         });
-        console.log('[Perps] Transaction created successfully:', tx);
+        addDebug('Transaction created successfully!');
       } catch (createErr: unknown) {
-        console.error('[Perps] createUniversalTransaction failed:', createErr);
-        console.error('[Perps] Full error object:', JSON.stringify(createErr, null, 2));
         const errMsg = createErr instanceof Error ? createErr.message : String(createErr);
+        addDebug(`CREATE TX FAILED: ${errMsg}`);
         
         // Check for specific errors
         if (errMsg.toLowerCase().includes('insufficient') || errMsg.toLowerCase().includes('balance')) {
@@ -2205,19 +2216,15 @@ const PerpsModal = ({
       }
       
     } catch (err) {
-      console.error('[Perps] Error:', err);
-      console.error('[Perps] Full error details:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
-      
-      // Try to extract more details from the error
+      // Extract error details for debug
       let errorDetails = '';
       if (err && typeof err === 'object') {
-        // Check for nested error info
         const anyErr = err as Record<string, unknown>;
         if (anyErr.data) errorDetails += ` Data: ${JSON.stringify(anyErr.data)}`;
         if (anyErr.reason) errorDetails += ` Reason: ${anyErr.reason}`;
         if (anyErr.code) errorDetails += ` Code: ${anyErr.code}`;
       }
-      console.error('[Perps] Error details:', errorDetails);
+      addDebug(`FINAL ERROR: ${err instanceof Error ? err.message : String(err)}${errorDetails}`);
       
       // Parse common error messages for better UX
       let errorMessage = 'Failed to open position';
@@ -2386,6 +2393,25 @@ const PerpsModal = ({
                 {error}
               </div>
             )}
+
+            {/* Debug Panel - Toggle */}
+            <div className="mb-4">
+              <button
+                onClick={() => setShowDebug(!showDebug)}
+                className="text-xs text-gray-500 underline"
+              >
+                {showDebug ? 'Hide Debug' : 'Show Debug'} ({debugLog.length} logs)
+              </button>
+              {showDebug && debugLog.length > 0 && (
+                <div className="mt-2 bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs font-mono text-gray-300 max-h-40 overflow-y-auto">
+                  {debugLog.map((log, i) => (
+                    <div key={i} className="py-0.5 border-b border-gray-800 last:border-0">
+                      {log}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* Current Price */}
             <div className="text-center mb-4 py-3 bg-gray-800/30 rounded-xl">
