@@ -2148,7 +2148,7 @@ const PerpsModal = ({
               },
               {
                 type: SUPPORTED_TOKEN_TYPE.ETH,
-                amount: '0.001', // Execution fee
+                amount: '0.0001', // Execution fee (~$0.20)
               },
             ],
             transactions: [
