@@ -867,7 +867,7 @@ const ProfilePickerModal = ({
             onUpdateProfile({ ...profile, displayName, backgroundColor: selectedColor });
             onClose();
           }}
-          className="w-full bg-[#f5a623] text-black font-bold py-3 rounded-xl"
+          className="w-full bg-accent-dynamic text-black font-bold py-3 rounded-xl"
         >
           Save
         </button>
@@ -1051,7 +1051,7 @@ const SendModal = ({
           />
         </div>
 
-        <button className="w-full bg-[#f5a623] text-black font-bold py-4 rounded-xl">
+        <button className="w-full bg-accent-dynamic text-black font-bold py-4 rounded-xl">
           Review Send
         </button>
       </div>
@@ -1609,7 +1609,7 @@ const ConvertModal = ({
           disabled={!canConvert || isLoading}
           className={`w-full font-bold py-3 rounded-xl transition-colors ${
             canConvert && !isLoading
-              ? 'bg-[#f5a623] text-black hover:bg-[#e09520]'
+              ? 'bg-accent-dynamic text-black hover:brightness-90'
               : 'bg-gray-700 text-gray-500 cursor-not-allowed'
           }`}
         >
@@ -2477,7 +2477,7 @@ const AgentModal = ({
             <div className="p-4 space-y-3">
               {chat.map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                  <div className={`max-w-[80%] rounded-2xl px-4 py-2 ${msg.role === "user" ? "bg-[#f5a623] text-black" : "bg-gray-800 text-white"}`}>
+                  <div className={`max-w-[80%] rounded-2xl px-4 py-2 ${msg.role === "user" ? "bg-accent-dynamic text-black" : "bg-gray-800 text-white"}`}>
                     {msg.text}
                   </div>
                 </div>
@@ -2515,7 +2515,7 @@ const AgentModal = ({
                   }, 500);
                 }
               }}
-              className="bg-[#f5a623] rounded-xl px-4 text-black font-medium"
+              className="bg-accent-dynamic rounded-xl px-4 text-black font-medium"
             >
               ↑
             </button>
@@ -2708,7 +2708,7 @@ const HomeTab = ({
           { icon: "📊", label: "Perps", action: onPerps },
         ].map(({ icon, label, action }) => (
           <button key={label} onClick={action} className="flex flex-col items-center gap-2">
-            <div className="w-14 h-14 rounded-full bg-[#f5a623] flex items-center justify-center text-black text-xl font-bold">
+            <div className="w-14 h-14 rounded-full bg-accent-dynamic flex items-center justify-center text-black text-xl font-bold">
               {icon}
             </div>
             <span className="text-gray-400 text-xs">{label}</span>
@@ -2858,7 +2858,7 @@ const HomeTab = ({
         ) : (
           <div className="text-center py-16">
             <div className="text-gray-600">No tokens yet</div>
-            <button onClick={onReceive} className="text-[#f5a623] mt-2">
+            <button onClick={onReceive} className="text-accent-dynamic mt-2">
               Deposit to get started
             </button>
           </div>
@@ -3695,7 +3695,7 @@ const BottomNav = ({
               onClick={() => tab.isAgent ? onAgentPress() : onChange(tab.id)}
               className={`relative flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 ${
                 isActive 
-                  ? 'text-[#f5a623]' 
+                  ? 'text-accent-dynamic' 
                   : 'text-gray-400 hover:text-gray-300'
               }`}
               style={isActive ? {
