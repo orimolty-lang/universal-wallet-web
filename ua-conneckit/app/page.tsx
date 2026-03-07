@@ -3942,7 +3942,7 @@ const App = () => {
     projectClientKey: process.env.NEXT_PUBLIC_CLIENT_KEY || "",
     projectAppUuid: process.env.NEXT_PUBLIC_APP_ID || "",
     smartAccountOptions: {
-      useEIP7702: false,
+      useEIP7702: true, // Enable EIP-7702 mode - same address as EOA!
       name: "UNIVERSAL",
       version: UNIVERSAL_ACCOUNT_VERSION,
       ownerAddress: address!,
