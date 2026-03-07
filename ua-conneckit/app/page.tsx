@@ -1698,10 +1698,13 @@ const ERC20_APPROVE_ABI = [
 // Avantis Trading contract on Base mainnet (verified on Basescan)
 const AVANTIS_TRADING_ADDRESS = '0x44914408af82bC9983bbb330e3578E1105e11d4e';
 // USDC on Base
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const BASE_USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 
 // Multicall3 on Base (standard address across all chains)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const MULTICALL3_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const MULTICALL3_ABI = [
   {
     name: 'aggregate3Value',
@@ -2101,28 +2104,9 @@ const PerpsModal = ({
         console.log('[Perps] Execution fee:', executionFee.toString());
         console.log('[Perps] === END PARAMETERS ===');
         
-        // Use Multicall3 to bundle approve + trade atomically
-        // This ensures simulation sees both calls as one atomic operation
-        const multicallData = encodeFunctionData({
-          abi: MULTICALL3_ABI,
-          functionName: 'aggregate3Value',
-          args: [[
-            {
-              target: BASE_USDC_ADDRESS as `0x${string}`,
-              allowFailure: false,
-              value: BigInt(0),
-              callData: approveCalldata as `0x${string}`,
-            },
-            {
-              target: AVANTIS_TRADING_ADDRESS as `0x${string}`,
-              allowFailure: false,
-              value: executionFee,
-              callData: openTradeCalldata as `0x${string}`,
-            },
-          ]],
-        });
-        
-        console.log('[Perps] Multicall3 data encoded');
+        // Try JUST the trade - skip approve for now to test if that's the issue
+        // The UA might already have USDC allowance from previous attempts
+        console.log('[Perps] Sending trade only (no approve) to test...');
         
         tx = await universalAccount.createUniversalTransaction({
           chainId: 8453, // Base mainnet
@@ -2133,11 +2117,11 @@ const PerpsModal = ({
             },
           ],
           transactions: [
-            // Single Multicall3 transaction (atomic approve + trade)
+            // ONLY the trade - no approve
             {
-              to: MULTICALL3_ADDRESS,
-              data: multicallData,
-              value: executionFee.toString(), // ETH for execution fee
+              to: AVANTIS_TRADING_ADDRESS,
+              data: openTradeCalldata,
+              value: executionFee.toString(),
             },
           ],
         });
