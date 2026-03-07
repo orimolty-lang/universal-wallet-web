@@ -2130,28 +2130,40 @@ const PerpsModal = ({
         console.log('[Perps] Approve target:', AVANTIS_TRADING_ADDRESS);
         console.log('[Perps] Approve amount:', approveAmount.toString());
         
-        // Full flow: approve + trade
+        // Full flow: batched approve + trade
         addDebug(`Trader: ${traderAddress}`);
         addDebug(`Leverage: ${leverage}x`);
-        addDebug(`Using Particle demo structure (no universalGas option)`);
+        addDebug(`Using batched approve+trade with ETH execution fee`);
         
-        // TEST: OpenTrade with execution fee (ETH value)
-        addDebug('TEST: OpenTrade with ETH execution fee');
+        const execFeeForTx = BigInt(1e16); // 0.01 ETH for execution
+        const executionFeeHex = '0x' + execFeeForTx.toString(16);
+        addDebug(`Execution fee: ${executionFeeHex}`);
         
-        // Match Particle demo structure exactly - no second options object
+        // Batched: approve + openTrade in same tx
         tx = await universalAccount.createUniversalTransaction({
           chainId: 8453, // Base mainnet
           expectTokens: [
+            {
+              type: SUPPORTED_TOKEN_TYPE.ETH,
+              amount: '0.01', // ETH for execution fee
+            },
             {
               type: SUPPORTED_TOKEN_TYPE.USDC,
               amount: collateralAmount.toString(),
             },
           ],
           transactions: [
+            // 1. Approve USDC to Avantis
+            {
+              to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // USDC
+              data: approveCalldata,
+              value: '0x0',
+            },
+            // 2. openTrade with execution fee
             {
               to: AVANTIS_TRADING_ADDRESS,
               data: openTradeCalldata,
-              // No value field like demo does for non-payable
+              value: executionFeeHex,
             },
           ],
         });
