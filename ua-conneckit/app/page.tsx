@@ -2104,9 +2104,11 @@ const PerpsModal = ({
         console.log('[Perps] Execution fee:', executionFee.toString());
         console.log('[Perps] === END PARAMETERS ===');
         
-        // Test with ZERO execution fee to see if that's the simulation blocker
-        // NOTE: This might fail on-chain but will help identify if ETH value is the issue
-        console.log('[Perps] Testing with value: 0 (no execution fee)...');
+        // Full flow: approve + trade (both needed for simulation to pass)
+        console.log('[Perps] Full flow: approve + trade');
+        console.log('[Perps] Trader address being used:', traderAddress);
+        console.log('[Perps] Approve target:', AVANTIS_TRADING_ADDRESS);
+        console.log('[Perps] Approve amount:', approveAmount.toString());
         
         tx = await universalAccount.createUniversalTransaction({
           chainId: 8453, // Base mainnet
@@ -2117,11 +2119,17 @@ const PerpsModal = ({
             },
           ],
           transactions: [
-            // Trade with zero value to test simulation
+            // Transaction 1: Approve USDC to Avantis
+            {
+              to: BASE_USDC_ADDRESS,
+              data: approveCalldata,
+              value: '0',
+            },
+            // Transaction 2: Open trade (no execution fee for now)
             {
               to: AVANTIS_TRADING_ADDRESS,
               data: openTradeCalldata,
-              value: '0', // Zero ETH to test if this passes simulation
+              value: '0',
             },
           ],
         });
