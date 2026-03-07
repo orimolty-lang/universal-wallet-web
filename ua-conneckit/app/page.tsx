@@ -2036,27 +2036,51 @@ const PerpsModal = ({
       // Create universal transaction via UA with BOTH transactions:
       // 1. Approve USDC to Avantis
       // 2. Open the trade
-      const tx = await universalAccount.createUniversalTransaction({
-        chainId: 8453, // Base mainnet
-        expectTokens: [{
-          type: SUPPORTED_TOKEN_TYPE.USDC,
-          amount: collateralAmount.toString(),
-        }],
-        transactions: [
-          // Transaction 1: Approve USDC
-          {
-            to: BASE_USDC_ADDRESS,
-            data: approveCalldata,
-            value: '0',
-          },
-          // Transaction 2: Open Trade
-          {
-            to: AVANTIS_TRADING_ADDRESS,
-            data: openTradeCalldata,
-            value: executionFee.toString(),
-          },
-        ],
+      console.log('[Perps] Creating UA transaction with params:', {
+        chainId: 8453,
+        collateralAmount: collateralAmount.toString(),
+        executionFee: executionFee.toString(),
+        traderAddress,
       });
+      
+      let tx;
+      try {
+        tx = await universalAccount.createUniversalTransaction({
+          chainId: 8453, // Base mainnet
+          expectTokens: [
+            {
+              type: SUPPORTED_TOKEN_TYPE.USDC,
+              amount: collateralAmount.toString(),
+            },
+            // Also need native ETH for execution fee
+            {
+              type: SUPPORTED_TOKEN_TYPE.ETH,
+              amount: '0.0002', // 0.0002 ETH buffer for execution fee
+            },
+          ],
+          transactions: [
+            // Transaction 1: Approve USDC
+            {
+              to: BASE_USDC_ADDRESS,
+              data: approveCalldata,
+              value: '0x0',
+            },
+            // Transaction 2: Open Trade with execution fee
+            {
+              to: AVANTIS_TRADING_ADDRESS,
+              data: openTradeCalldata,
+              value: '0x' + executionFee.toString(16), // Hex format
+            },
+          ],
+        });
+      } catch (createErr: unknown) {
+        console.error('[Perps] createUniversalTransaction failed:', createErr);
+        const errMsg = createErr instanceof Error ? createErr.message : String(createErr);
+        if (errMsg.includes('simulation') || errMsg.includes('revert')) {
+          throw new Error(`Transaction would fail: ${errMsg}. Make sure you have enough USDC and ETH.`);
+        }
+        throw createErr;
+      }
 
       console.log('[Perps] UA transaction created:', tx);
 
