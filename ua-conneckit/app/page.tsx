@@ -1943,14 +1943,27 @@ const PerpsModal = ({
         slScaled: slScaled.toString(),
       });
 
-      // Get smart account address for trader field
-      let smartAccountAddress = '0x0000000000000000000000000000000000000000';
+      // Get trader address - MUST be the smart account address that will send the tx
+      // If we can't get it, we cannot proceed (zero address will fail)
+      let traderAddress: string;
       try {
         const options = await universalAccount.getSmartAccountOptions();
-        smartAccountAddress = options.smartAccountAddress || smartAccountAddress;
-        console.log('[Perps] Using smart account:', smartAccountAddress);
-      } catch {
-        console.log('[Perps] Could not get smart account, using zero address');
+        if (!options?.smartAccountAddress) {
+          throw new Error('Smart account not initialized');
+        }
+        traderAddress = options.smartAccountAddress;
+        console.log('[Perps] Using smart account as trader:', traderAddress);
+      } catch (err) {
+        // Fallback: try using the connected wallet address
+        // This might work if the contract accepts tx.origin
+        const walletClient = primaryWallet?.getWalletClient?.();
+        if (walletClient?.account?.address) {
+          traderAddress = walletClient.account.address;
+          console.log('[Perps] Fallback: using wallet address as trader:', traderAddress);
+        } else {
+          console.error('[Perps] Cannot get trader address:', err);
+          throw new Error('Could not determine trader address. Please reconnect your wallet.');
+        }
       }
 
       // Step 1: Encode USDC approval to Avantis Trading contract (REQUIRED!)
@@ -1970,7 +1983,7 @@ const PerpsModal = ({
         functionName: 'openTrade',
         args: [
           {
-            trader: smartAccountAddress as `0x${string}`, // Use actual smart account address
+            trader: traderAddress as `0x${string}`, // Must match msg.sender (smart account)
             pairIndex: BigInt(selectedPair.index),
             index: BigInt(0), // Contract finds first empty index
             initialPosToken: BigInt(0), // Not used for USDC collateral
@@ -2053,7 +2066,25 @@ const PerpsModal = ({
       
     } catch (err) {
       console.error('[Perps] Error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to open position');
+      // Parse common error messages for better UX
+      let errorMessage = 'Failed to open position';
+      if (err instanceof Error) {
+        const msg = err.message.toLowerCase();
+        if (msg.includes('simulation') || msg.includes('revert')) {
+          errorMessage = 'Transaction simulation failed. This may be due to insufficient USDC balance, invalid leverage, or market conditions.';
+        } else if (msg.includes('insufficient') || msg.includes('balance')) {
+          errorMessage = 'Insufficient balance for this trade.';
+        } else if (msg.includes('allowance')) {
+          errorMessage = 'USDC approval failed. Please try again.';
+        } else if (msg.includes('rejected') || msg.includes('denied')) {
+          errorMessage = 'Transaction was rejected.';
+        } else if (msg.includes('trader')) {
+          errorMessage = 'Could not determine trader address. Please reconnect your wallet.';
+        } else {
+          errorMessage = err.message;
+        }
+      }
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
       setLoadingStatus('');
