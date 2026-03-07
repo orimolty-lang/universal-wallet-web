@@ -2132,7 +2132,7 @@ const PerpsModal = ({
           <>
             {/* Header */}
             <div className="flex items-center justify-between px-4 mb-4">
-              <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center">
+              <div className="w-10 h-10 rounded-full bg-accent-dynamic-20 flex items-center justify-center">
                 <span className="text-xl">🎰</span>
               </div>
               <h2 className="text-white text-lg font-bold flex items-center gap-2">
@@ -2229,7 +2229,7 @@ const PerpsModal = ({
 
             {/* Deposit Button */}
             <div className="px-4 mt-2">
-              <button className="w-full bg-emerald-500 text-black font-bold py-4 rounded-2xl">
+              <button className="w-full bg-accent-dynamic text-black font-bold py-4 rounded-2xl">
                 Deposit
               </button>
             </div>
@@ -3695,12 +3695,9 @@ const BottomNav = ({
               onClick={() => tab.isAgent ? onAgentPress() : onChange(tab.id)}
               className={`relative flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 ${
                 isActive 
-                  ? 'text-accent-dynamic' 
+                  ? 'text-accent-dynamic bg-accent-dynamic-20' 
                   : 'text-gray-400 hover:text-gray-300'
               }`}
-              style={isActive ? {
-                background: 'rgba(245, 166, 35, 0.15)',
-              } : {}}
             >
               {tab.icon(isActive || false)}
             </button>
