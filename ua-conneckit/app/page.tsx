@@ -236,6 +236,37 @@ const BACKGROUND_COLORS = [
   "#78716c", "#6b7280", "#64748b", "#1e293b", "#0f172a", "#000000",
 ];
 
+// Apply dynamic accent color theme based on selected color
+function applyAccentTheme(hexColor: string) {
+  if (typeof document === 'undefined') return;
+  
+  // Convert hex to RGB
+  const hex = hexColor.replace('#', '');
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  
+  // Generate lighter variant (mix with white)
+  const lighterR = Math.min(255, r + 40);
+  const lighterG = Math.min(255, g + 40);
+  const lighterB = Math.min(255, b + 40);
+  
+  // Generate darker variant
+  const darkerR = Math.max(0, r - 30);
+  const darkerG = Math.max(0, g - 30);
+  const darkerB = Math.max(0, b - 30);
+  
+  const root = document.documentElement;
+  root.style.setProperty('--accent-color', hexColor);
+  root.style.setProperty('--accent-color-light', `rgb(${lighterR}, ${lighterG}, ${lighterB})`);
+  root.style.setProperty('--accent-color-dark', `rgb(${darkerR}, ${darkerG}, ${darkerB})`);
+  root.style.setProperty('--accent-color-10', `rgba(${r}, ${g}, ${b}, 0.1)`);
+  root.style.setProperty('--accent-color-20', `rgba(${r}, ${g}, ${b}, 0.2)`);
+  root.style.setProperty('--accent-color-30', `rgba(${r}, ${g}, ${b}, 0.3)`);
+  
+  console.log('[Theme] Applied accent color:', hexColor);
+}
+
 // Token icon mapping
 const TOKEN_ICONS: Record<string, string> = {
   ETH: "⟠", WETH: "⟠", 
@@ -391,7 +422,7 @@ const LoginScreen = () => {
             <span className="text-white text-2xl font-light">Balance</span>
           </div>
           <div className="flex items-center gap-4 ml-6 animate-fadeInLeft" style={{ animationDelay: '0.2s' }}>
-            <span className="px-4 py-2 rounded-lg border-2 border-cyan-500 text-cyan-400 text-xl font-bold bg-cyan-500/10">Any</span>
+            <span className="px-4 py-2 rounded-lg border-2 border-accent-dynamic text-accent-dynamic text-xl font-bold bg-accent-dynamic-10">Any</span>
             <span className="text-white text-2xl font-light">Chain</span>
           </div>
           <div className="flex items-center gap-4 animate-fadeInLeft" style={{ animationDelay: '0.3s' }}>
@@ -399,7 +430,7 @@ const LoginScreen = () => {
             <span className="text-white text-2xl font-light">Tokens & Perps</span>
           </div>
           <div className="flex items-center gap-4 ml-6 animate-fadeInLeft" style={{ animationDelay: '0.4s' }}>
-            <span className="px-4 py-2 rounded-lg border-2 border-cyan-500 text-cyan-400 text-xl font-bold bg-cyan-500/10">Call</span>
+            <span className="px-4 py-2 rounded-lg border-2 border-accent-dynamic text-accent-dynamic text-xl font-bold bg-accent-dynamic-10">Call</span>
             <span className="text-white text-2xl font-light">Contracts</span>
           </div>
         </div>
@@ -1595,7 +1626,7 @@ const ConvertModal = ({
               }}
             >
               {txResult.status === 'pending' ? (
-                <div className="w-16 h-16 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                <div className="w-16 h-16 border-4 border-accent-dynamic border-t-transparent rounded-full animate-spin" />
               ) : (
                 <div className="w-16 h-16 rounded-full bg-green-500 flex items-center justify-center animate-bounce">
                   <span className="text-white text-3xl">✓</span>
@@ -2191,7 +2222,7 @@ const PerpsModal = ({
 
             {/* View All */}
             <div className="px-4 mt-4">
-              <button className="w-full text-center text-cyan-400 py-2">
+              <button className="w-full text-center text-accent-dynamic py-2">
                 View All
               </button>
             </div>
@@ -2271,7 +2302,7 @@ const PerpsModal = ({
                 max={selectedMarket.maxLeverage}
                 value={leverage}
                 onChange={(e) => setLeverage(Number(e.target.value))}
-                className="w-full accent-cyan-500 h-2"
+                className="w-full accent-dynamic h-2"
               />
               <div className="flex justify-between text-xs text-gray-500 mt-1">
                 <span>2x</span>
@@ -2285,7 +2316,7 @@ const PerpsModal = ({
                 <span className="text-gray-400 text-sm">Collateral (USDC)</span>
                 <button 
                   onClick={() => setCollateral(usdcBalance.toString())}
-                  className="text-cyan-400 text-xs"
+                  className="text-accent-dynamic text-xs"
                 >
                   UA Balance: ${usdcBalance.toFixed(2)}
                 </button>
@@ -2300,7 +2331,7 @@ const PerpsModal = ({
                 />
                 <button 
                   onClick={() => setCollateral(usdcBalance.toString())}
-                  className="bg-gray-700 px-4 py-3 rounded-lg text-cyan-400 text-sm"
+                  className="bg-gray-700 px-4 py-3 rounded-lg text-accent-dynamic text-sm"
                 >
                   MAX
                 </button>
@@ -2632,9 +2663,9 @@ const HomeTab = ({
         style={{ height: pullDistance, opacity: pullDistance / 60 }}
       >
         {isRefreshing ? (
-          <div className="w-6 h-6 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+          <div className="w-6 h-6 border-2 border-accent-dynamic border-t-transparent rounded-full animate-spin" />
         ) : (
-          <span className={`text-cyan-400 text-sm ${pullDistance > 60 ? 'font-bold' : ''}`}>
+          <span className={`text-accent-dynamic text-sm ${pullDistance > 60 ? 'font-bold' : ''}`}>
             {pullDistance > 60 ? '↓ Release to refresh' : '↓ Pull to refresh'}
           </span>
         )}
@@ -2692,7 +2723,7 @@ const HomeTab = ({
           <span className="text-gray-500 text-sm">Hide small balances (&lt;$0.10)</span>
           <button
             onClick={() => setHideSmallBalances(!hideSmallBalances)}
-            className={`w-10 h-6 rounded-full transition-colors ${hideSmallBalances ? 'bg-cyan-500' : 'bg-gray-600'}`}
+            className={`w-10 h-6 rounded-full transition-colors ${hideSmallBalances ? 'bg-accent-dynamic' : 'bg-gray-600'}`}
           >
             <div className={`w-4 h-4 bg-white rounded-full transition-transform ml-1 ${hideSmallBalances ? 'translate-x-4' : ''}`} />
           </button>
@@ -3247,7 +3278,7 @@ const BrowserTab = () => {
             ✕
           </button>
           <div className="flex-1 bg-gray-800 rounded-full px-3 py-1.5 flex items-center gap-2">
-            {isLoading && <div className="w-3 h-3 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />}
+            {isLoading && <div className="w-3 h-3 border-2 border-accent-dynamic border-t-transparent rounded-full animate-spin" />}
             <span className="text-gray-400 text-xs truncate">{currentUrl}</span>
           </div>
           <button 
@@ -3270,7 +3301,7 @@ const BrowserTab = () => {
               </p>
               <button
                 onClick={() => window.open(currentUrl, '_blank')}
-                className="bg-cyan-500 text-white px-6 py-2 rounded-xl font-medium"
+                className="bg-accent-dynamic text-white px-6 py-2 rounded-xl font-medium"
               >
                 Open in Browser
               </button>
@@ -3317,7 +3348,7 @@ const BrowserTab = () => {
           />
           <button 
             onClick={() => inputUrl.trim() && navigateTo(inputUrl.trim())}
-            className="bg-cyan-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium"
+            className="bg-accent-dynamic text-white px-4 py-2.5 rounded-xl text-sm font-medium"
           >
             Go
           </button>
@@ -3367,19 +3398,19 @@ const PointsTab = () => (
         <h3 className="text-white font-medium mb-4">Earn Points By:</h3>
         <ul className="space-y-3 text-gray-400 text-sm">
           <li className="flex items-center gap-3">
-            <span className="text-cyan-400">•</span>
+            <span className="text-accent-dynamic">•</span>
             Trading tokens across chains
           </li>
           <li className="flex items-center gap-3">
-            <span className="text-cyan-400">•</span>
+            <span className="text-accent-dynamic">•</span>
             Referring friends
           </li>
           <li className="flex items-center gap-3">
-            <span className="text-cyan-400">•</span>
+            <span className="text-accent-dynamic">•</span>
             Daily check-ins
           </li>
           <li className="flex items-center gap-3">
-            <span className="text-cyan-400">•</span>
+            <span className="text-accent-dynamic">•</span>
             Completing quests
           </li>
         </ul>
@@ -3723,7 +3754,18 @@ const App = () => {
   const updateProfile = (p: ProfileSettings) => {
     setProfile(p);
     localStorage.setItem('walletProfile', JSON.stringify(p));
+    // Apply accent theme based on profile background color
+    if (p.backgroundColor) {
+      applyAccentTheme(p.backgroundColor);
+    }
   };
+  
+  // Apply accent theme on initial load
+  useEffect(() => {
+    if (profile.backgroundColor) {
+      applyAccentTheme(profile.backgroundColor);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const universalAccountConfig = useMemo((): IUniversalAccountConfig => ({
     projectId: process.env.NEXT_PUBLIC_PROJECT_ID || "",

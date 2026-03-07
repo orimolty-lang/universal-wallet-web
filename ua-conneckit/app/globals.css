@@ -7,6 +7,25 @@ html, body {
   background-color: #0a0a0a !important;
 }
 
+/* Dynamic accent color theming */
+:root {
+  --accent-color: #0ea5e9; /* Default cyan-500 */
+  --accent-color-light: #38bdf8; /* Lighter variant */
+  --accent-color-dark: #0284c7; /* Darker variant */
+  --accent-color-10: rgba(14, 165, 233, 0.1);
+  --accent-color-20: rgba(14, 165, 233, 0.2);
+  --accent-color-30: rgba(14, 165, 233, 0.3);
+}
+
+/* Accent color utility classes */
+.bg-accent-dynamic { background-color: var(--accent-color) !important; }
+.bg-accent-dynamic-10 { background-color: var(--accent-color-10) !important; }
+.bg-accent-dynamic-20 { background-color: var(--accent-color-20) !important; }
+.text-accent-dynamic { color: var(--accent-color) !important; }
+.text-accent-dynamic-light { color: var(--accent-color-light) !important; }
+.border-accent-dynamic { border-color: var(--accent-color) !important; }
+.accent-dynamic { accent-color: var(--accent-color) !important; }
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;
