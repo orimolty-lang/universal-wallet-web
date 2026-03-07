@@ -2156,7 +2156,7 @@ const PerpsModal = ({
               {
                 to: AVANTIS_TRADING_ADDRESS,
                 data: openTradeCalldata,
-                value: executionFee.toString(), // 0.0001 ETH
+                value: '0x' + executionFee.toString(16), // 0.0001 ETH in hex
               },
             ],
           },
@@ -3942,7 +3942,7 @@ const App = () => {
     projectClientKey: process.env.NEXT_PUBLIC_CLIENT_KEY || "",
     projectAppUuid: process.env.NEXT_PUBLIC_APP_ID || "",
     smartAccountOptions: {
-      useEIP7702: true, // Enable EIP-7702 mode - same address as EOA!
+      useEIP7702: false, // Smart Account mode - works with Particle Connect
       name: "UNIVERSAL",
       version: UNIVERSAL_ACCOUNT_VERSION,
       ownerAddress: address!,
