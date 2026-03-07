@@ -2135,8 +2135,8 @@ const PerpsModal = ({
         addDebug(`Leverage: ${leverage}x`);
         addDebug(`Using tradeConfig: universalGas=true, slippage=5%`);
         
-        // TEST: Try ONLY approve transaction first
-        addDebug('TEST: Approve-only transaction');
+        // TEST: OpenTrade only (approve should already be set on-chain)
+        addDebug('TEST: OpenTrade-only transaction');
         
         tx = await universalAccount.createUniversalTransaction(
           {
@@ -2144,14 +2144,14 @@ const PerpsModal = ({
             expectTokens: [
               {
                 type: SUPPORTED_TOKEN_TYPE.USDC,
-                amount: '0.01', // Minimal amount for approve
+                amount: collateralAmount.toString(),
               },
             ],
             transactions: [
-              // ONLY approve - test if this works
+              // ONLY openTrade - no approve
               {
-                to: BASE_USDC_ADDRESS,
-                data: approveCalldata,
+                to: AVANTIS_TRADING_ADDRESS,
+                data: openTradeCalldata,
                 value: '0',
               },
             ],
