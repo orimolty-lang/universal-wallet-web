@@ -2135,8 +2135,8 @@ const PerpsModal = ({
         addDebug(`Leverage: ${leverage}x`);
         addDebug(`Using tradeConfig: universalGas=true, slippage=5%`);
         
-        // TEST: OpenTrade only (approve should already be set on-chain)
-        addDebug('TEST: OpenTrade-only transaction');
+        // TEST: OpenTrade with execution fee (ETH value)
+        addDebug('TEST: OpenTrade with ETH execution fee');
         
         tx = await universalAccount.createUniversalTransaction(
           {
@@ -2146,13 +2146,17 @@ const PerpsModal = ({
                 type: SUPPORTED_TOKEN_TYPE.USDC,
                 amount: collateralAmount.toString(),
               },
+              {
+                type: SUPPORTED_TOKEN_TYPE.ETH,
+                amount: '0.001', // Execution fee
+              },
             ],
             transactions: [
-              // ONLY openTrade - no approve
+              // openTrade with execution fee
               {
                 to: AVANTIS_TRADING_ADDRESS,
                 data: openTradeCalldata,
-                value: '0',
+                value: executionFee.toString(), // 0.0001 ETH
               },
             ],
           },
