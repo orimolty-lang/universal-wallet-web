@@ -3745,6 +3745,9 @@ const PointsTab = () => (
 );
 
 // Activity Modal with real transaction history
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type TxData = Record<string, any>;
+
 const ActivityModal = ({ 
   isOpen, 
   onClose,
@@ -3754,27 +3757,18 @@ const ActivityModal = ({
   onClose: () => void;
   universalAccount: UniversalAccount | null;
 }) => {
-  const [transactions, setTransactions] = useState<Array<{
-    transactionId: string;
-    type: string;
-    status: string;
-    tag?: string;
-    created_at: string;
-    totalDecrAmountInUSD?: string;
-    totalIncrAmountInUSD?: string;
-    tokenChanges?: {
-      decr?: Array<{ token: { symbol: string }; amountInUSD: string }>;
-      incr?: Array<{ token: { symbol: string }; amountInUSD: string }>;
-    };
-  }>>([]);
+  const [transactions, setTransactions] = useState<TxData[]>([]);
+  const [selectedTx, setSelectedTx] = useState<TxData | null>(null);
+  const [txDetails, setTxDetails] = useState<TxData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
 
   // Fetch transactions when modal opens
   useEffect(() => {
-    if (isOpen && universalAccount) {
+    if (isOpen && universalAccount && !selectedTx) {
       fetchTransactions(1, true);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3789,7 +3783,7 @@ const ActivityModal = ({
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const result = await (universalAccount as any).getTransactions(pageNum, 20);
-      console.log('[Activity] Transactions:', result);
+      console.log('[Activity] Raw transactions:', JSON.stringify(result, null, 2));
       
       const txList = result?.transactions || result?.data || result || [];
       
@@ -3809,14 +3803,54 @@ const ActivityModal = ({
     }
   };
 
+  const fetchTxDetails = async (txId: string) => {
+    if (!universalAccount) return;
+    
+    setIsLoadingDetails(true);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const details = await (universalAccount as any).getTransaction(txId);
+      console.log('[Activity] Tx details:', JSON.stringify(details, null, 2));
+      setTxDetails(details);
+    } catch (err) {
+      console.error('[Activity] Failed to fetch tx details:', err);
+    } finally {
+      setIsLoadingDetails(false);
+    }
+  };
+
+  const handleTxClick = (tx: TxData) => {
+    setSelectedTx(tx);
+    const txId = tx.transactionId || tx.id || tx.transaction_id;
+    if (txId) {
+      fetchTxDetails(txId);
+    }
+  };
+
+  const handleBack = () => {
+    setSelectedTx(null);
+    setTxDetails(null);
+  };
+
   const loadMore = () => {
     if (!isLoading && hasMore) {
       fetchTransactions(page + 1, false);
     }
   };
 
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
+  const formatDate = (dateInput: string | number | undefined) => {
+    if (!dateInput) return '';
+    
+    // Handle timestamp in seconds or milliseconds
+    let date: Date;
+    if (typeof dateInput === 'number') {
+      date = new Date(dateInput > 1e12 ? dateInput : dateInput * 1000);
+    } else {
+      date = new Date(dateInput);
+    }
+    
+    if (isNaN(date.getTime())) return '';
+    
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
@@ -3830,26 +3864,168 @@ const ActivityModal = ({
     return date.toLocaleDateString();
   };
 
-  const getTagIcon = (tag?: string, type?: string) => {
-    const t = tag?.toLowerCase() || type?.toLowerCase() || '';
+  const formatFullDate = (dateInput: string | number | undefined) => {
+    if (!dateInput) return '';
+    let date: Date;
+    if (typeof dateInput === 'number') {
+      date = new Date(dateInput > 1e12 ? dateInput : dateInput * 1000);
+    } else {
+      date = new Date(dateInput);
+    }
+    if (isNaN(date.getTime())) return '';
+    return date.toLocaleString();
+  };
+
+  const getTxType = (tx: TxData): string => {
+    return tx.tag || tx.type || tx.txType || tx.action || 'Transaction';
+  };
+
+  const getTxStatus = (tx: TxData): string => {
+    const s = tx.status || tx.state || '';
+    if (typeof s === 'number') {
+      return s === 1 || s === 2 ? 'Success' : s === 0 ? 'Pending' : 'Failed';
+    }
+    return String(s || 'Unknown');
+  };
+
+  const getTxDate = (tx: TxData): string | number | undefined => {
+    return tx.created_at || tx.createdAt || tx.timestamp || tx.time || tx.updated_at;
+  };
+
+  const getTagIcon = (txType: string) => {
+    const t = txType.toLowerCase();
     if (t.includes('buy') || t.includes('swap')) return '⇄';
     if (t.includes('send') || t.includes('transfer')) return '↑';
-    if (t.includes('receive')) return '↓';
+    if (t.includes('receive') || t.includes('deposit')) return '↓';
     if (t.includes('convert')) return '🔄';
     return '•';
   };
 
-  const getTagColor = (status: string) => {
-    if (status === 'completed' || status === 'success') return 'text-green-400';
-    if (status === 'pending') return 'text-yellow-400';
-    if (status === 'failed') return 'text-red-400';
-    return 'text-gray-400';
+  const getStatusColor = (status: string) => {
+    const s = status.toLowerCase();
+    if (s.includes('success') || s.includes('complete') || s === '1' || s === '2') return 'text-green-400 bg-green-400/20';
+    if (s.includes('pending') || s === '0') return 'text-yellow-400 bg-yellow-400/20';
+    if (s.includes('fail')) return 'text-red-400 bg-red-400/20';
+    return 'text-gray-400 bg-gray-400/20';
   };
 
+  const getTxAmount = (tx: TxData): { amount: string; symbol: string; isNegative: boolean } | null => {
+    // Try various data structures
+    if (tx.tokenChanges?.decr?.[0]) {
+      const d = tx.tokenChanges.decr[0];
+      return { amount: d.amount || d.amountInUSD || '0', symbol: d.token?.symbol || '', isNegative: true };
+    }
+    if (tx.tokenChanges?.incr?.[0]) {
+      const i = tx.tokenChanges.incr[0];
+      return { amount: i.amount || i.amountInUSD || '0', symbol: i.token?.symbol || '', isNegative: false };
+    }
+    if (tx.amount) {
+      return { amount: tx.amount, symbol: tx.symbol || tx.token || '', isNegative: tx.direction === 'out' };
+    }
+    return null;
+  };
+
+  const shortenHash = (hash: string) => {
+    if (!hash || hash.length < 12) return hash;
+    return `${hash.slice(0, 6)}...${hash.slice(-4)}`;
+  };
+
+  // Transaction Detail View
+  if (selectedTx) {
+    const details = txDetails || selectedTx;
+    const txType = getTxType(details);
+    const status = getTxStatus(details);
+    const txId = details.transactionId || details.id || details.transaction_id || '';
+
+    return (
+      <BottomSheet isOpen={isOpen} onClose={onClose}>
+        <div className="px-6 pb-8 max-h-[80vh] overflow-y-auto">
+          {/* Back button */}
+          <button onClick={handleBack} className="flex items-center gap-2 text-gray-400 mb-4">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/>
+            </svg>
+            Back
+          </button>
+
+          {isLoadingDetails ? (
+            <div className="text-center py-8">
+              <div className="animate-spin w-8 h-8 border-2 border-accent-dynamic border-t-transparent rounded-full mx-auto" />
+            </div>
+          ) : (
+            <>
+              {/* Header */}
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-2xl">
+                  {getTagIcon(txType)}
+                </div>
+                <div>
+                  <h2 className="text-white text-xl font-bold capitalize">{txType}</h2>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusColor(status)}`}>
+                    {status}
+                  </span>
+                </div>
+              </div>
+
+              {/* Amount */}
+              {getTxAmount(details) && (
+                <div className="bg-white/5 rounded-xl p-4 mb-4">
+                  <div className="text-gray-400 text-sm mb-1">Amount</div>
+                  <div className={`text-2xl font-bold ${getTxAmount(details)?.isNegative ? 'text-red-400' : 'text-green-400'}`}>
+                    {getTxAmount(details)?.isNegative ? '-' : '+'}{getTxAmount(details)?.amount} {getTxAmount(details)?.symbol}
+                  </div>
+                </div>
+              )}
+
+              {/* Details */}
+              <div className="space-y-3">
+                {txId && (
+                  <div className="flex justify-between py-2 border-b border-white/10">
+                    <span className="text-gray-400">Transaction ID</span>
+                    <span className="text-white font-mono">{shortenHash(txId)}</span>
+                  </div>
+                )}
+                
+                {getTxDate(details) && (
+                  <div className="flex justify-between py-2 border-b border-white/10">
+                    <span className="text-gray-400">Time</span>
+                    <span className="text-white">{formatFullDate(getTxDate(details))}</span>
+                  </div>
+                )}
+
+                {details.fees?.totals?.feeTokenAmountInUSD && (
+                  <div className="flex justify-between py-2 border-b border-white/10">
+                    <span className="text-gray-400">Gas Fee</span>
+                    <span className="text-white">≈${(Number(details.fees.totals.feeTokenAmountInUSD) / 1e18).toFixed(2)}</span>
+                  </div>
+                )}
+
+                {details.sender && (
+                  <div className="flex justify-between py-2 border-b border-white/10">
+                    <span className="text-gray-400">From</span>
+                    <span className="text-white font-mono">{shortenHash(details.sender)}</span>
+                  </div>
+                )}
+
+                {details.receiver && (
+                  <div className="flex justify-between py-2 border-b border-white/10">
+                    <span className="text-gray-400">To</span>
+                    <span className="text-white font-mono">{shortenHash(details.receiver)}</span>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </BottomSheet>
+    );
+  }
+
+  // Transaction List View
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose}>
       <div className="px-6 pb-8 max-h-[70vh] overflow-y-auto">
-        <h2 className="text-white text-xl font-bold mb-6 text-center sticky top-0 bg-[#1a1a2e] py-2">Activity</h2>
+        <h2 className="text-white text-xl font-bold mb-6 text-center">Activity</h2>
         
         {isLoading && transactions.length === 0 ? (
           <div className="text-center py-8">
@@ -3864,43 +4040,40 @@ const ActivityModal = ({
           </div>
         ) : (
           <div className="space-y-3">
-            {transactions.map((tx, idx) => (
-              <a
-                key={tx.transactionId || idx}
-                href={`https://universalx.app/activity/details?id=${tx.transactionId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-3 p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-colors"
-              >
-                <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-lg">
-                  {getTagIcon(tx.tag, tx.type)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-white font-medium capitalize">
-                      {tx.tag || tx.type || 'Transaction'}
-                    </span>
-                    <span className={`text-xs ${getTagColor(tx.status)}`}>
-                      {tx.status}
-                    </span>
+            {transactions.map((tx, idx) => {
+              const txType = getTxType(tx);
+              const status = getTxStatus(tx);
+              const dateStr = formatDate(getTxDate(tx));
+              const amount = getTxAmount(tx);
+
+              return (
+                <button
+                  key={tx.transactionId || tx.id || idx}
+                  onClick={() => handleTxClick(tx)}
+                  className="w-full flex items-center gap-3 p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-colors text-left"
+                >
+                  <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-lg">
+                    {getTagIcon(txType)}
                   </div>
-                  <div className="text-gray-500 text-sm truncate">
-                    {tx.tokenChanges?.decr?.[0] && (
-                      <span>-${Number(tx.tokenChanges.decr[0].amountInUSD || 0).toFixed(2)} </span>
-                    )}
-                    {tx.tokenChanges?.incr?.[0] && (
-                      <span className="text-green-400">+${Number(tx.tokenChanges.incr[0].amountInUSD || 0).toFixed(2)}</span>
-                    )}
-                    {!tx.tokenChanges?.decr?.[0] && !tx.tokenChanges?.incr?.[0] && tx.totalDecrAmountInUSD && (
-                      <span>-${Number(tx.totalDecrAmountInUSD).toFixed(2)}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-white font-medium capitalize">{txType}</span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${getStatusColor(status)}`}>
+                        {status}
+                      </span>
+                    </div>
+                    {amount && (
+                      <div className={`text-sm ${amount.isNegative ? 'text-red-400' : 'text-green-400'}`}>
+                        {amount.isNegative ? '-' : '+'}{amount.amount} {amount.symbol}
+                      </div>
                     )}
                   </div>
-                </div>
-                <div className="text-gray-500 text-sm">
-                  {formatDate(tx.created_at)}
-                </div>
-              </a>
-            ))}
+                  <div className="text-gray-500 text-sm">
+                    {dateStr || ''}
+                  </div>
+                </button>
+              );
+            })}
             
             {hasMore && (
               <button
