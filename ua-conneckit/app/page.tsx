@@ -2247,44 +2247,8 @@ const PerpsModal = ({
         
         const walletClient = primaryWallet.getWalletClient();
         
-        // Handle EIP-7702 authorization if needed (for 7702 mode)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const txAny = tx as any;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const walletClientAny = walletClient as any;
-        if (txAny.userOps) {
-          addDebug(`Processing ${txAny.userOps.length} userOps for 7702 auth...`);
-          for (const userOp of txAny.userOps) {
-            if (userOp.eip7702Auth && !userOp.eip7702Delegated) {
-              addDebug(`7702 auth needed for chain ${userOp.eip7702Auth.chainId}`);
-              try {
-                // Try to get 7702 authorization signature
-                // Different wallets may expose this differently
-                if (typeof walletClientAny.signAuthorization === 'function') {
-                  const authSig = await walletClientAny.signAuthorization(userOp.eip7702Auth);
-                  userOp.eip7702AuthSignature = authSig;
-                  addDebug('7702 auth signature obtained via signAuthorization');
-                } else if (typeof walletClientAny.authorize === 'function') {
-                  const authResult = await walletClientAny.authorize(userOp.eip7702Auth);
-                  userOp.eip7702AuthSignature = authResult.signature?.serialized || authResult;
-                  addDebug('7702 auth signature obtained via authorize');
-                } else if (typeof walletClientAny.authorizeSync === 'function') {
-                  const authResult = walletClientAny.authorizeSync(userOp.eip7702Auth);
-                  userOp.eip7702AuthSignature = authResult.signature?.serialized || authResult;
-                  addDebug('7702 auth signature obtained via authorizeSync');
-                } else {
-                  // Fallback: The authorization may be handled internally by Particle SDK
-                  addDebug('No 7702 auth method found - SDK may handle internally');
-                }
-              } catch (authErr) {
-                addDebug(`7702 auth error: ${authErr}`);
-                // Continue anyway - might not be needed if already delegated
-              }
-            } else if (userOp.eip7702Delegated) {
-              addDebug(`Already delegated on chain ${userOp.chainId || 'unknown'}`);
-            }
-          }
-        }
+        // Note: 7702 auth handling removed - we're using Smart Account mode
+        // If 7702 mode is needed, switch useEIP7702: true and use Particle Auth (not Connect)
         
         // Sign the root hash using personal_sign
         const signature = await walletClient.request({
