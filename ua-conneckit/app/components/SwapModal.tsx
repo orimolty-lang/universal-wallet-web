@@ -63,7 +63,7 @@ const TokenWithChainBadge = ({ logo, symbol, chainId, size = "w-10 h-10" }: {
       {logo ? (
         <img src={logo} alt={symbol} className={`${size} rounded-full`} />
       ) : (
-        <div className={`${size} rounded-full bg-cyan-600 flex items-center justify-center text-white font-bold`}>
+        <div className={`${size} rounded-full bg-accent-dynamic flex items-center justify-center text-white font-bold`}>
           {symbol?.slice(0, 2) || "?"}
         </div>
       )}
@@ -71,7 +71,7 @@ const TokenWithChainBadge = ({ logo, symbol, chainId, size = "w-10 h-10" }: {
         <img 
           src={chainLogo} 
           alt="chain" 
-          className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[#0f2744]" 
+          className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[#0a0a0a]" 
         />
       )}
     </div>
@@ -397,7 +397,7 @@ export const SwapModal = ({
       <div className="fixed inset-0 bg-black/70 z-50" onClick={onClose} />
 
       {/* Modal */}
-      <div className="fixed inset-x-0 bottom-0 z-50 bg-[#0d1b2a] rounded-t-3xl overflow-hidden flex flex-col max-h-[95vh] animate-slide-up">
+      <div className="fixed inset-x-0 bottom-0 z-50 bg-[#0a0a0a] rounded-t-3xl overflow-hidden flex flex-col max-h-[95vh] animate-slide-up border-t border-white/10">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4">
           <button 
@@ -461,7 +461,7 @@ export const SwapModal = ({
                     href={txResult.explorerUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 bg-cyan-500/20 border border-cyan-500/50 text-cyan-400 py-3 px-4 rounded-xl font-medium"
+                    className="flex items-center justify-center gap-2 bg-accent-dynamic/20 border border-accent-dynamic/50 text-accent-dynamic py-3 px-4 rounded-full font-medium"
                   >
                     <span>View on {getChainName(txResult.chainId || 8453)}</span>
                     <span>↗</span>
@@ -482,7 +482,7 @@ export const SwapModal = ({
                   href={`https://universalx.app/activity/details?id=${txResult.txId}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-cyan-400 underline text-center"
+                  className="text-accent-dynamic underline text-center"
                 >
                   View on UniversalX
                 </a>
@@ -491,7 +491,7 @@ export const SwapModal = ({
             
             <button
               onClick={onClose}
-              className="w-full max-w-xs bg-cyan-500 text-white py-3 rounded-xl font-bold"
+              className="w-full max-w-xs bg-accent-dynamic text-white py-3 rounded-full font-bold"
             >
               Done
             </button>
@@ -510,7 +510,7 @@ export const SwapModal = ({
               )}
 
               {/* From Card - USD (buy) or Token (sell) */}
-              <div className="bg-[#0f2744] rounded-2xl p-4 mb-3">
+              <div className="bg-white/5 rounded-2xl p-4 mb-3 border border-white/10">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     {direction === "buy" ? (
@@ -553,15 +553,15 @@ export const SwapModal = ({
               <div className="flex justify-center -my-2 relative z-10">
                 <button 
                   onClick={() => setDirection(d => d === "buy" ? "sell" : "buy")}
-                  className="w-10 h-10 rounded-full bg-[#1a3a5c] border-4 border-[#0d1b2a] flex items-center justify-center hover:bg-[#2a4a6c] transition-colors"
+                  className="w-10 h-10 rounded-full bg-white/10 border-4 border-[#0a0a0a] flex items-center justify-center hover:bg-white/20 transition-colors"
                   title="Flip direction"
                 >
-                  <span className="text-cyan-400 text-lg">⇅</span>
+                  <span className="text-accent-dynamic text-lg">⇅</span>
                 </button>
               </div>
 
               {/* To Card - Token (buy) or USD (sell) */}
-              <div className="bg-[#0f2744] rounded-2xl p-4 mt-3">
+              <div className="bg-white/5 rounded-2xl p-4 mt-3 border border-white/10">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     {direction === "buy" ? (
@@ -616,7 +616,7 @@ export const SwapModal = ({
                   </div>
                   <button 
                     onClick={() => setSliderValue(100)}
-                    className="text-cyan-400 font-medium"
+                    className="text-accent-dynamic font-medium"
                   >
                     Max
                   </button>
@@ -627,7 +627,7 @@ export const SwapModal = ({
                   max="100"
                   value={sliderValue}
                   onChange={(e) => setSliderValue(parseInt(e.target.value))}
-                  className={`w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer ${direction === "buy" ? "accent-cyan-500" : "accent-red-500"}`}
+                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-[var(--accent-color,#f97316)]"
                 />
               </div>
 
@@ -637,7 +637,7 @@ export const SwapModal = ({
                   <button
                     key={key}
                     onClick={() => handleNumPad(key)}
-                    className="h-14 rounded-xl bg-[#1a2a3a] text-white text-xl font-medium flex items-center justify-center active:bg-gray-700"
+                    className="h-14 rounded-xl bg-white/10 text-white text-xl font-medium flex items-center justify-center active:bg-white/20"
                   >
                     {key === "backspace" ? "⌫" : key}
                   </button>
@@ -646,10 +646,10 @@ export const SwapModal = ({
             </div>
 
             {/* Bottom Action */}
-            <div className="px-5 py-4 border-t border-gray-800" style={{ paddingBottom: "max(env(safe-area-inset-bottom), 16px)" }}>
+            <div className="px-5 py-4 border-t border-white/10" style={{ paddingBottom: "max(env(safe-area-inset-bottom), 16px)" }}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-orange-500">⛽</span>
+                  <span className="text-accent-dynamic">⛽</span>
                   <span className="text-white font-medium">Fast</span>
                 </div>
                 <span className="text-gray-400 text-sm">
@@ -660,9 +660,9 @@ export const SwapModal = ({
               <button
                 onClick={handleSwap}
                 disabled={!canSwap || isLoading}
-                className={`w-full py-4 rounded-xl font-bold text-lg ${
+                className={`w-full py-4 rounded-full font-bold text-lg ${
                   canSwap && !isLoading
-                    ? direction === "buy" ? "bg-cyan-500 text-white" : "bg-red-500 text-white"
+                    ? direction === "buy" ? "bg-accent-dynamic text-white" : "bg-red-500 text-white"
                     : "bg-gray-700 text-gray-400"
                 }`}
               >
