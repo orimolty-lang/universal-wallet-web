@@ -2039,8 +2039,9 @@ const PerpsModal = ({
       // USDC: 6 decimals, Prices/Leverage/Slippage: 10 decimals, ETH: 18 decimals
       const openPriceScaled = BigInt(Math.floor((currentPrice || 0) * 1e10));
       const leverageScaled = BigInt(Math.floor(leverage * 1e10));
-      // positionSizeUSDC = collateral * leverage (total notional position size)
-      const positionSizeUSDC = BigInt(Math.floor(collateralAmount * leverage * 1e6));
+      // positionSizeUSDC = collateral in 6 decimals (NOT position size - SDK naming is misleading)
+      // The contract uses leverage separately to calculate actual position size
+      const positionSizeUSDC = BigInt(Math.floor(collateralAmount * 1e6));
       const tpScaled = tpPrice > 0 ? BigInt(Math.floor(tpPrice * 1e10)) : BigInt(0);
       const slScaled = slPrice > 0 ? BigInt(Math.floor(slPrice * 1e10)) : BigInt(0);
       const slippageP = BigInt(1e8); // 1% slippage (1e8 / 1e10 = 0.01 = 1%)
@@ -2208,7 +2209,7 @@ const PerpsModal = ({
         addDebug(`Execution fee ETH: ${executionFeeEth}`);
         
         // DEBUG: Test openTrade ONLY (approval already done)
-        const TRADE_ONLY_DEBUG = true;
+        const TRADE_ONLY_DEBUG = false;
         
         if (TRADE_ONLY_DEBUG) {
           // Test: just openTrade, no approval (since it's already approved)
