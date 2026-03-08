@@ -3877,28 +3877,56 @@ const ActivityModal = ({
   };
 
   const getTxType = (tx: TxData): string => {
-    return tx.tag || tx.type || tx.txType || tx.action || 'Transaction';
+    // Check for known types
+    const tag = tx.tag || tx.type || tx.txType || tx.action || '';
+    if (tag && tag !== 'universal') return tag;
+    
+    // Detect type from token changes
+    if (tx.tokenChanges) {
+      const hasDecr = tx.tokenChanges.decr?.length > 0;
+      const hasIncr = tx.tokenChanges.incr?.length > 0;
+      if (hasDecr && hasIncr) return 'Swap';
+      if (hasDecr && !hasIncr) return 'Send';
+      if (!hasDecr && hasIncr) return 'Receive';
+    }
+    
+    // Check for contract interaction patterns
+    if (tx.transactions?.length > 0 || tx.userOps?.length > 0) {
+      return 'Contract';
+    }
+    
+    return 'Transaction';
   };
 
   const getTxStatus = (tx: TxData): string => {
+    // Check explicit status field
     const s = tx.status || tx.state || '';
-    // Particle UA uses specific status values
-    if (typeof s === 'string') {
+    
+    if (typeof s === 'string' && s.length > 0) {
       const sl = s.toLowerCase();
-      if (sl === 'completed' || sl === 'success' || sl === 'confirmed') return 'Success';
-      if (sl === 'pending' || sl === 'processing') return 'Pending';
-      if (sl === 'failed' || sl === 'error' || sl === 'cancelled') return 'Failed';
-      // If it's a numeric string
-      if (s === '1' || s === '2') return 'Success';
-      if (s === '0') return 'Pending';
+      // Only mark as failed if explicitly failed
+      if (sl === 'failed' || sl === 'error' || sl === 'reverted') return 'Failed';
+      if (sl === 'pending' || sl === 'processing' || sl === 'submitted') return 'Pending';
+      if (sl === 'completed' || sl === 'success' || sl === 'confirmed' || sl === 'done') return 'Completed';
     }
+    
     if (typeof s === 'number') {
-      if (s === 1 || s === 2) return 'Success';
+      // 0 = pending, 1+ = success, negative = failed
       if (s === 0) return 'Pending';
-      return 'Failed';
+      if (s > 0) return 'Completed';
+      if (s < 0) return 'Failed';
     }
-    // Default to checking if transaction has hash (likely succeeded)
-    if (tx.transactionId || tx.hash || tx.txHash) return 'Completed';
+    
+    // If transaction has an ID and timestamp, assume it completed
+    if ((tx.transactionId || tx.id) && (tx.created_at || tx.createdAt || tx.timestamp)) {
+      return 'Completed';
+    }
+    
+    // If has token changes, likely completed
+    if (tx.tokenChanges?.decr?.length > 0 || tx.tokenChanges?.incr?.length > 0) {
+      return 'Completed';
+    }
+    
     return 'Pending';
   };
 
