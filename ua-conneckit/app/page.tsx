@@ -2216,31 +2216,20 @@ const PerpsModal = ({
         addDebug(`Execution fee hex (toBeHex): ${valueHex}`);
         addDebug(`Execution fee ETH: ${executionFeeEth}`);
         
-        // Seamless flow: Request extra ETH buffer so UA funds the smart account
-        // Add 50% buffer to ensure enough ETH for execution + any gas variations
-        const ethWithBuffer = (Number(executionFeeEth) * 1.5).toFixed(8);
-        addDebug(`Requesting ETH with buffer: ${ethWithBuffer}`);
+        // Single call test: openTrade ONLY (skip batch to test value routing)
+        // Approval was already done separately
+        addDebug('Using single-call mode: openTrade only (approval already done)');
         
         tx = await universalAccount.createUniversalTransaction({
           chainId: CHAIN_ID.BASE_MAINNET,
           expectTokens: [
-            {
-              type: SUPPORTED_TOKEN_TYPE.ETH,
-              amount: ethWithBuffer, // Extra buffer
-            },
             {
               type: SUPPORTED_TOKEN_TYPE.USDC,
               amount: collateralAmount.toString(),
             },
           ],
           transactions: [
-            // 1. Approve USDC to Avantis
-            {
-              to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as `0x${string}`,
-              data: approveCalldata as `0x${string}`,
-              value: '0x0',
-            },
-            // 2. openTrade with execution fee
+            // Single call: openTrade with execution fee
             {
               to: AVANTIS_TRADING_ADDRESS as `0x${string}`,
               data: openTradeCalldata as `0x${string}`,
