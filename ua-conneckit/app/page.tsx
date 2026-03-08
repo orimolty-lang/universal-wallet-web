@@ -12,6 +12,7 @@ import {
   UniversalAccount,
   UNIVERSAL_ACCOUNT_VERSION,
   SUPPORTED_TOKEN_TYPE,
+  CHAIN_ID,
   type IAssetsResponse,
   type IUniversalAccountConfig,
 } from "@particle-network/universal-account-sdk";
@@ -19,7 +20,7 @@ import DepositDialog from "./components/DepositDialog";
 import AssetBreakdownDialog from "./components/AssetBreakdownDialog";
 import TokenDetailModal from "./components/TokenDetailModal";
 import SwapModal from "./components/SwapModal";
-import { encodeFunctionData } from "viem";
+import { encodeFunctionData, toHex } from "viem";
 
 // Mobula API for token search
 const MOBULA_API_KEY = "a8e6a174-9dfd-4929-b0e0-9f6ece767923";
@@ -2189,17 +2190,17 @@ const PerpsModal = ({
         addDebug(`Using batched approve+trade with dynamic Pyth fee`);
         
         // Use the dynamically queried Pyth fee (with 20% buffer already applied)
-        const executionFeeHex = '0x' + executionFee.toString(16);
-        const executionFeeEth = (Number(executionFee) / 1e18).toFixed(6);
+        // Format exactly as Particle docs show: toHex(parseEther(...))
+        const executionFeeEth = (Number(executionFee) / 1e18).toFixed(8);
         addDebug(`Execution fee: ${executionFeeEth} ETH`);
         
-        // Batched: approve + openTrade in same tx
+        // Match Particle docs format exactly - use CHAIN_ID enum, toHex for value
         tx = await universalAccount.createUniversalTransaction({
-          chainId: 8453, // Base mainnet
+          chainId: CHAIN_ID.BASE_MAINNET, // Use SDK constant
           expectTokens: [
             {
               type: SUPPORTED_TOKEN_TYPE.ETH,
-              amount: executionFeeEth, // Dynamic Pyth fee
+              amount: executionFeeEth,
             },
             {
               type: SUPPORTED_TOKEN_TYPE.USDC,
@@ -2207,17 +2208,17 @@ const PerpsModal = ({
             },
           ],
           transactions: [
-            // 1. Approve USDC to Avantis
+            // 1. Approve USDC to Avantis (value: 0 for non-payable)
             {
-              to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // USDC
-              data: approveCalldata,
-              value: '0x0',
+              to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as `0x${string}`, // USDC
+              data: approveCalldata as `0x${string}`,
+              value: toHex(BigInt(0)),
             },
-            // 2. openTrade with execution fee
+            // 2. openTrade with execution fee (use toHex as docs show)
             {
-              to: AVANTIS_TRADING_ADDRESS,
-              data: openTradeCalldata,
-              value: executionFeeHex,
+              to: AVANTIS_TRADING_ADDRESS as `0x${string}`,
+              data: openTradeCalldata as `0x${string}`,
+              value: toHex(executionFee),
             },
           ],
         });
