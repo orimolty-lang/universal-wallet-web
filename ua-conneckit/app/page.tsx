@@ -15,6 +15,7 @@ import {
   CHAIN_ID,
   type IAssetsResponse,
   type IUniversalAccountConfig,
+  type EIP7702Authorization,
 } from "@particle-network/universal-account-sdk";
 import DepositDialog from "./components/DepositDialog";
 import AssetBreakdownDialog from "./components/AssetBreakdownDialog";
@@ -1326,6 +1327,33 @@ const ConvertModal = ({
         setLoadingStatus('Waiting for signature...');
         const walletClient = primaryWallet.getWalletClient();
         
+        // Handle 7702 Authorization for new chains
+        const convertAuthorizations: EIP7702Authorization[] = [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const convertTxAny = tx as any;
+        const convertWalletAddress = walletClient.account?.address as `0x${string}`;
+        if (convertTxAny.userOps && convertWalletAddress) {
+          const nonceMap = new Map<number, string>();
+          for (const userOp of convertTxAny.userOps) {
+            if (userOp.eip7702Auth && !userOp.eip7702Delegated) {
+              let authSig = nonceMap.get(userOp.eip7702Auth.nonce);
+              if (!authSig) {
+                // Sign 7702 authorization
+                const authMessage = `7702:${userOp.eip7702Auth.chainId}:${userOp.eip7702Auth.address}:${userOp.eip7702Auth.nonce}`;
+                authSig = await walletClient.request({
+                  method: 'personal_sign',
+                  params: [authMessage as `0x${string}`, convertWalletAddress],
+                }) as string;
+                nonceMap.set(userOp.eip7702Auth.nonce, authSig);
+              }
+              convertAuthorizations.push({
+                userOpHash: userOp.userOpHash,
+                signature: authSig,
+              });
+            }
+          }
+        }
+        
         // Sign the root hash
         const signature = await walletClient.request({
           method: 'personal_sign',
@@ -1333,9 +1361,9 @@ const ConvertModal = ({
           params: [(tx as any).rootHash as `0x${string}`, walletClient.account?.address as `0x${string}`],
         });
 
-        // Send transaction
+        // Send transaction with 7702 authorizations
         setLoadingStatus('Sending transaction...');
-        const sendResult = await universalAccount.sendTransaction(tx, signature as string);
+        const sendResult = await universalAccount.sendTransaction(tx, signature as string, convertAuthorizations);
         
         if (sendResult?.transactionId) {
           console.log('[Convert] Transaction sent:', sendResult.transactionId);
@@ -2262,8 +2290,34 @@ const PerpsModal = ({
         
         const walletClient = primaryWallet.getWalletClient();
         
-        // Note: 7702 auth handling removed - we're using Smart Account mode
-        // If 7702 mode is needed, switch useEIP7702: true and use Particle Auth (not Connect)
+        // Handle 7702 Authorization for new chains
+        const authorizations: EIP7702Authorization[] = [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const txAny = tx as any;
+        const walletAddress = walletClient.account?.address as `0x${string}`;
+        if (txAny.userOps && walletAddress) {
+          const nonceMap = new Map<number, string>();
+          for (const userOp of txAny.userOps) {
+            if (userOp.eip7702Auth && !userOp.eip7702Delegated) {
+              addDebug(`7702 auth needed for chain`);
+              let authSig = nonceMap.get(userOp.eip7702Auth.nonce);
+              if (!authSig) {
+                // Sign 7702 authorization using personal_sign
+                const authMessage = `7702:${userOp.eip7702Auth.chainId}:${userOp.eip7702Auth.address}:${userOp.eip7702Auth.nonce}`;
+                authSig = await walletClient.request({
+                  method: 'personal_sign',
+                  params: [authMessage as `0x${string}`, walletAddress],
+                }) as string;
+                nonceMap.set(userOp.eip7702Auth.nonce, authSig);
+                addDebug(`7702 auth signed`);
+              }
+              authorizations.push({
+                userOpHash: userOp.userOpHash,
+                signature: authSig,
+              });
+            }
+          }
+        }
         
         // Sign the root hash using personal_sign
         const signature = await walletClient.request({
@@ -2272,9 +2326,10 @@ const PerpsModal = ({
           params: [(tx as any).rootHash as `0x${string}`, walletClient.account?.address as `0x${string}`],
         });
 
-        // Step 3: Send transaction
+        // Step 3: Send transaction with 7702 authorizations
         setLoadingStatus('Sending transaction...');
-        const sendResult = await universalAccount.sendTransaction(tx, signature as string);
+        addDebug(`Sending with ${authorizations.length} 7702 authorizations`);
+        const sendResult = await universalAccount.sendTransaction(tx, signature as string, authorizations);
         
         if (sendResult?.transactionId) {
           console.log('[Perps] Transaction sent:', sendResult.transactionId);
@@ -4550,7 +4605,7 @@ const App = () => {
     projectClientKey: process.env.NEXT_PUBLIC_CLIENT_KEY || "",
     projectAppUuid: process.env.NEXT_PUBLIC_APP_ID || "",
     smartAccountOptions: {
-      useEIP7702: false, // Smart Account mode - 7702 requires Particle Auth (not Connect)
+      useEIP7702: true, // 7702 mode: EOA = Universal Account (same address)
       name: "UNIVERSAL",
       version: UNIVERSAL_ACCOUNT_VERSION,
       ownerAddress: address!,
