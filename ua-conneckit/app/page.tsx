@@ -1410,7 +1410,7 @@ const ConvertModal = ({
         )}
 
         {/* From Section - Compact */}
-        <div className="bg-gray-800/50 rounded-xl p-3 mb-1">
+        <div className="bg-[#1a1a1a] rounded-xl p-3 mb-1 border border-white/10">
           <div className="text-gray-400 text-xs mb-1">From</div>
           
           <div className="flex gap-2 mb-1">
@@ -1510,20 +1510,15 @@ const ConvertModal = ({
         </div>
 
         {/* Swap Arrow */}
-        <div className="flex justify-center -my-0.5 relative z-10">
-          <div className="w-6 h-6 rounded-full bg-gray-700 border-2 border-[#1a1a1a] flex items-center justify-center text-sm">
+        <div className="flex justify-center -my-1 relative z-10">
+          <div className="w-8 h-8 rounded-full bg-[#1a1a1a] border-2 border-[#0a0a0a] flex items-center justify-center text-gray-400">
             ↓
           </div>
         </div>
 
         {/* To Section - Compact */}
-        <div className="bg-gray-800/50 rounded-xl p-3 mb-2">
-          <div className="flex justify-between items-center mb-1">
-            <span className="text-gray-400 text-xs">To</span>
-            {estimatedOutput && (
-              <span className="text-green-400 text-xs">{estimatedOutput}</span>
-            )}
-          </div>
+        <div className="bg-[#1a1a1a] rounded-xl p-3 mb-2 border border-white/10">
+          <div className="text-gray-400 text-xs mb-1">To</div>
           
           <div className="flex gap-2">
             {/* To Asset Dropdown - Compact */}
@@ -1595,22 +1590,32 @@ const ConvertModal = ({
               )}
             </div>
           </div>
-        </div>
-
-        {/* Info + Fees - Smaller */}
-        <div className="flex justify-between items-center text-[10px] mb-2 px-1">
-          <span className="text-gray-500">UA auto-routes</span>
-          {estimatedFee && (
-            <span className="text-gray-400">Fee: {estimatedFee}</span>
+          
+          {/* Estimated Output Box */}
+          {estimatedOutput && (
+            <div className="mt-3 bg-[#0a0a0a] rounded-xl p-3 border border-white/10">
+              <div className="flex items-center justify-between">
+                <span className="text-gray-400 text-xs">Est. Receive</span>
+                <span className="text-white font-medium">{estimatedOutput}</span>
+              </div>
+            </div>
           )}
         </div>
+
+        {/* Fee Display */}
+        {estimatedFee && (
+          <div className="flex justify-between items-center text-xs mb-2 px-1">
+            <span className="text-gray-500">Total fee</span>
+            <span className="text-gray-400">{estimatedFee}</span>
+          </div>
+        )}
 
         <button 
           onClick={handleConvert}
           disabled={!canConvert || isLoading}
-          className={`w-full font-bold py-3 rounded-xl transition-colors ${
+          className={`w-full font-bold py-4 rounded-full transition-colors ${
             canConvert && !isLoading
-              ? 'bg-accent-dynamic text-black hover:brightness-90'
+              ? 'bg-[#d946ef] text-white hover:brightness-90'
               : 'bg-gray-700 text-gray-500 cursor-not-allowed'
           }`}
         >

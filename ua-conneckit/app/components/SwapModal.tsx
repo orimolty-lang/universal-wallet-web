@@ -1,6 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { IAssetsResponse, UniversalAccount } from "@particle-network/universal-account-sdk";
 import { executeSwap, executeSell, getChainIdFromBlockchain, pollTransactionDetails, getChainName } from "../lib/swapService";
 import { useWallets } from "@particle-network/connectkit";
@@ -151,7 +151,10 @@ export const SwapModal = ({
     }
   }, [sliderValue, totalBalance, tokenBalance, direction, txResult, targetToken?.price]);
 
-  // Number pad handler
+  // Debounce timer ref for slider sync
+  const sliderSyncTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Number pad handler - debounced slider sync allows typing full amounts like $1.25
   const handleNumPad = (key: string) => {
     if (txResult) return; // Don't allow input after success
     
@@ -170,19 +173,35 @@ export const SwapModal = ({
     
     setAmount(newAmount);
     
-    // Update slider to match entered amount
-    const enteredValue = parseFloat(newAmount) || 0;
-    if (direction === "buy" && totalBalance > 0) {
-      // In buy mode, amount is USD - calculate percentage of total balance
-      const pct = Math.min(100, Math.round((enteredValue / totalBalance) * 100));
-      setSliderValue(pct);
-    } else if (direction === "sell" && tokenBalance > 0 && targetToken?.price) {
-      // In sell mode, amount is USD value of tokens - calculate percentage
-      const maxUsdValue = tokenBalance * targetToken.price;
-      const pct = Math.min(100, Math.round((enteredValue / maxUsdValue) * 100));
-      setSliderValue(pct);
+    // Debounce slider sync - wait 800ms after last keystroke before updating slider
+    // This allows typing $1.25 without $1 triggering immediately
+    if (sliderSyncTimerRef.current) {
+      clearTimeout(sliderSyncTimerRef.current);
     }
+    
+    sliderSyncTimerRef.current = setTimeout(() => {
+      const enteredValue = parseFloat(newAmount) || 0;
+      if (direction === "buy" && totalBalance > 0) {
+        // In buy mode, amount is USD - calculate percentage of total balance
+        const pct = Math.min(100, Math.round((enteredValue / totalBalance) * 100));
+        setSliderValue(pct);
+      } else if (direction === "sell" && tokenBalance > 0 && targetToken?.price) {
+        // In sell mode, amount is USD value of tokens - calculate percentage
+        const maxUsdValue = tokenBalance * targetToken.price;
+        const pct = Math.min(100, Math.round((enteredValue / maxUsdValue) * 100));
+        setSliderValue(pct);
+      }
+    }, 800);
   };
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (sliderSyncTimerRef.current) {
+        clearTimeout(sliderSyncTimerRef.current);
+      }
+    };
+  }, []);
 
   // Get token address and chain ID
   const getTokenAddressAndChain = useCallback(() => {

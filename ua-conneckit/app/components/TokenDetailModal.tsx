@@ -482,10 +482,19 @@ export const TokenDetailModal = ({
                     className="flex items-center justify-between py-1"
                   >
                     <div className="flex items-center gap-2 text-gray-400 text-sm">
-                      <span>🔍</span>
-                      <span>Search on X</span>
+                      <span>𝕏</span>
+                      <span>X Account</span>
                     </div>
-                    <span className="text-accent-dynamic text-sm">↗</span>
+                    <span className="text-accent-dynamic text-sm flex items-center gap-1">
+                      {(() => {
+                        try {
+                          const url = new URL(token.twitter);
+                          const handle = url.pathname.replace(/^\//, '').split('/')[0];
+                          return handle ? `@${handle}` : '';
+                        } catch { return ''; }
+                      })()}
+                      <span>↗</span>
+                    </span>
                   </a>
                 )}
 
