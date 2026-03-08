@@ -1615,7 +1615,7 @@ const ConvertModal = ({
           disabled={!canConvert || isLoading}
           className={`w-full font-bold py-4 rounded-full transition-colors ${
             canConvert && !isLoading
-              ? 'bg-[#d946ef] text-white hover:brightness-90'
+              ? 'bg-accent-dynamic text-white hover:brightness-90'
               : 'bg-gray-700 text-gray-500 cursor-not-allowed'
           }`}
         >

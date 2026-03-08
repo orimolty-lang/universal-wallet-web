@@ -100,6 +100,7 @@ export const SwapModal = ({
     chainId?: number;
     status: "pending" | "completed" | "failed";
   } | null>(null);
+  const [isTyping, setIsTyping] = useState(false); // Track manual input to prevent slider override
 
   // Get total unified balance (UA aggregates across all chains)
   const totalBalance = primaryAssets?.totalAmountInUSD || 0;
@@ -119,6 +120,7 @@ export const SwapModal = ({
       setError(null);
       setTxResult(null);
       setDirection("buy"); // Default to buy mode
+      setIsTyping(false); // Reset typing state
     }
   }, [isOpen]);
 
@@ -135,9 +137,9 @@ export const SwapModal = ({
 
   const tokenBalance = getTokenBalance();
 
-  // Update amount based on slider
+  // Update amount based on slider - ONLY when user drags slider, not when typing
   useEffect(() => {
-    if (!txResult) {
+    if (!txResult && !isTyping) {
       if (direction === "buy" && totalBalance > 0) {
         // Buy mode: slider controls USD amount
         const newAmount = (totalBalance * sliderValue / 100).toFixed(2);
@@ -149,14 +151,17 @@ export const SwapModal = ({
         setAmount(usdValue.toFixed(2));
       }
     }
-  }, [sliderValue, totalBalance, tokenBalance, direction, txResult, targetToken?.price]);
+  }, [sliderValue, totalBalance, tokenBalance, direction, txResult, targetToken?.price, isTyping]);
 
   // Debounce timer ref for slider sync
   const sliderSyncTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Number pad handler - debounced slider sync allows typing full amounts like $1.25
+  // Number pad handler - sets isTyping to prevent slider from overriding typed amount
   const handleNumPad = (key: string) => {
     if (txResult) return; // Don't allow input after success
+    
+    // Set typing mode immediately to prevent slider useEffect from overriding
+    setIsTyping(true);
     
     let newAmount = amount;
     if (key === "backspace") {
@@ -173,8 +178,8 @@ export const SwapModal = ({
     
     setAmount(newAmount);
     
-    // Debounce slider sync - wait 800ms after last keystroke before updating slider
-    // This allows typing $1.25 without $1 triggering immediately
+    // Debounce slider sync - wait 1.5s after last keystroke before syncing slider
+    // After sync, clear isTyping so slider can control amount again
     if (sliderSyncTimerRef.current) {
       clearTimeout(sliderSyncTimerRef.current);
     }
@@ -191,7 +196,14 @@ export const SwapModal = ({
         const pct = Math.min(100, Math.round((enteredValue / maxUsdValue) * 100));
         setSliderValue(pct);
       }
-    }, 800);
+      // Keep isTyping true - only clear when user drags slider
+    }, 1500);
+  };
+
+  // Handle slider change - when user drags slider, clear typing mode
+  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setIsTyping(false); // User is now using slider, allow slider->amount sync
+    setSliderValue(parseInt(e.target.value));
   };
 
   // Cleanup debounce timer on unmount
@@ -647,7 +659,7 @@ export const SwapModal = ({
                     </span>
                   </div>
                   <button 
-                    onClick={() => setSliderValue(100)}
+                    onClick={() => { setIsTyping(false); setSliderValue(100); }}
                     className="text-accent-dynamic font-medium"
                   >
                     Max
@@ -658,7 +670,7 @@ export const SwapModal = ({
                   min="0"
                   max="100"
                   value={sliderValue}
-                  onChange={(e) => setSliderValue(parseInt(e.target.value))}
+                  onChange={handleSliderChange}
                   className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-[var(--accent-color,#f97316)]"
                 />
               </div>
