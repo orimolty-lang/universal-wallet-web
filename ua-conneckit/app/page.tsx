@@ -2039,7 +2039,8 @@ const PerpsModal = ({
       // USDC: 6 decimals, Prices/Leverage/Slippage: 10 decimals, ETH: 18 decimals
       const openPriceScaled = BigInt(Math.floor((currentPrice || 0) * 1e10));
       const leverageScaled = BigInt(Math.floor(leverage * 1e10));
-      const positionSizeUSDC = BigInt(Math.floor(collateralAmount * 1e6));
+      // positionSizeUSDC = collateral * leverage (total notional position size)
+      const positionSizeUSDC = BigInt(Math.floor(collateralAmount * leverage * 1e6));
       const tpScaled = tpPrice > 0 ? BigInt(Math.floor(tpPrice * 1e10)) : BigInt(0);
       const slScaled = slPrice > 0 ? BigInt(Math.floor(slPrice * 1e10)) : BigInt(0);
       const slippageP = BigInt(1e8); // 1% slippage (1e8 / 1e10 = 0.01 = 1%)
@@ -2206,33 +2207,58 @@ const PerpsModal = ({
         addDebug(`Execution fee hex (toBeHex): ${valueHex}`);
         addDebug(`Execution fee ETH: ${executionFeeEth}`);
         
-        tx = await universalAccount.createUniversalTransaction({
-          chainId: CHAIN_ID.BASE_MAINNET,
-          expectTokens: [
-            {
-              type: SUPPORTED_TOKEN_TYPE.ETH,
-              amount: executionFeeEth,
-            },
-            {
-              type: SUPPORTED_TOKEN_TYPE.USDC,
-              amount: collateralAmount.toString(),
-            },
-          ],
-          transactions: [
-            // 1. Approve USDC to Avantis (non-payable, value = 0x0)
-            {
-              to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as `0x${string}`,
-              data: approveCalldata as `0x${string}`,
-              value: '0x0',
-            },
-            // 2. openTrade with execution fee (payable, value = hex wei)
-            {
-              to: AVANTIS_TRADING_ADDRESS as `0x${string}`,
-              data: openTradeCalldata as `0x${string}`,
-              value: valueHex,
-            },
-          ],
-        });
+        // DEBUG: Try approval only first to isolate the issue
+        const APPROVAL_ONLY_DEBUG = false;
+        
+        if (APPROVAL_ONLY_DEBUG) {
+          // Test: just approval, no trade
+          tx = await universalAccount.createUniversalTransaction({
+            chainId: CHAIN_ID.BASE_MAINNET,
+            expectTokens: [
+              {
+                type: SUPPORTED_TOKEN_TYPE.USDC,
+                amount: collateralAmount.toString(),
+              },
+            ],
+            transactions: [
+              {
+                to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as `0x${string}`,
+                data: approveCalldata as `0x${string}`,
+                value: '0x0',
+              },
+            ],
+          });
+          addDebug('DEBUG: Approval-only tx created');
+        } else {
+          // Full flow: approval + trade
+          tx = await universalAccount.createUniversalTransaction({
+            chainId: CHAIN_ID.BASE_MAINNET,
+            expectTokens: [
+              {
+                type: SUPPORTED_TOKEN_TYPE.ETH,
+                amount: executionFeeEth,
+              },
+              {
+                type: SUPPORTED_TOKEN_TYPE.USDC,
+                amount: collateralAmount.toString(),
+              },
+            ],
+            transactions: [
+              // 1. Approve USDC to Avantis (non-payable, value = 0x0)
+              {
+                to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as `0x${string}`,
+                data: approveCalldata as `0x${string}`,
+                value: '0x0',
+              },
+              // 2. openTrade with execution fee (payable, value = hex wei)
+              {
+                to: AVANTIS_TRADING_ADDRESS as `0x${string}`,
+                data: openTradeCalldata as `0x${string}`,
+                value: valueHex,
+              },
+            ],
+          });
+        }
         addDebug('Transaction created successfully!');
       } catch (createErr: unknown) {
         const errMsg = createErr instanceof Error ? createErr.message : String(createErr);
