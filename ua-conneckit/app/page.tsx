@@ -2079,14 +2079,22 @@ const PerpsModal = ({
         slScaled: slScaled.toString(),
       });
 
-      // Get trader address - MUST be the smart account address
+      // Get trader address - depends on mode:
+      // 7702 mode: EOA = UA (use ownerAddress or smartAccountAddress, they're the same)
+      // Smart Account mode: Use separate smartAccountAddress
       let traderAddress: string;
       try {
         const options = await universalAccount.getSmartAccountOptions();
-        if (!options?.smartAccountAddress) {
-          throw new Error('Smart account not initialized');
+        // In 7702 mode, smartAccountAddress equals ownerAddress
+        // In Smart Account mode, they're different
+        if (options?.smartAccountAddress) {
+          traderAddress = options.smartAccountAddress;
+        } else if (options?.ownerAddress) {
+          traderAddress = options.ownerAddress;
+          addDebug(`Using ownerAddress as trader (7702 mode)`);
+        } else {
+          throw new Error('No account address found');
         }
-        traderAddress = options.smartAccountAddress;
         addDebug(`Smart Account: ${traderAddress.slice(0, 10)}...${traderAddress.slice(-8)}`);
       } catch (err) {
         addDebug(`ERROR getting smart account: ${err}`);
@@ -2237,6 +2245,45 @@ const PerpsModal = ({
         setLoadingStatus('Waiting for signature...');
         
         const walletClient = primaryWallet.getWalletClient();
+        
+        // Handle EIP-7702 authorization if needed (for 7702 mode)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const txAny = tx as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const walletClientAny = walletClient as any;
+        if (txAny.userOps) {
+          addDebug(`Processing ${txAny.userOps.length} userOps for 7702 auth...`);
+          for (const userOp of txAny.userOps) {
+            if (userOp.eip7702Auth && !userOp.eip7702Delegated) {
+              addDebug(`7702 auth needed for chain ${userOp.eip7702Auth.chainId}`);
+              try {
+                // Try to get 7702 authorization signature
+                // Different wallets may expose this differently
+                if (typeof walletClientAny.signAuthorization === 'function') {
+                  const authSig = await walletClientAny.signAuthorization(userOp.eip7702Auth);
+                  userOp.eip7702AuthSignature = authSig;
+                  addDebug('7702 auth signature obtained via signAuthorization');
+                } else if (typeof walletClientAny.authorize === 'function') {
+                  const authResult = await walletClientAny.authorize(userOp.eip7702Auth);
+                  userOp.eip7702AuthSignature = authResult.signature?.serialized || authResult;
+                  addDebug('7702 auth signature obtained via authorize');
+                } else if (typeof walletClientAny.authorizeSync === 'function') {
+                  const authResult = walletClientAny.authorizeSync(userOp.eip7702Auth);
+                  userOp.eip7702AuthSignature = authResult.signature?.serialized || authResult;
+                  addDebug('7702 auth signature obtained via authorizeSync');
+                } else {
+                  // Fallback: The authorization may be handled internally by Particle SDK
+                  addDebug('No 7702 auth method found - SDK may handle internally');
+                }
+              } catch (authErr) {
+                addDebug(`7702 auth error: ${authErr}`);
+                // Continue anyway - might not be needed if already delegated
+              }
+            } else if (userOp.eip7702Delegated) {
+              addDebug(`Already delegated on chain ${userOp.chainId || 'unknown'}`);
+            }
+          }
+        }
         
         // Sign the root hash using personal_sign
         const signature = await walletClient.request({
@@ -3991,7 +4038,7 @@ const App = () => {
     projectClientKey: process.env.NEXT_PUBLIC_CLIENT_KEY || "",
     projectAppUuid: process.env.NEXT_PUBLIC_APP_ID || "",
     smartAccountOptions: {
-      useEIP7702: false, // Smart Account mode - works with Particle Connect
+      useEIP7702: true, // 7702 mode - EOA becomes UA, no separate smart account
       name: "UNIVERSAL",
       version: UNIVERSAL_ACCOUNT_VERSION,
       ownerAddress: address!,
