@@ -3882,10 +3882,24 @@ const ActivityModal = ({
 
   const getTxStatus = (tx: TxData): string => {
     const s = tx.status || tx.state || '';
-    if (typeof s === 'number') {
-      return s === 1 || s === 2 ? 'Success' : s === 0 ? 'Pending' : 'Failed';
+    // Particle UA uses specific status values
+    if (typeof s === 'string') {
+      const sl = s.toLowerCase();
+      if (sl === 'completed' || sl === 'success' || sl === 'confirmed') return 'Success';
+      if (sl === 'pending' || sl === 'processing') return 'Pending';
+      if (sl === 'failed' || sl === 'error' || sl === 'cancelled') return 'Failed';
+      // If it's a numeric string
+      if (s === '1' || s === '2') return 'Success';
+      if (s === '0') return 'Pending';
     }
-    return String(s || 'Unknown');
+    if (typeof s === 'number') {
+      if (s === 1 || s === 2) return 'Success';
+      if (s === 0) return 'Pending';
+      return 'Failed';
+    }
+    // Default to checking if transaction has hash (likely succeeded)
+    if (tx.transactionId || tx.hash || tx.txHash) return 'Completed';
+    return 'Pending';
   };
 
   const getTxDate = (tx: TxData): string | number | undefined => {
@@ -3895,7 +3909,7 @@ const ActivityModal = ({
   const getTagIcon = (txType: string) => {
     const t = txType.toLowerCase();
     if (t.includes('buy') || t.includes('swap')) return '⇄';
-    if (t.includes('send') || t.includes('transfer')) return '↑';
+    if (t.includes('send') || t.includes('transfer') || t.includes('universal')) return '↑';
     if (t.includes('receive') || t.includes('deposit')) return '↓';
     if (t.includes('convert')) return '🔄';
     return '•';
@@ -3903,24 +3917,91 @@ const ActivityModal = ({
 
   const getStatusColor = (status: string) => {
     const s = status.toLowerCase();
-    if (s.includes('success') || s.includes('complete') || s === '1' || s === '2') return 'text-green-400 bg-green-400/20';
-    if (s.includes('pending') || s === '0') return 'text-yellow-400 bg-yellow-400/20';
-    if (s.includes('fail')) return 'text-red-400 bg-red-400/20';
+    if (s.includes('success') || s.includes('complete')) return 'text-green-400 bg-green-400/20';
+    if (s.includes('pending') || s.includes('process')) return 'text-yellow-400 bg-yellow-400/20';
+    if (s.includes('fail') || s.includes('error') || s.includes('cancel')) return 'text-red-400 bg-red-400/20';
     return 'text-gray-400 bg-gray-400/20';
   };
 
-  const getTxAmount = (tx: TxData): { amount: string; symbol: string; isNegative: boolean } | null => {
-    // Try various data structures
+  // Convert hex/BigInt string to human readable number
+  const formatTokenAmount = (amount: string | number, decimals: number = 18): string => {
+    if (!amount) return '0';
+    let value: bigint;
+    try {
+      if (typeof amount === 'string' && amount.startsWith('0x')) {
+        value = BigInt(amount);
+      } else if (typeof amount === 'string') {
+        // Check if it's already a decimal number
+        if (amount.includes('.')) return parseFloat(amount).toFixed(4);
+        value = BigInt(amount);
+      } else {
+        value = BigInt(Math.floor(amount));
+      }
+      // Convert based on decimals
+      const divisor = BigInt(10 ** decimals);
+      const whole = value / divisor;
+      const remainder = value % divisor;
+      const remainderStr = remainder.toString().padStart(decimals, '0').slice(0, 4);
+      return `${whole}.${remainderStr}`.replace(/\.?0+$/, '') || '0';
+    } catch {
+      return String(amount);
+    }
+  };
+
+  const getTxAmount = (tx: TxData): { amount: string; symbol: string; isNegative: boolean; usdValue?: string } | null => {
+    // Try tokenChanges structure (Particle UA format)
     if (tx.tokenChanges?.decr?.[0]) {
       const d = tx.tokenChanges.decr[0];
-      return { amount: d.amount || d.amountInUSD || '0', symbol: d.token?.symbol || '', isNegative: true };
+      const decimals = d.token?.decimals || d.token?.realDecimals || 18;
+      const symbol = d.token?.symbol || '';
+      const rawAmount = d.rawAmount || d.amount;
+      const formattedAmount = rawAmount ? formatTokenAmount(rawAmount, decimals) : (d.amount || '0');
+      return { 
+        amount: formattedAmount, 
+        symbol, 
+        isNegative: true,
+        usdValue: d.amountInUSD ? `$${Number(d.amountInUSD).toFixed(2)}` : undefined
+      };
     }
     if (tx.tokenChanges?.incr?.[0]) {
       const i = tx.tokenChanges.incr[0];
-      return { amount: i.amount || i.amountInUSD || '0', symbol: i.token?.symbol || '', isNegative: false };
+      const decimals = i.token?.decimals || i.token?.realDecimals || 18;
+      const symbol = i.token?.symbol || '';
+      const rawAmount = i.rawAmount || i.amount;
+      const formattedAmount = rawAmount ? formatTokenAmount(rawAmount, decimals) : (i.amount || '0');
+      return { 
+        amount: formattedAmount, 
+        symbol, 
+        isNegative: false,
+        usdValue: i.amountInUSD ? `$${Number(i.amountInUSD).toFixed(2)}` : undefined
+      };
     }
-    if (tx.amount) {
-      return { amount: tx.amount, symbol: tx.symbol || tx.token || '', isNegative: tx.direction === 'out' };
+    // Try depositTokens/lendingTokens
+    if (tx.depositTokens?.[0]) {
+      const d = tx.depositTokens[0];
+      const decimals = d.token?.decimals || 18;
+      return {
+        amount: formatTokenAmount(d.rawAmount || d.amount, decimals),
+        symbol: d.token?.symbol || '',
+        isNegative: true,
+        usdValue: d.amountInUSD ? `$${Number(d.amountInUSD).toFixed(2)}` : undefined
+      };
+    }
+    // Fallback to simple amount field
+    if (tx.amount !== undefined) {
+      const decimals = tx.decimals || 18;
+      return { 
+        amount: formatTokenAmount(tx.amount, decimals), 
+        symbol: tx.symbol || tx.token || '', 
+        isNegative: tx.direction === 'out' 
+      };
+    }
+    // Try totalDecrAmountInUSD / totalIncrAmountInUSD
+    if (tx.totalDecrAmountInUSD) {
+      return { amount: `$${Number(tx.totalDecrAmountInUSD).toFixed(2)}`, symbol: '', isNegative: true };
+    }
+    if (tx.totalIncrAmountInUSD) {
+      return { amount: `$${Number(tx.totalIncrAmountInUSD).toFixed(2)}`, symbol: '', isNegative: false };
     }
     return null;
   };
@@ -3967,50 +4048,77 @@ const ActivityModal = ({
                 </div>
               </div>
 
-              {/* Amount */}
-              {getTxAmount(details) && (
-                <div className="bg-white/5 rounded-xl p-4 mb-4">
-                  <div className="text-gray-400 text-sm mb-1">Amount</div>
-                  <div className={`text-2xl font-bold ${getTxAmount(details)?.isNegative ? 'text-red-400' : 'text-green-400'}`}>
-                    {getTxAmount(details)?.isNegative ? '-' : '+'}{getTxAmount(details)?.amount} {getTxAmount(details)?.symbol}
+              {/* Amount - with proper formatting */}
+              {(() => {
+                const amountData = getTxAmount(details);
+                if (!amountData) return null;
+                return (
+                  <div className="bg-white/5 rounded-xl p-4 mb-4">
+                    <div className="text-gray-400 text-sm mb-1">Amount</div>
+                    <div className={`text-2xl font-bold ${amountData.isNegative ? 'text-red-400' : 'text-green-400'}`}>
+                      {amountData.isNegative ? '-' : '+'}{amountData.amount} {amountData.symbol}
+                    </div>
+                    {amountData.usdValue && (
+                      <div className="text-gray-400 text-sm mt-1">≈ {amountData.usdValue}</div>
+                    )}
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Details */}
               <div className="space-y-3">
                 {txId && (
                   <div className="flex justify-between py-2 border-b border-white/10">
                     <span className="text-gray-400">Transaction ID</span>
-                    <span className="text-white font-mono">{shortenHash(txId)}</span>
+                    <span className="text-white font-mono text-sm">{shortenHash(txId)}</span>
                   </div>
                 )}
                 
                 {getTxDate(details) && (
                   <div className="flex justify-between py-2 border-b border-white/10">
                     <span className="text-gray-400">Time</span>
-                    <span className="text-white">{formatFullDate(getTxDate(details))}</span>
+                    <span className="text-white text-sm">{formatFullDate(getTxDate(details))}</span>
                   </div>
                 )}
 
-                {details.fees?.totals?.feeTokenAmountInUSD && (
+                {/* Total Fee - try multiple formats */}
+                {(details.totalFeeInUSD || details.fees?.totals?.feeTokenAmountInUSD) && (
                   <div className="flex justify-between py-2 border-b border-white/10">
-                    <span className="text-gray-400">Gas Fee</span>
-                    <span className="text-white">≈${(Number(details.fees.totals.feeTokenAmountInUSD) / 1e18).toFixed(2)}</span>
+                    <span className="text-gray-400">Network Fee</span>
+                    <span className="text-white">
+                      {details.totalFeeInUSD 
+                        ? `$${Number(details.totalFeeInUSD).toFixed(4)}`
+                        : `$${(Number(details.fees.totals.feeTokenAmountInUSD) / 1e18).toFixed(4)}`
+                      }
+                    </span>
                   </div>
                 )}
 
                 {details.sender && (
                   <div className="flex justify-between py-2 border-b border-white/10">
                     <span className="text-gray-400">From</span>
-                    <span className="text-white font-mono">{shortenHash(details.sender)}</span>
+                    <span className="text-white font-mono text-sm">{shortenHash(details.sender)}</span>
                   </div>
                 )}
 
-                {details.receiver && (
+                {details.receiver && details.receiver !== details.sender && (
                   <div className="flex justify-between py-2 border-b border-white/10">
                     <span className="text-gray-400">To</span>
-                    <span className="text-white font-mono">{shortenHash(details.receiver)}</span>
+                    <span className="text-white font-mono text-sm">{shortenHash(details.receiver)}</span>
+                  </div>
+                )}
+
+                {/* Show chain info if available */}
+                {(details.chainId || details.tokenChanges?.decr?.[0]?.token?.chainId) && (
+                  <div className="flex justify-between py-2 border-b border-white/10">
+                    <span className="text-gray-400">Network</span>
+                    <span className="text-white">
+                      {(() => {
+                        const chainId = details.chainId || details.tokenChanges?.decr?.[0]?.token?.chainId;
+                        const chains: Record<number, string> = { 1: 'Ethereum', 8453: 'Base', 42161: 'Arbitrum', 10: 'Optimism', 137: 'Polygon' };
+                        return chains[chainId] || `Chain ${chainId}`;
+                      })()}
+                    </span>
                   </div>
                 )}
               </div>
