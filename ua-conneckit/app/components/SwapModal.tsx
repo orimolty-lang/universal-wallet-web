@@ -155,16 +155,32 @@ export const SwapModal = ({
   const handleNumPad = (key: string) => {
     if (txResult) return; // Don't allow input after success
     
+    let newAmount = amount;
     if (key === "backspace") {
-      setAmount(prev => prev.slice(0, -1));
+      newAmount = amount.slice(0, -1);
     } else if (key === ".") {
       if (!amount.includes(".")) {
-        setAmount(prev => prev + ".");
+        newAmount = amount + ".";
       }
     } else {
       if (amount.length < 10) {
-        setAmount(prev => prev + key);
+        newAmount = amount + key;
       }
+    }
+    
+    setAmount(newAmount);
+    
+    // Update slider to match entered amount
+    const enteredValue = parseFloat(newAmount) || 0;
+    if (direction === "buy" && totalBalance > 0) {
+      // In buy mode, amount is USD - calculate percentage of total balance
+      const pct = Math.min(100, Math.round((enteredValue / totalBalance) * 100));
+      setSliderValue(pct);
+    } else if (direction === "sell" && tokenBalance > 0 && targetToken?.price) {
+      // In sell mode, amount is USD value of tokens - calculate percentage
+      const maxUsdValue = tokenBalance * targetToken.price;
+      const pct = Math.min(100, Math.round((enteredValue / maxUsdValue) * 100));
+      setSliderValue(pct);
     }
   };
 
@@ -593,15 +609,12 @@ export const SwapModal = ({
               </div>
 
               {/* Rate Display */}
-              <div className="flex items-center justify-between mt-3 text-sm">
+              <div className="mt-3 text-sm">
                 <span className="text-gray-400">
                   {direction === "buy" 
                     ? `$1 ≈ ${formatTokenAmount(rate)} ${targetToken?.symbol || "???"}`
                     : `1 ${targetToken?.symbol} ≈ $${(targetToken?.price || 0).toFixed(6)}`
                   }
-                </span>
-                <span className={`text-xs px-2 py-0.5 rounded ${direction === "buy" ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>
-                  {direction === "buy" ? "BUY" : "SELL"}
                 </span>
               </div>
 
