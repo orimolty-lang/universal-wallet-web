@@ -3744,17 +3744,179 @@ const PointsTab = () => (
   </div>
 );
 
-// Activity Modal (moved from tab)
-const ActivityModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => (
-  <BottomSheet isOpen={isOpen} onClose={onClose}>
-    <div className="px-6 pb-8">
-      <h2 className="text-white text-xl font-bold mb-6 text-center">Activity</h2>
-      <div className="text-center py-8 text-gray-600">
-        No transactions yet
+// Activity Modal with real transaction history
+const ActivityModal = ({ 
+  isOpen, 
+  onClose,
+  universalAccount,
+}: { 
+  isOpen: boolean; 
+  onClose: () => void;
+  universalAccount: UniversalAccount | null;
+}) => {
+  const [transactions, setTransactions] = useState<Array<{
+    transactionId: string;
+    type: string;
+    status: string;
+    tag?: string;
+    created_at: string;
+    totalDecrAmountInUSD?: string;
+    totalIncrAmountInUSD?: string;
+    tokenChanges?: {
+      decr?: Array<{ token: { symbol: string }; amountInUSD: string }>;
+      incr?: Array<{ token: { symbol: string }; amountInUSD: string }>;
+    };
+  }>>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+
+  // Fetch transactions when modal opens
+  useEffect(() => {
+    if (isOpen && universalAccount) {
+      fetchTransactions(1, true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, universalAccount]);
+
+  const fetchTransactions = async (pageNum: number, reset: boolean = false) => {
+    if (!universalAccount) return;
+    
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await (universalAccount as any).getTransactions(pageNum, 20);
+      console.log('[Activity] Transactions:', result);
+      
+      const txList = result?.transactions || result?.data || result || [];
+      
+      if (reset) {
+        setTransactions(txList);
+      } else {
+        setTransactions(prev => [...prev, ...txList]);
+      }
+      
+      setHasMore(txList.length === 20);
+      setPage(pageNum);
+    } catch (err) {
+      console.error('[Activity] Failed to fetch transactions:', err);
+      setError('Failed to load transactions');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadMore = () => {
+    if (!isLoading && hasMore) {
+      fetchTransactions(page + 1, false);
+    }
+  };
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
+  };
+
+  const getTagIcon = (tag?: string, type?: string) => {
+    const t = tag?.toLowerCase() || type?.toLowerCase() || '';
+    if (t.includes('buy') || t.includes('swap')) return '⇄';
+    if (t.includes('send') || t.includes('transfer')) return '↑';
+    if (t.includes('receive')) return '↓';
+    if (t.includes('convert')) return '🔄';
+    return '•';
+  };
+
+  const getTagColor = (status: string) => {
+    if (status === 'completed' || status === 'success') return 'text-green-400';
+    if (status === 'pending') return 'text-yellow-400';
+    if (status === 'failed') return 'text-red-400';
+    return 'text-gray-400';
+  };
+
+  return (
+    <BottomSheet isOpen={isOpen} onClose={onClose}>
+      <div className="px-6 pb-8 max-h-[70vh] overflow-y-auto">
+        <h2 className="text-white text-xl font-bold mb-6 text-center sticky top-0 bg-[#1a1a2e] py-2">Activity</h2>
+        
+        {isLoading && transactions.length === 0 ? (
+          <div className="text-center py-8">
+            <div className="animate-spin w-8 h-8 border-2 border-accent-dynamic border-t-transparent rounded-full mx-auto mb-4" />
+            <div className="text-gray-500">Loading transactions...</div>
+          </div>
+        ) : error ? (
+          <div className="text-center py-8 text-red-400">{error}</div>
+        ) : transactions.length === 0 ? (
+          <div className="text-center py-8 text-gray-600">
+            No transactions yet
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {transactions.map((tx, idx) => (
+              <a
+                key={tx.transactionId || idx}
+                href={`https://universalx.app/activity/details?id=${tx.transactionId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-colors"
+              >
+                <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-lg">
+                  {getTagIcon(tx.tag, tx.type)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-white font-medium capitalize">
+                      {tx.tag || tx.type || 'Transaction'}
+                    </span>
+                    <span className={`text-xs ${getTagColor(tx.status)}`}>
+                      {tx.status}
+                    </span>
+                  </div>
+                  <div className="text-gray-500 text-sm truncate">
+                    {tx.tokenChanges?.decr?.[0] && (
+                      <span>-${Number(tx.tokenChanges.decr[0].amountInUSD || 0).toFixed(2)} </span>
+                    )}
+                    {tx.tokenChanges?.incr?.[0] && (
+                      <span className="text-green-400">+${Number(tx.tokenChanges.incr[0].amountInUSD || 0).toFixed(2)}</span>
+                    )}
+                    {!tx.tokenChanges?.decr?.[0] && !tx.tokenChanges?.incr?.[0] && tx.totalDecrAmountInUSD && (
+                      <span>-${Number(tx.totalDecrAmountInUSD).toFixed(2)}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="text-gray-500 text-sm">
+                  {formatDate(tx.created_at)}
+                </div>
+              </a>
+            ))}
+            
+            {hasMore && (
+              <button
+                onClick={loadMore}
+                disabled={isLoading}
+                className="w-full py-3 text-center text-accent-dynamic hover:text-white transition-colors disabled:opacity-50"
+              >
+                {isLoading ? 'Loading...' : 'Load more'}
+              </button>
+            )}
+          </div>
+        )}
       </div>
-    </div>
-  </BottomSheet>
-);
+    </BottomSheet>
+  );
+};
 
 // App Lock Modal
 // Declare global type for native biometrics bridge
@@ -4443,7 +4605,8 @@ const App = () => {
 
       <ActivityModal 
         isOpen={showActivityModal} 
-        onClose={() => setShowActivityModal(false)} 
+        onClose={() => setShowActivityModal(false)}
+        universalAccount={universalAccountInstance}
       />
       
       <SettingsModal 
