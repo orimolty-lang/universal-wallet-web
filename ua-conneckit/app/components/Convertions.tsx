@@ -5,7 +5,6 @@ import "./animations.css";
 import {
   UniversalAccount,
   SUPPORTED_TOKEN_TYPE,
-  type EIP7702Authorization,
 } from "@particle-network/universal-account-sdk";
 import { Button } from "../../components/ui/button";
 import { ChevronDown, ChevronUp } from "lucide-react";
@@ -44,44 +43,16 @@ export default function ConvertToUsdc({
           chainId: 143,
         });
 
-      // 2) Handle 7702 Authorization for new chains
-      const authorizations: EIP7702Authorization[] = [];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const txAny = transaction as any;
-      if (txAny?.userOps && walletClient) {
-        const nonceMap = new Map<number, string>();
-        for (const userOp of txAny.userOps) {
-          if (userOp.eip7702Auth && !userOp.eip7702Delegated) {
-            let authSig = nonceMap.get(userOp.eip7702Auth.nonce);
-            if (!authSig) {
-              // Sign 7702 authorization
-              const authMessage = `7702:${userOp.eip7702Auth.chainId}:${userOp.eip7702Auth.address}:${userOp.eip7702Auth.nonce}`;
-              const signed = await walletClient.signMessage({
-                account: address as `0x${string}`,
-                message: authMessage,
-              });
-              authSig = signed as string;
-              nonceMap.set(userOp.eip7702Auth.nonce, authSig);
-            }
-            authorizations.push({
-              userOpHash: userOp.userOpHash,
-              signature: authSig,
-            });
-          }
-        }
-      }
-
-      // 3) Sign UA payload (rootHash)
+      // 2) Sign UA payload (rootHash)
       const signature = await walletClient?.signMessage({
         account: address as `0x${string}`,
         message: { raw: transaction.rootHash },
       });
 
-      // 4) Send via UA with 7702 authorizations
+      // 3) Send via UA (SDK handles 7702 auth for embedded wallets)
       const result = await universalAccountInstance.sendTransaction(
         transaction,
-        signature,
-        authorizations
+        signature
       );
 
       setTxResult(

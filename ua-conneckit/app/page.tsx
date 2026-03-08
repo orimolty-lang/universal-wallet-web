@@ -15,7 +15,6 @@ import {
   CHAIN_ID,
   type IAssetsResponse,
   type IUniversalAccountConfig,
-  type EIP7702Authorization,
 } from "@particle-network/universal-account-sdk";
 import DepositDialog from "./components/DepositDialog";
 import AssetBreakdownDialog from "./components/AssetBreakdownDialog";
@@ -1327,33 +1326,6 @@ const ConvertModal = ({
         setLoadingStatus('Waiting for signature...');
         const walletClient = primaryWallet.getWalletClient();
         
-        // Handle 7702 Authorization for new chains
-        const convertAuthorizations: EIP7702Authorization[] = [];
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const convertTxAny = tx as any;
-        const convertWalletAddress = walletClient.account?.address as `0x${string}`;
-        if (convertTxAny.userOps && convertWalletAddress) {
-          const nonceMap = new Map<number, string>();
-          for (const userOp of convertTxAny.userOps) {
-            if (userOp.eip7702Auth && !userOp.eip7702Delegated) {
-              let authSig = nonceMap.get(userOp.eip7702Auth.nonce);
-              if (!authSig) {
-                // Sign 7702 authorization
-                const authMessage = `7702:${userOp.eip7702Auth.chainId}:${userOp.eip7702Auth.address}:${userOp.eip7702Auth.nonce}`;
-                authSig = await walletClient.request({
-                  method: 'personal_sign',
-                  params: [authMessage as `0x${string}`, convertWalletAddress],
-                }) as string;
-                nonceMap.set(userOp.eip7702Auth.nonce, authSig);
-              }
-              convertAuthorizations.push({
-                userOpHash: userOp.userOpHash,
-                signature: authSig,
-              });
-            }
-          }
-        }
-        
         // Sign the root hash
         const signature = await walletClient.request({
           method: 'personal_sign',
@@ -1361,9 +1333,9 @@ const ConvertModal = ({
           params: [(tx as any).rootHash as `0x${string}`, walletClient.account?.address as `0x${string}`],
         });
 
-        // Send transaction with 7702 authorizations
+        // Send transaction (SDK handles 7702 auth for embedded wallets)
         setLoadingStatus('Sending transaction...');
-        const sendResult = await universalAccount.sendTransaction(tx, signature as string, convertAuthorizations);
+        const sendResult = await universalAccount.sendTransaction(tx, signature as string);
         
         if (sendResult?.transactionId) {
           console.log('[Convert] Transaction sent:', sendResult.transactionId);
@@ -2290,67 +2262,6 @@ const PerpsModal = ({
         
         const walletClient = primaryWallet.getWalletClient();
         
-        // Handle 7702 Authorization for new chains
-        // With embedded wallets (social login), we can sign the authorization
-        const authorizations: EIP7702Authorization[] = [];
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const txAny = tx as any;
-        const walletAddress = walletClient.account?.address as `0x${string}`;
-        if (txAny.userOps && walletAddress) {
-          const nonceMap = new Map<number, string>();
-          for (const userOp of txAny.userOps) {
-            if (userOp.eip7702Auth && !userOp.eip7702Delegated) {
-              addDebug(`7702 auth needed for chain ${userOp.eip7702Auth.chainId}`);
-              let authSig = nonceMap.get(userOp.eip7702Auth.nonce);
-              if (!authSig) {
-                // Sign EIP-7702 authorization using eth_signTypedData_v4
-                const typedData = {
-                  types: {
-                    Authorization: [
-                      { name: 'chainId', type: 'uint256' },
-                      { name: 'codeAddress', type: 'address' },
-                      { name: 'nonce', type: 'uint256' },
-                    ],
-                  },
-                  primaryType: 'Authorization' as const,
-                  domain: {},
-                  message: {
-                    chainId: BigInt(userOp.eip7702Auth.chainId).toString(),
-                    codeAddress: userOp.eip7702Auth.address,
-                    nonce: BigInt(userOp.eip7702Auth.nonce).toString(),
-                  },
-                };
-                try {
-                  authSig = await walletClient.request({
-                    method: 'eth_signTypedData_v4',
-                    params: [walletAddress, JSON.stringify(typedData)],
-                  }) as string;
-                  addDebug(`7702 auth signed with typed data`);
-                } catch {
-                  addDebug(`Typed data failed, trying personal_sign`);
-                  // Fallback to personal_sign for embedded wallets
-                  const authMessage = `0x${Buffer.from(
-                    JSON.stringify({
-                      chainId: userOp.eip7702Auth.chainId,
-                      address: userOp.eip7702Auth.address,
-                      nonce: userOp.eip7702Auth.nonce,
-                    })
-                  ).toString('hex')}` as `0x${string}`;
-                  authSig = await walletClient.request({
-                    method: 'personal_sign',
-                    params: [authMessage, walletAddress] as [`0x${string}`, `0x${string}`],
-                  }) as string;
-                }
-                nonceMap.set(userOp.eip7702Auth.nonce, authSig);
-              }
-              authorizations.push({
-                userOpHash: userOp.userOpHash,
-                signature: authSig,
-              });
-            }
-          }
-        }
-        
         // Sign the root hash using personal_sign
         const signature = await walletClient.request({
           method: 'personal_sign',
@@ -2358,10 +2269,10 @@ const PerpsModal = ({
           params: [(tx as any).rootHash as `0x${string}`, walletClient.account?.address as `0x${string}`],
         });
 
-        // Step 3: Send transaction with 7702 authorizations
+        // Step 3: Send transaction
+        // For embedded wallets with 7702 mode, SDK may handle auth internally
         setLoadingStatus('Sending transaction...');
-        addDebug(`Sending with ${authorizations.length} 7702 authorizations`);
-        const sendResult = await universalAccount.sendTransaction(tx, signature as string, authorizations);
+        const sendResult = await universalAccount.sendTransaction(tx, signature as string);
         
         if (sendResult?.transactionId) {
           console.log('[Perps] Transaction sent:', sendResult.transactionId);

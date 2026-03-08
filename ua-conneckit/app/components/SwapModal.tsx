@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { IAssetsResponse, UniversalAccount, EIP7702Authorization } from "@particle-network/universal-account-sdk";
+import type { IAssetsResponse, UniversalAccount } from "@particle-network/universal-account-sdk";
 import { executeSwap, executeSell, getChainIdFromBlockchain, pollTransactionDetails, getChainName } from "../lib/swapService";
 import { useWallets } from "@particle-network/connectkit";
 
@@ -360,43 +360,16 @@ export const SwapModal = ({
         try {
           const walletClient = primaryWallet.getWalletClient();
           
-          // Handle 7702 Authorization for new chains
-          const authorizations: EIP7702Authorization[] = [];
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const txAny = result.transaction as any;
-          const walletAddress = walletClient.account?.address as `0x${string}`;
-          if (txAny?.userOps && walletAddress) {
-            const nonceMap = new Map<number, string>();
-            for (const userOp of txAny.userOps) {
-              if (userOp.eip7702Auth && !userOp.eip7702Delegated) {
-                let authSig = nonceMap.get(userOp.eip7702Auth.nonce);
-                if (!authSig) {
-                  // Sign 7702 authorization using personal_sign (simpler, more compatible)
-                  const authMessage = `7702:${userOp.eip7702Auth.chainId}:${userOp.eip7702Auth.address}:${userOp.eip7702Auth.nonce}`;
-                  authSig = await walletClient.request({
-                    method: 'personal_sign',
-                    params: [authMessage as `0x${string}`, walletAddress],
-                  }) as string;
-                  nonceMap.set(userOp.eip7702Auth.nonce, authSig);
-                }
-                authorizations.push({
-                  userOpHash: userOp.userOpHash,
-                  signature: authSig,
-                });
-              }
-            }
-          }
-          
           // Sign the root hash using personal_sign
           const signature = await walletClient.request({
             method: 'personal_sign',
             params: [result.rootHash as `0x${string}`, walletClient.account?.address as `0x${string}`],
           });
 
-          // Step 3: Send transaction with 7702 authorizations
+          // Step 3: Send transaction (SDK handles 7702 auth for embedded wallets)
           setLoadingStatus("Sending transaction...");
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const sendResult = await universalAccount.sendTransaction(result.transaction as any, signature as string, authorizations);
+          const sendResult = await universalAccount.sendTransaction(result.transaction as any, signature as string);
           
           if (sendResult?.transactionId) {
             // Format expected amount
