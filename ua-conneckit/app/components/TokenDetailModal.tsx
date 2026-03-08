@@ -119,31 +119,18 @@ const NETWORK_SLUGS: Record<string, { dexscreener: string; geckoterminal: string
 const EmbeddedChart = ({ 
   tokenAddress,
   blockchain,
-  coingeckoId,
 }: { 
   tokenAddress?: string;
   blockchain?: string;
-  coingeckoId?: string;
 }) => {
   const [loading, setLoading] = useState(true);
-  const [chartSource, setChartSource] = useState<'geckoterminal' | 'coingecko'>('geckoterminal');
   
-  // Get network slug for the chart provider
+  // Get network slug for GeckoTerminal
   const networkSlug = blockchain ? NETWORK_SLUGS[blockchain.toLowerCase()] : null;
   
-  // Build chart URL
-  let chartUrl = '';
-  if (chartSource === 'geckoterminal' && tokenAddress && networkSlug) {
-    // GeckoTerminal embed - token page (will show main pool)
-    chartUrl = `https://www.geckoterminal.com/${networkSlug.geckoterminal}/tokens/${tokenAddress}?embed=1&info=0&swaps=0`;
-  } else if (coingeckoId) {
-    // Fallback to CoinGecko widget
-    chartUrl = `https://www.coingecko.com/coins/${coingeckoId}/sparkline.svg`;
-  }
-  
-  if (!chartUrl && !tokenAddress) {
+  if (!tokenAddress || !networkSlug) {
     return (
-      <div className="mt-4 h-[280px] bg-[#0a0a12] rounded-xl flex items-center justify-center">
+      <div className="mt-4 h-[360px] bg-black/30 rounded-xl flex items-center justify-center">
         <span className="text-gray-500 text-sm">No chart available</span>
       </div>
     );
@@ -151,83 +138,30 @@ const EmbeddedChart = ({
 
   return (
     <div className="mt-4">
-      {/* Chart Source Toggle */}
-      <div className="flex items-center justify-end gap-2 mb-2">
-        <button
-          onClick={() => setChartSource('geckoterminal')}
-          className={`px-2 py-1 rounded text-xs transition-colors ${
-            chartSource === 'geckoterminal' 
-              ? 'bg-green-500/20 text-green-400' 
-              : 'text-gray-500 hover:text-gray-300'
-          }`}
-        >
-          GeckoTerminal
-        </button>
-        {coingeckoId && (
-          <button
-            onClick={() => setChartSource('coingecko')}
-            className={`px-2 py-1 rounded text-xs transition-colors ${
-              chartSource === 'coingecko' 
-                ? 'bg-orange-500/20 text-orange-400' 
-                : 'text-gray-500 hover:text-gray-300'
-            }`}
-          >
-            CoinGecko
-          </button>
-        )}
-      </div>
-      
-      {/* Chart Container */}
-      <div className="relative rounded-xl overflow-hidden bg-[#0a0a12]" style={{ height: '280px' }}>
+      {/* Chart Container - Full Size */}
+      <div className="relative rounded-xl overflow-hidden bg-black/30" style={{ height: '360px' }}>
         {loading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-[#0a0a12] z-10">
+          <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-10">
             <div className="flex flex-col items-center gap-2">
-              <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+              <div className="w-6 h-6 border-2 border-accent-dynamic border-t-transparent rounded-full animate-spin" />
               <span className="text-gray-500 text-sm">Loading chart...</span>
             </div>
           </div>
         )}
         
-        {chartSource === 'geckoterminal' && tokenAddress && networkSlug ? (
-          <iframe
-            src={`https://www.geckoterminal.com/${networkSlug.geckoterminal}/tokens/${tokenAddress}?embed=1&info=0&swaps=0`}
-            title="Token Chart"
-            className="w-full h-full border-0"
-            style={{ 
-              colorScheme: 'dark',
-              background: '#0a0a12',
-            }}
-            onLoad={() => setLoading(false)}
-            allow="clipboard-write"
-            sandbox="allow-scripts allow-same-origin allow-popups"
-          />
-        ) : coingeckoId ? (
-          <iframe
-            src={`https://www.coingecko.com/coins/${coingeckoId}/sparkline.svg`}
-            title="Price Chart"
-            className="w-full h-full border-0"
-            onLoad={() => setLoading(false)}
-          />
-        ) : (
-          <div className="flex items-center justify-center h-full">
-            <span className="text-gray-500 text-sm">Chart not available for this token</span>
-          </div>
-        )}
+        <iframe
+          src={`https://www.geckoterminal.com/${networkSlug.geckoterminal}/tokens/${tokenAddress}?embed=1&info=0&swaps=0`}
+          title="Token Chart"
+          className="w-full h-full border-0"
+          style={{ 
+            colorScheme: 'dark',
+            background: 'transparent',
+          }}
+          onLoad={() => setLoading(false)}
+          allow="clipboard-write"
+          sandbox="allow-scripts allow-same-origin allow-popups"
+        />
       </div>
-      
-      {/* Open full chart link */}
-      {tokenAddress && networkSlug && (
-        <div className="flex justify-center mt-2">
-          <a
-            href={`https://www.geckoterminal.com/${networkSlug.geckoterminal}/tokens/${tokenAddress}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
-          >
-            Open full chart ↗
-          </a>
-        </div>
-      )}
     </div>
   );
 };
@@ -253,11 +187,11 @@ const ExpandableSection = ({
         className="w-full flex items-center justify-between py-4 px-1"
       >
         <div className="flex items-center gap-3">
-          <span className="text-cyan-400">{icon}</span>
+          <span className="text-accent-dynamic">{icon}</span>
           <span className="text-white font-medium">{title}</span>
         </div>
         <span
-          className={`text-cyan-400 transition-transform ${
+          className={`text-accent-dynamic transition-transform ${
             expanded ? "rotate-180" : ""
           }`}
         >
@@ -325,10 +259,10 @@ export const TokenDetailModal = ({
         onClick={onClose}
       />
 
-      {/* Modal */}
+      {/* Modal - uses dynamic theme */}
       <div 
         ref={modalRef}
-        className="fixed inset-x-0 bottom-0 z-50 max-h-[90vh] bg-[#0d1b2a] rounded-t-3xl overflow-hidden flex flex-col animate-slide-up"
+        className="fixed inset-x-0 bottom-0 z-50 max-h-[90vh] bg-[#0a0a0a] rounded-t-3xl overflow-hidden flex flex-col animate-slide-up border-t border-white/10"
         style={{ touchAction: 'pan-y' }}
       >
         {/* Drag Handle - with touch events */}
@@ -338,7 +272,7 @@ export const TokenDetailModal = ({
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          <div className="w-10 h-1 bg-gray-600 rounded-full" />
+          <div className="w-10 h-1 bg-white/20 rounded-full" />
         </div>
 
         {/* Scrollable Content */}
@@ -356,7 +290,7 @@ export const TokenDetailModal = ({
                   }}
                 />
               ) : (
-                <div className="w-10 h-10 rounded-full bg-cyan-600 flex items-center justify-center text-white font-bold">
+                <div className="w-10 h-10 rounded-full bg-accent-dynamic flex items-center justify-center text-white font-bold">
                   {token.symbol.slice(0, 2)}
                 </div>
               )}
@@ -370,7 +304,7 @@ export const TokenDetailModal = ({
               )}
             </div>
             <div>
-              <span className="text-cyan-400 font-medium text-lg">{token.name}</span>
+              <span className="text-accent-dynamic font-medium text-lg">{token.name}</span>
               {/* Chain badges */}
               {token.contracts && token.contracts.length > 0 && (
                 <div className="flex gap-1 mt-1">
@@ -411,19 +345,18 @@ export const TokenDetailModal = ({
           <EmbeddedChart
             tokenAddress={primaryContract?.address}
             blockchain={primaryContract?.blockchain}
-            coingeckoId={token.id}
           />
 
           {/* User Balance Card */}
           {userBalance && userBalance.amount > 0 && (
-            <div className="mt-6 bg-[#0f2744] rounded-xl p-4 flex items-center justify-between">
+            <div className="mt-6 bg-white/5 rounded-xl p-4 flex items-center justify-between border border-white/10">
               <div>
                 <div className="text-gray-400 text-xs">Balance</div>
                 <div className="flex items-center gap-2 mt-1">
                   {token.logo ? (
                     <img src={token.logo} alt="" className="w-5 h-5 rounded-full" />
                   ) : (
-                    <div className="w-5 h-5 rounded-full bg-cyan-600" />
+                    <div className="w-5 h-5 rounded-full bg-accent-dynamic" />
                   )}
                   <span className="text-white font-medium">
                     {userBalance.amount.toFixed(2)} {token.symbol}
@@ -452,7 +385,7 @@ export const TokenDetailModal = ({
                     <span>$</span>
                     <span>Market Cap</span>
                   </div>
-                  <span className="text-cyan-400 font-medium">
+                  <span className="text-accent-dynamic font-medium">
                     {formatLargeNumber(token.market_cap || 0)}
                   </span>
                 </div>
@@ -461,7 +394,7 @@ export const TokenDetailModal = ({
                     <span>📈</span>
                     <span>24h Volume</span>
                   </div>
-                  <span className="text-cyan-400 font-medium">
+                  <span className="text-accent-dynamic font-medium">
                     {formatLargeNumber(token.volume || 0)}
                   </span>
                 </div>
@@ -470,7 +403,7 @@ export const TokenDetailModal = ({
                     <span>⏱️</span>
                     <span>Fully Diluted Valuation</span>
                   </div>
-                  <span className="text-cyan-400 font-medium">
+                  <span className="text-accent-dynamic font-medium">
                     {formatLargeNumber((token.totalSupply || 0) * (token.price || 0))}
                   </span>
                 </div>
@@ -479,7 +412,7 @@ export const TokenDetailModal = ({
                     <span>🔄</span>
                     <span>Circulating Supply</span>
                   </div>
-                  <span className="text-cyan-400 font-medium">
+                  <span className="text-accent-dynamic font-medium">
                     {formatSupply(token.circulatingSupply || token.totalSupply || 0)}
                   </span>
                 </div>
@@ -488,7 +421,7 @@ export const TokenDetailModal = ({
                     <span>⬆️</span>
                     <span>Max Supply</span>
                   </div>
-                  <span className="text-cyan-400 font-medium">
+                  <span className="text-accent-dynamic font-medium">
                     {formatSupply(token.totalSupply || 0)}
                   </span>
                 </div>
@@ -513,7 +446,7 @@ export const TokenDetailModal = ({
                       <span>👤</span>
                       <span>Creator</span>
                     </div>
-                    <span className="text-cyan-400 font-mono text-sm">
+                    <span className="text-accent-dynamic font-mono text-sm">
                       {formatAddress(primaryContract.address)}
                     </span>
                   </div>
@@ -535,7 +468,7 @@ export const TokenDetailModal = ({
                       <span>🏠</span>
                       <span>Website</span>
                     </div>
-                    <span className="text-cyan-400 text-sm flex items-center gap-1">
+                    <span className="text-accent-dynamic text-sm flex items-center gap-1">
                       {new URL(token.website).hostname.replace("www.", "")}
                       <span>↗</span>
                     </span>
@@ -552,7 +485,7 @@ export const TokenDetailModal = ({
                       <span>🔍</span>
                       <span>Search on X</span>
                     </div>
-                    <span className="text-cyan-400 text-sm">↗</span>
+                    <span className="text-accent-dynamic text-sm">↗</span>
                   </a>
                 )}
 
@@ -582,7 +515,7 @@ export const TokenDetailModal = ({
                       <span className="text-gray-400 text-sm">
                         {contract.blockchain}
                       </span>
-                      <span className="text-cyan-400 font-mono text-xs">
+                      <span className="text-accent-dynamic font-mono text-xs">
                         {formatAddress(contract.address)}
                       </span>
                     </div>
@@ -593,31 +526,31 @@ export const TokenDetailModal = ({
           </div>
         </div>
 
-        {/* Fixed Bottom Bar */}
+        {/* Fixed Bottom Bar - matches main screen style */}
         <div
-          className="absolute bottom-0 left-0 right-0 bg-[#0d1b2a] border-t border-gray-800/50 px-5 py-4 flex items-center gap-3"
+          className="absolute bottom-0 left-0 right-0 bg-[#0a0a0a] border-t border-white/10 px-5 py-4 flex items-center gap-3"
           style={{ paddingBottom: "max(env(safe-area-inset-bottom), 16px)" }}
         >
           {/* More Button */}
           <button
             onClick={() => setShowMoreMenu(!showMoreMenu)}
-            className="w-12 h-12 rounded-xl bg-[#1a3a5c] border border-cyan-800/50 flex items-center justify-center"
+            className="w-12 h-12 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center hover:bg-white/20 transition-colors"
           >
             <span className="text-white text-lg">•••</span>
           </button>
 
-          {/* Swap Button */}
+          {/* Swap Button - matches main screen pill bar style */}
           <button
             onClick={() => onSwap?.(token)}
-            className="flex-1 h-12 rounded-xl bg-cyan-500 text-white font-bold text-lg"
+            className="flex-1 h-12 rounded-full bg-accent-dynamic text-white font-semibold text-base hover:opacity-90 transition-opacity"
           >
             Swap
           </button>
 
-          {/* Send Button */}
+          {/* Send Button - matches main screen pill bar style */}
           <button
             onClick={() => onSend?.(token)}
-            className="flex-1 h-12 rounded-xl bg-cyan-500 text-white font-bold text-lg"
+            className="flex-1 h-12 rounded-full bg-accent-dynamic text-white font-semibold text-base hover:opacity-90 transition-opacity"
           >
             Send
           </button>
@@ -626,16 +559,16 @@ export const TokenDetailModal = ({
         {/* More Menu Popup */}
         {showMoreMenu && (
           <div
-            className="absolute bottom-24 left-5 bg-[#1a3a5c] rounded-xl p-2 shadow-xl z-50"
+            className="absolute bottom-24 left-5 bg-white/10 backdrop-blur-lg rounded-xl p-2 shadow-xl z-50 border border-white/20"
             onClick={() => setShowMoreMenu(false)}
           >
-            <button className="w-full text-left px-4 py-2 text-white text-sm rounded-lg hover:bg-cyan-800/30">
+            <button className="w-full text-left px-4 py-2 text-white text-sm rounded-lg hover:bg-white/10">
               📈 Add to Watchlist
             </button>
-            <button className="w-full text-left px-4 py-2 text-white text-sm rounded-lg hover:bg-cyan-800/30">
+            <button className="w-full text-left px-4 py-2 text-white text-sm rounded-lg hover:bg-white/10">
               📋 Copy Contract
             </button>
-            <button className="w-full text-left px-4 py-2 text-white text-sm rounded-lg hover:bg-cyan-800/30">
+            <button className="w-full text-left px-4 py-2 text-white text-sm rounded-lg hover:bg-white/10">
               🔗 View on Explorer
             </button>
           </div>
