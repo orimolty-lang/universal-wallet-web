@@ -2811,6 +2811,36 @@ const HomeTab = ({
   const touchStartY = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   
+  // Compact action bar mode (icons only) - persisted to localStorage
+  const [compactActionBar, setCompactActionBar] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('compactActionBar') === 'true';
+    }
+    return false;
+  });
+  const [actionBarToast, setActionBarToast] = useState<string | null>(null);
+  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
+  
+  // Toggle compact mode on long-press
+  const handleActionBarLongPress = () => {
+    const newMode = !compactActionBar;
+    setCompactActionBar(newMode);
+    localStorage.setItem('compactActionBar', String(newMode));
+    setActionBarToast(newMode ? 'Compact mode' : 'Full mode');
+    setTimeout(() => setActionBarToast(null), 1500);
+  };
+  
+  const handleActionBarTouchStart = () => {
+    longPressTimer.current = setTimeout(handleActionBarLongPress, 500);
+  };
+  
+  const handleActionBarTouchEnd = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+  
   // Pull-to-refresh handler
   const handleTouchStart = (e: React.TouchEvent) => {
     if (scrollRef.current?.scrollTop === 0) {
@@ -2947,9 +2977,16 @@ const HomeTab = ({
         </div>
       </div>
 
-      {/* Action Pill Bar - Buy, Receive, Send, Convert */}
-      <div className="flex justify-center py-6 px-4">
-        <div className="flex bg-white/[0.08] backdrop-blur-xl rounded-full p-1.5 border border-white/10">
+      {/* Action Pill Bar - Buy, Receive, Send, Convert (long-press to toggle compact mode) */}
+      <div className="flex justify-center py-6 px-4 relative">
+        <div 
+          className="flex bg-white/[0.08] backdrop-blur-xl rounded-full p-1.5 border border-white/10"
+          onTouchStart={handleActionBarTouchStart}
+          onTouchEnd={handleActionBarTouchEnd}
+          onMouseDown={handleActionBarTouchStart}
+          onMouseUp={handleActionBarTouchEnd}
+          onMouseLeave={handleActionBarTouchEnd}
+        >
           {[
             { icon: "💳", label: "Buy", action: onBuy },
             { icon: "↓", label: "Receive", action: onReceive },
@@ -2959,10 +2996,10 @@ const HomeTab = ({
             <div key={label} className="flex items-center">
               <button 
                 onClick={action} 
-                className="flex items-center gap-2 px-4 py-2.5 rounded-full text-white/70 hover:text-white hover:bg-accent-dynamic/80 active:scale-95 transition-all duration-200"
+                className={`flex items-center gap-2 ${compactActionBar ? 'px-3' : 'px-4'} py-2.5 rounded-full text-white/70 hover:text-white hover:bg-accent-dynamic/80 active:scale-95 transition-all duration-200`}
               >
                 <span className="text-base">{icon}</span>
-                <span className="text-sm font-medium">{label}</span>
+                {!compactActionBar && <span className="text-sm font-medium">{label}</span>}
               </button>
               {idx < arr.length - 1 && (
                 <div className="w-px h-5 bg-white/15 mx-1" />
@@ -2970,6 +3007,12 @@ const HomeTab = ({
             </div>
           ))}
         </div>
+        {/* Toast notification */}
+        {actionBarToast && (
+          <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-black/80 text-white text-xs px-3 py-1.5 rounded-full backdrop-blur-sm animate-fade-in">
+            {actionBarToast}
+          </div>
+        )}
       </div>
 
       {/* Token List with Chain Breakdown */}
