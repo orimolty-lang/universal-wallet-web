@@ -2291,6 +2291,7 @@ const PerpsModal = ({
         const walletClient = primaryWallet.getWalletClient();
         
         // Handle 7702 Authorization for new chains
+        // With embedded wallets (social login), we can sign the authorization
         const authorizations: EIP7702Authorization[] = [];
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const txAny = tx as any;
@@ -2299,17 +2300,48 @@ const PerpsModal = ({
           const nonceMap = new Map<number, string>();
           for (const userOp of txAny.userOps) {
             if (userOp.eip7702Auth && !userOp.eip7702Delegated) {
-              addDebug(`7702 auth needed for chain`);
+              addDebug(`7702 auth needed for chain ${userOp.eip7702Auth.chainId}`);
               let authSig = nonceMap.get(userOp.eip7702Auth.nonce);
               if (!authSig) {
-                // Sign 7702 authorization using personal_sign
-                const authMessage = `7702:${userOp.eip7702Auth.chainId}:${userOp.eip7702Auth.address}:${userOp.eip7702Auth.nonce}`;
-                authSig = await walletClient.request({
-                  method: 'personal_sign',
-                  params: [authMessage as `0x${string}`, walletAddress],
-                }) as string;
+                // Sign EIP-7702 authorization using eth_signTypedData_v4
+                const typedData = {
+                  types: {
+                    Authorization: [
+                      { name: 'chainId', type: 'uint256' },
+                      { name: 'codeAddress', type: 'address' },
+                      { name: 'nonce', type: 'uint256' },
+                    ],
+                  },
+                  primaryType: 'Authorization' as const,
+                  domain: {},
+                  message: {
+                    chainId: BigInt(userOp.eip7702Auth.chainId).toString(),
+                    codeAddress: userOp.eip7702Auth.address,
+                    nonce: BigInt(userOp.eip7702Auth.nonce).toString(),
+                  },
+                };
+                try {
+                  authSig = await walletClient.request({
+                    method: 'eth_signTypedData_v4',
+                    params: [walletAddress, JSON.stringify(typedData)],
+                  }) as string;
+                  addDebug(`7702 auth signed with typed data`);
+                } catch {
+                  addDebug(`Typed data failed, trying personal_sign`);
+                  // Fallback to personal_sign for embedded wallets
+                  const authMessage = `0x${Buffer.from(
+                    JSON.stringify({
+                      chainId: userOp.eip7702Auth.chainId,
+                      address: userOp.eip7702Auth.address,
+                      nonce: userOp.eip7702Auth.nonce,
+                    })
+                  ).toString('hex')}` as `0x${string}`;
+                  authSig = await walletClient.request({
+                    method: 'personal_sign',
+                    params: [authMessage, walletAddress] as [`0x${string}`, `0x${string}`],
+                  }) as string;
+                }
                 nonceMap.set(userOp.eip7702Auth.nonce, authSig);
-                addDebug(`7702 auth signed`);
               }
               authorizations.push({
                 userOpHash: userOp.userOpHash,
@@ -4605,7 +4637,7 @@ const App = () => {
     projectClientKey: process.env.NEXT_PUBLIC_CLIENT_KEY || "",
     projectAppUuid: process.env.NEXT_PUBLIC_APP_ID || "",
     smartAccountOptions: {
-      useEIP7702: false, // Smart Account mode - 7702 requires embedded wallets, not external wallets
+      useEIP7702: true, // 7702 mode: EOA = Universal Account - works with embedded wallets (social login)
       name: "UNIVERSAL",
       version: UNIVERSAL_ACCOUNT_VERSION,
       ownerAddress: address!,
