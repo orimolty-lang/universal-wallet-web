@@ -2947,21 +2947,29 @@ const HomeTab = ({
         </div>
       </div>
 
-      {/* Action Buttons - Buy, Receive, Send, Convert */}
-      <div className="flex justify-center gap-6 py-6">
-        {[
-          { icon: "💳", label: "Buy", action: onBuy },
-          { icon: "↓", label: "Receive", action: onReceive },
-          { icon: "↑", label: "Send", action: onSend },
-          { icon: "⇄", label: "Convert", action: onConvert },
-        ].map(({ icon, label, action }) => (
-          <button key={label} onClick={action} className="flex flex-col items-center gap-2">
-            <div className="w-14 h-14 rounded-full bg-accent-dynamic flex items-center justify-center text-black text-xl font-bold">
-              {icon}
+      {/* Action Pill Bar - Buy, Receive, Send, Convert */}
+      <div className="flex justify-center py-6 px-4">
+        <div className="flex bg-white/[0.08] backdrop-blur-xl rounded-full p-1.5 border border-white/10">
+          {[
+            { icon: "💳", label: "Buy", action: onBuy },
+            { icon: "↓", label: "Receive", action: onReceive },
+            { icon: "↑", label: "Send", action: onSend },
+            { icon: "⇄", label: "Convert", action: onConvert },
+          ].map(({ icon, label, action }, idx, arr) => (
+            <div key={label} className="flex items-center">
+              <button 
+                onClick={action} 
+                className="flex items-center gap-2 px-4 py-2.5 rounded-full text-white/70 hover:text-white hover:bg-accent-dynamic/80 active:scale-95 transition-all duration-200"
+              >
+                <span className="text-base">{icon}</span>
+                <span className="text-sm font-medium">{label}</span>
+              </button>
+              {idx < arr.length - 1 && (
+                <div className="w-px h-5 bg-white/15 mx-1" />
+              )}
             </div>
-            <span className="text-gray-400 text-xs">{label}</span>
-          </button>
-        ))}
+          ))}
+        </div>
       </div>
 
       {/* Token List with Chain Breakdown */}
