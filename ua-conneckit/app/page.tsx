@@ -4038,7 +4038,7 @@ const App = () => {
     projectClientKey: process.env.NEXT_PUBLIC_CLIENT_KEY || "",
     projectAppUuid: process.env.NEXT_PUBLIC_APP_ID || "",
     smartAccountOptions: {
-      useEIP7702: true, // 7702 mode - EOA becomes UA, no separate smart account
+      useEIP7702: false, // Smart Account mode - 7702 requires Particle Auth (not Connect)
       name: "UNIVERSAL",
       version: UNIVERSAL_ACCOUNT_VERSION,
       ownerAddress: address!,
