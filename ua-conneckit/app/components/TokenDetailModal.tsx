@@ -1,7 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
-import { createChart, ColorType, IChartApi, CandlestickData, Time, CandlestickSeries } from "lightweight-charts";
+import { useState, useRef } from "react";
 
 // Types
 interface TokenContract {
@@ -39,9 +38,6 @@ interface TokenDetailModalProps {
   onSwap?: (token: TokenData) => void;
   onSend?: (token: TokenData) => void;
 }
-
-// Time interval options for chart
-type TimeInterval = "1M" | "5M" | "15M" | "1H" | "4H" | "12H";
 
 // Helper functions
 const formatPrice = (price: number): string => {
@@ -106,172 +102,132 @@ const ChainBadge = ({ blockchain }: { blockchain: string }) => {
   );
 };
 
-// Candlestick Chart Component
-const CandlestickChart = ({ 
-  symbol, 
-  interval,
-  onIntervalChange 
+// Map blockchain names to DEXScreener/GeckoTerminal network slugs
+const NETWORK_SLUGS: Record<string, { dexscreener: string; geckoterminal: string }> = {
+  "ethereum": { dexscreener: "ethereum", geckoterminal: "eth" },
+  "base": { dexscreener: "base", geckoterminal: "base" },
+  "arbitrum": { dexscreener: "arbitrum", geckoterminal: "arbitrum" },
+  "optimism": { dexscreener: "optimism", geckoterminal: "optimism" },
+  "polygon": { dexscreener: "polygon", geckoterminal: "polygon_pos" },
+  "bsc": { dexscreener: "bsc", geckoterminal: "bsc" },
+  "bnb": { dexscreener: "bsc", geckoterminal: "bsc" },
+  "solana": { dexscreener: "solana", geckoterminal: "solana" },
+  "avalanche": { dexscreener: "avalanche", geckoterminal: "avax" },
+};
+
+// Embedded Chart Component using GeckoTerminal
+const EmbeddedChart = ({ 
+  tokenAddress,
+  blockchain,
+  coingeckoId,
 }: { 
-  symbol: string;
-  interval: TimeInterval;
-  onIntervalChange: (interval: TimeInterval) => void;
+  tokenAddress?: string;
+  blockchain?: string;
+  coingeckoId?: string;
 }) => {
-  const chartContainerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<IChartApi | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // Fetch OHLCV data from GeckoTerminal or similar
-  const fetchOHLCVData = useCallback(async (): Promise<CandlestickData<Time>[]> => {
-    // For now, generate mock data - replace with real API call
-    // GeckoTerminal API: GET /networks/{network}/pools/{address}/ohlcv/{timeframe}
-    const now = Math.floor(Date.now() / 1000);
-    const intervalSeconds: Record<TimeInterval, number> = {
-      "1M": 60,
-      "5M": 300,
-      "15M": 900,
-      "1H": 3600,
-      "4H": 14400,
-      "12H": 43200,
-    };
-    const seconds = intervalSeconds[interval];
-    const points = 100;
-    const data: CandlestickData<Time>[] = [];
-    
-    let basePrice = 1 + Math.random() * 0.5;
-    for (let i = points; i >= 0; i--) {
-      const time = (now - i * seconds) as Time;
-      const volatility = 0.02;
-      const change = (Math.random() - 0.5) * volatility;
-      const open = basePrice;
-      const close = basePrice * (1 + change);
-      const high = Math.max(open, close) * (1 + Math.random() * volatility * 0.5);
-      const low = Math.min(open, close) * (1 - Math.random() * volatility * 0.5);
-      
-      data.push({
-        time,
-        open,
-        high,
-        low,
-        close,
-      });
-      
-      basePrice = close;
-    }
-    
-    return data;
-  }, [interval]);
-
-  useEffect(() => {
-    if (!chartContainerRef.current) return;
-
-    setLoading(true);
-    setError(null);
-
-    // Create chart
-    const chart = createChart(chartContainerRef.current, {
-      layout: {
-        background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "#6B7280",
-      },
-      grid: {
-        vertLines: { color: "rgba(107, 114, 128, 0.1)" },
-        horzLines: { color: "rgba(107, 114, 128, 0.1)" },
-      },
-      width: chartContainerRef.current.clientWidth,
-      height: 200,
-      rightPriceScale: {
-        borderVisible: false,
-        scaleMargins: { top: 0.1, bottom: 0.1 },
-      },
-      timeScale: {
-        borderVisible: false,
-        timeVisible: true,
-        secondsVisible: false,
-      },
-      crosshair: {
-        horzLine: { visible: false, labelVisible: false },
-        vertLine: { labelVisible: false },
-      },
-    });
-
-    chartRef.current = chart;
-
-    const candlestickSeries = chart.addSeries(CandlestickSeries, {
-      upColor: "#22c55e",
-      downColor: "#ef4444",
-      borderUpColor: "#22c55e",
-      borderDownColor: "#ef4444",
-      wickUpColor: "#22c55e",
-      wickDownColor: "#ef4444",
-    });
-
-    // Fetch and set data
-    fetchOHLCVData()
-      .then((data) => {
-        candlestickSeries.setData(data);
-        chart.timeScale().fitContent();
-        setLoading(false);
-      })
-      .catch((err) => {
-        setError(err.message);
-        setLoading(false);
-      });
-
-    // Handle resize
-    const handleResize = () => {
-      if (chartContainerRef.current) {
-        chart.applyOptions({ width: chartContainerRef.current.clientWidth });
-      }
-    };
-
-    window.addEventListener("resize", handleResize);
-
-    return () => {
-      window.removeEventListener("resize", handleResize);
-      chart.remove();
-    };
-  }, [symbol, interval, fetchOHLCVData]);
-
-  const intervals: TimeInterval[] = ["1M", "5M", "15M", "1H", "4H", "12H"];
+  const [chartSource, setChartSource] = useState<'geckoterminal' | 'coingecko'>('geckoterminal');
+  
+  // Get network slug for the chart provider
+  const networkSlug = blockchain ? NETWORK_SLUGS[blockchain.toLowerCase()] : null;
+  
+  // Build chart URL
+  let chartUrl = '';
+  if (chartSource === 'geckoterminal' && tokenAddress && networkSlug) {
+    // GeckoTerminal embed - token page (will show main pool)
+    chartUrl = `https://www.geckoterminal.com/${networkSlug.geckoterminal}/tokens/${tokenAddress}?embed=1&info=0&swaps=0`;
+  } else if (coingeckoId) {
+    // Fallback to CoinGecko widget
+    chartUrl = `https://www.coingecko.com/coins/${coingeckoId}/sparkline.svg`;
+  }
+  
+  if (!chartUrl && !tokenAddress) {
+    return (
+      <div className="mt-4 h-[280px] bg-[#0a0a12] rounded-xl flex items-center justify-center">
+        <span className="text-gray-500 text-sm">No chart available</span>
+      </div>
+    );
+  }
 
   return (
     <div className="mt-4">
-      {/* Chart Container */}
-      <div className="relative">
-        {loading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-[#0a0a0a]/50 z-10">
-            <div className="text-gray-500 text-sm">Loading chart...</div>
-          </div>
-        )}
-        {error && (
-          <div className="absolute inset-0 flex items-center justify-center bg-[#0a0a0a]/50 z-10">
-            <div className="text-red-500 text-sm">{error}</div>
-          </div>
-        )}
-        <div ref={chartContainerRef} className="w-full h-[200px]" />
-      </div>
-
-      {/* Time Interval Selector */}
-      <div className="flex items-center justify-center gap-2 mt-3">
-        {intervals.map((int) => (
+      {/* Chart Source Toggle */}
+      <div className="flex items-center justify-end gap-2 mb-2">
+        <button
+          onClick={() => setChartSource('geckoterminal')}
+          className={`px-2 py-1 rounded text-xs transition-colors ${
+            chartSource === 'geckoterminal' 
+              ? 'bg-green-500/20 text-green-400' 
+              : 'text-gray-500 hover:text-gray-300'
+          }`}
+        >
+          GeckoTerminal
+        </button>
+        {coingeckoId && (
           <button
-            key={int}
-            onClick={() => onIntervalChange(int)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              interval === int
-                ? "bg-[#1a3a5c] text-cyan-400"
-                : "text-gray-500 hover:text-gray-300"
+            onClick={() => setChartSource('coingecko')}
+            className={`px-2 py-1 rounded text-xs transition-colors ${
+              chartSource === 'coingecko' 
+                ? 'bg-orange-500/20 text-orange-400' 
+                : 'text-gray-500 hover:text-gray-300'
             }`}
           >
-            {int}
+            CoinGecko
           </button>
-        ))}
-        {/* Candlestick icon */}
-        <button className="w-8 h-8 rounded-lg bg-[#1a3a5c] flex items-center justify-center ml-2">
-          <span className="text-xs">📊</span>
-        </button>
+        )}
       </div>
+      
+      {/* Chart Container */}
+      <div className="relative rounded-xl overflow-hidden bg-[#0a0a12]" style={{ height: '280px' }}>
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-[#0a0a12] z-10">
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+              <span className="text-gray-500 text-sm">Loading chart...</span>
+            </div>
+          </div>
+        )}
+        
+        {chartSource === 'geckoterminal' && tokenAddress && networkSlug ? (
+          <iframe
+            src={`https://www.geckoterminal.com/${networkSlug.geckoterminal}/tokens/${tokenAddress}?embed=1&info=0&swaps=0`}
+            title="Token Chart"
+            className="w-full h-full border-0"
+            style={{ 
+              colorScheme: 'dark',
+              background: '#0a0a12',
+            }}
+            onLoad={() => setLoading(false)}
+            allow="clipboard-write"
+            sandbox="allow-scripts allow-same-origin allow-popups"
+          />
+        ) : coingeckoId ? (
+          <iframe
+            src={`https://www.coingecko.com/coins/${coingeckoId}/sparkline.svg`}
+            title="Price Chart"
+            className="w-full h-full border-0"
+            onLoad={() => setLoading(false)}
+          />
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <span className="text-gray-500 text-sm">Chart not available for this token</span>
+          </div>
+        )}
+      </div>
+      
+      {/* Open full chart link */}
+      {tokenAddress && networkSlug && (
+        <div className="flex justify-center mt-2">
+          <a
+            href={`https://www.geckoterminal.com/${networkSlug.geckoterminal}/tokens/${tokenAddress}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
+          >
+            Open full chart ↗
+          </a>
+        </div>
+      )}
     </div>
   );
 };
@@ -321,7 +277,6 @@ export const TokenDetailModal = ({
   onSwap,
   onSend,
 }: TokenDetailModalProps) => {
-  const [chartInterval, setChartInterval] = useState<TimeInterval>("1H");
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
   const startYRef = useRef<number | null>(null);
@@ -448,15 +403,15 @@ export const TokenDetailModal = ({
               {Math.abs(priceChange).toFixed(2)}%
             </span>
             <span className="text-gray-500 text-sm bg-gray-800 px-2 py-0.5 rounded">
-              {chartInterval}
+              24h
             </span>
           </div>
 
-          {/* Candlestick Chart */}
-          <CandlestickChart
-            symbol={token.symbol}
-            interval={chartInterval}
-            onIntervalChange={setChartInterval}
+          {/* Embedded Real-time Chart */}
+          <EmbeddedChart
+            tokenAddress={primaryContract?.address}
+            blockchain={primaryContract?.blockchain}
+            coingeckoId={token.id}
           />
 
           {/* User Balance Card */}
