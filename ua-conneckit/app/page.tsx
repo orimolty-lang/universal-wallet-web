@@ -2207,29 +2207,34 @@ const PerpsModal = ({
         addDebug(`Execution fee hex (toBeHex): ${valueHex}`);
         addDebug(`Execution fee ETH: ${executionFeeEth}`);
         
-        // DEBUG: Try approval only first to isolate the issue
-        // Set to true to test if approval alone works through UA
-        const APPROVAL_ONLY_DEBUG = true;
+        // DEBUG: Test openTrade ONLY (approval already done)
+        const TRADE_ONLY_DEBUG = true;
         
-        if (APPROVAL_ONLY_DEBUG) {
-          // Test: just approval, no trade
+        if (TRADE_ONLY_DEBUG) {
+          // Test: just openTrade, no approval (since it's already approved)
+          addDebug('DEBUG: Testing openTrade only (approval already done)');
           tx = await universalAccount.createUniversalTransaction({
             chainId: CHAIN_ID.BASE_MAINNET,
             expectTokens: [
+              {
+                type: SUPPORTED_TOKEN_TYPE.ETH,
+                amount: executionFeeEth,
+              },
               {
                 type: SUPPORTED_TOKEN_TYPE.USDC,
                 amount: collateralAmount.toString(),
               },
             ],
             transactions: [
+              // Just openTrade with execution fee
               {
-                to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as `0x${string}`,
-                data: approveCalldata as `0x${string}`,
-                value: '0x0',
+                to: AVANTIS_TRADING_ADDRESS as `0x${string}`,
+                data: openTradeCalldata as `0x${string}`,
+                value: valueHex,
               },
             ],
           });
-          addDebug('DEBUG: Approval-only tx created');
+          addDebug('DEBUG: Trade-only tx created');
         } else {
           // Full flow: approval + trade
           tx = await universalAccount.createUniversalTransaction({
