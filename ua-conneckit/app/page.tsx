@@ -1848,9 +1848,6 @@ const PerpsModal = ({
   universalAccount: UniversalAccount | null;
 }) => {
   const [primaryWallet] = useWallets();
-  // Detect if user is using social login (particleAuth) for 7702 mode
-  const isParticleAuth = primaryWallet?.connector?.walletConnectorType === 'particleAuth';
-  
   const [view, setView] = useState<'markets' | 'trade'>('markets');
   const [selectedMarket, setSelectedMarket] = useState(PERPS_MARKETS[0]);
   const [selectedPair, setSelectedPair] = useState(AVANTIS_PAIRS[0]);
@@ -2249,35 +2246,15 @@ const PerpsModal = ({
         setLoadingStatus('Waiting for signature...');
         
         const walletClient = primaryWallet.getWalletClient();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const txAny = tx as any;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const walletClientAny = walletClient as any;
         
-        // Handle EIP-7702 authorization if in 7702 mode
-        if (txAny.userOps && isParticleAuth) {
-          addDebug(`Processing ${txAny.userOps.length} userOps (7702 mode)...`);
-          for (const userOp of txAny.userOps) {
-            if (userOp.eip7702Auth && !userOp.eip7702Delegated) {
-              addDebug(`7702 auth needed for chain ${userOp.eip7702Auth.chainId}`);
-              try {
-                if (typeof walletClientAny.signAuthorization === 'function') {
-                  const authSig = await walletClientAny.signAuthorization(userOp.eip7702Auth);
-                  userOp.eip7702AuthSignature = authSig;
-                  addDebug('7702 auth signed');
-                }
-              } catch (authErr) {
-                addDebug(`7702 auth error: ${authErr}`);
-              }
-            }
-          }
-        }
+        // Note: 7702 auth handling removed - we're using Smart Account mode
+        // If 7702 mode is needed, switch useEIP7702: true and use Particle Auth (not Connect)
         
         // Sign the root hash using personal_sign
         const signature = await walletClient.request({
           method: 'personal_sign',
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          params: [txAny.rootHash as `0x${string}`, walletClient.account?.address as `0x${string}`],
+          params: [(tx as any).rootHash as `0x${string}`, walletClient.account?.address as `0x${string}`],
         });
 
         // Step 3: Send transaction
@@ -4489,15 +4466,10 @@ const BottomNav = ({
 
 // Main App
 const App = () => {
-  const [primaryWallet] = useWallets();
+  useWallets();
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
   const { openAccountAndSecurity, openSetMasterPassword } = useParticleAuth();
-  
-  // Detect if user is using social login (particleAuth) vs external wallet (evmWallet)
-  // 7702 mode only works with social login (Particle Auth embedded wallets)
-  const isParticleAuth = primaryWallet?.connector?.walletConnectorType === 'particleAuth';
-  const useEIP7702Mode = isParticleAuth; // Enable 7702 for social login users
   
   const [showSplash, setShowSplash] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>("home");
@@ -4553,18 +4525,16 @@ const App = () => {
     projectClientKey: process.env.NEXT_PUBLIC_CLIENT_KEY || "",
     projectAppUuid: process.env.NEXT_PUBLIC_APP_ID || "",
     smartAccountOptions: {
-      // Enable 7702 mode for social login users (particleAuth)
-      // External wallets (MetaMask, etc.) use Smart Account mode
-      useEIP7702: useEIP7702Mode,
+      useEIP7702: false, // Smart Account mode - 7702 requires Particle Auth (not Connect)
       name: "UNIVERSAL",
       version: UNIVERSAL_ACCOUNT_VERSION,
       ownerAddress: address!,
     },
-  }), [address, useEIP7702Mode]);
+  }), [address]);
 
   useEffect(() => {
     if (isConnected && address) {
-      console.log("[UA] Creating UA instance for:", address, "| 7702 mode:", useEIP7702Mode, "| Connector:", primaryWallet?.connector?.walletConnectorType);
+      console.log("[UA] Creating UA instance for:", address);
       const ua = new UniversalAccount(universalAccountConfig);
       setUniversalAccountInstance(ua);
     } else {
