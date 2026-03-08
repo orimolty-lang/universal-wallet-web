@@ -2208,7 +2208,8 @@ const PerpsModal = ({
         addDebug(`Execution fee ETH: ${executionFeeEth}`);
         
         // DEBUG: Try approval only first to isolate the issue
-        const APPROVAL_ONLY_DEBUG = false;
+        // Set to true to test if approval alone works through UA
+        const APPROVAL_ONLY_DEBUG = true;
         
         if (APPROVAL_ONLY_DEBUG) {
           // Test: just approval, no trade
