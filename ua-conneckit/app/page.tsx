@@ -20,7 +20,7 @@ import DepositDialog from "./components/DepositDialog";
 import AssetBreakdownDialog from "./components/AssetBreakdownDialog";
 import TokenDetailModal from "./components/TokenDetailModal";
 import SwapModal from "./components/SwapModal";
-import { encodeFunctionData, toHex } from "viem";
+import { encodeFunctionData } from "viem";
 
 // Mobula API for token search
 const MOBULA_API_KEY = "a8e6a174-9dfd-4929-b0e0-9f6ece767923";
@@ -2199,9 +2199,9 @@ const PerpsModal = ({
         const executionFeeEth = (Number(executionFee) / 1e18).toFixed(8);
         addDebug(`Execution fee: ${executionFeeEth} ETH`);
         
-        // Match Particle docs format exactly - use CHAIN_ID enum, toHex for value
+        // Option A: Match Polymarket pattern - no value field, let UA handle ETH via expectTokens
         tx = await universalAccount.createUniversalTransaction({
-          chainId: CHAIN_ID.BASE_MAINNET, // Use SDK constant
+          chainId: CHAIN_ID.BASE_MAINNET,
           expectTokens: [
             {
               type: SUPPORTED_TOKEN_TYPE.ETH,
@@ -2213,17 +2213,15 @@ const PerpsModal = ({
             },
           ],
           transactions: [
-            // 1. Approve USDC to Avantis (value: 0 for non-payable)
+            // 1. Approve USDC to Avantis
             {
-              to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as `0x${string}`, // USDC
+              to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as `0x${string}`, // USDC on Base
               data: approveCalldata as `0x${string}`,
-              value: toHex(BigInt(0)),
             },
-            // 2. openTrade with execution fee (use toHex as docs show)
+            // 2. openTrade - no value field, UA should route ETH from expectTokens
             {
               to: AVANTIS_TRADING_ADDRESS as `0x${string}`,
               data: openTradeCalldata as `0x${string}`,
-              value: toHex(executionFee),
             },
           ],
         });
