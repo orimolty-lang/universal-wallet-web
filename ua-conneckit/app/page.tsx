@@ -2021,7 +2021,15 @@ const PerpsModal = ({
       const tpPrice = takeProfit ? parseFloat(takeProfit) : 0;
       const slPrice = stopLoss ? parseFloat(stopLoss) : 0;
       
-      addDebug(`Collateral: $${collateralAmount}, Leverage: ${leverage}x`);
+      // Minimum position size validation ($100 for most pairs)
+      const positionValue = collateralAmount * leverage;
+      if (positionValue < 100) {
+        setError(`Position too small. Minimum is $100. You have $${positionValue.toFixed(0)} ($${collateralAmount} × ${leverage}x). Increase collateral or leverage.`);
+        setIsLoading(false);
+        return;
+      }
+      
+      addDebug(`Collateral: $${collateralAmount}, Leverage: ${leverage}x, Position: $${positionValue}`);
       addDebug(`Pair: ${selectedPair.name}, Direction: ${isLong ? 'LONG' : 'SHORT'}`);
       
       console.log('[Perps] Opening position:', {
