@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>FAB Actions Mockup</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(180deg, #1a1a2e 0%, #0f0f1a 100%);
+      min-height: 100vh;
+      color: white;
+      overflow-x: hidden;
+    }
+    
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 20px;
+    }
+    
+    .profile {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #f97316, #ea580c);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+    
+    .header-icons {
+      display: flex;
+      gap: 16px;
+    }
+    
+    .header-icons svg {
+      width: 24px;
+      height: 24px;
+      color: rgba(255,255,255,0.7);
+    }
+    
+    /* Balance Section */
+    .balance-section {
+      text-align: center;
+      padding: 20px;
+      position: relative;
+    }
+    
+    .balance-label {
+      font-size: 14px;
+      color: rgba(255,255,255,0.5);
+      margin-bottom: 8px;
+    }
+    
+    .balance-amount {
+      font-size: 52px;
+      font-weight: 700;
+      letter-spacing: -2px;
+      margin-bottom: 8px;
+    }
+    
+    .balance-change {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+      color: #4ade80;
+      background: rgba(74, 222, 128, 0.1);
+      padding: 6px 12px;
+      border-radius: 20px;
+    }
+    
+    /* FAB Container - Positioned below balance */
+    .fab-section {
+      display: flex;
+      justify-content: center;
+      padding: 24px 0;
+      position: relative;
+      height: 80px;
+    }
+    
+    .fab-trigger {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 20px rgba(249, 115, 22, 0.4);
+      transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+      z-index: 10;
+      position: relative;
+    }
+    
+    .fab-trigger:hover {
+      transform: scale(1.05);
+    }
+    
+    .fab-trigger.expanded {
+      transform: rotate(45deg) scale(1.1);
+      box-shadow: 0 6px 30px rgba(249, 115, 22, 0.6);
+    }
+    
+    .fab-trigger svg {
+      width: 28px;
+      height: 28px;
+      color: white;
+    }
+    
+    /* Expanded Actions - Horizontal Layout */
+    .fab-actions {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      display: flex;
+      gap: 20px;
+      pointer-events: none;
+      z-index: 5;
+    }
+    
+    .fab-action {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      opacity: 0;
+      transform: scale(0.5);
+      transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+      cursor: pointer;
+      pointer-events: none;
+    }
+    
+    .fab-action-icon {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.12);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+    
+    .fab-action-icon svg {
+      width: 22px;
+      height: 22px;
+      color: white;
+    }
+    
+    .fab-action span {
+      font-size: 11px;
+      color: rgba(255,255,255,0.8);
+      font-weight: 500;
+    }
+    
+    .fab-action:hover .fab-action-icon {
+      background: rgba(249, 115, 22, 0.3);
+      border-color: #f97316;
+      transform: scale(1.1);
+    }
+    
+    /* Expanded state */
+    .fab-section.expanded .fab-action {
+      opacity: 1;
+      transform: scale(1);
+      pointer-events: auto;
+    }
+    
+    .fab-section.expanded .fab-action:nth-child(1) {
+      transform: translateX(-130px);
+      transition-delay: 0.05s;
+    }
+    
+    .fab-section.expanded .fab-action:nth-child(2) {
+      transform: translateX(-45px);
+      transition-delay: 0.1s;
+    }
+    
+    .fab-section.expanded .fab-action:nth-child(3) {
+      transform: translateX(45px);
+      transition-delay: 0.15s;
+    }
+    
+    .fab-section.expanded .fab-action:nth-child(4) {
+      transform: translateX(130px);
+      transition-delay: 0.2s;
+    }
+    
+    /* Collapsed state hint */
+    .fab-hint {
+      position: absolute;
+      bottom: -8px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 11px;
+      color: rgba(255,255,255,0.4);
+      white-space: nowrap;
+      transition: opacity 0.3s;
+    }
+    
+    .fab-section.expanded .fab-hint {
+      opacity: 0;
+    }
+    
+    /* Token List */
+    .tokens-section {
+      padding: 0 20px 100px;
+    }
+    
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    
+    .section-title {
+      font-size: 18px;
+      font-weight: 600;
+    }
+    
+    .section-link {
+      font-size: 14px;
+      color: #f97316;
+    }
+    
+    .token-item {
+      display: flex;
+      align-items: center;
+      padding: 16px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 16px;
+      margin-bottom: 12px;
+    }
+    
+    .token-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #627EEA, #3b5998);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-right: 14px;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    
+    .token-icon.btc { background: linear-gradient(135deg, #F7931A, #c77800); }
+    .token-icon.sol { background: linear-gradient(135deg, #9945FF, #14F195); }
+    .token-icon.usdc { background: linear-gradient(135deg, #2775CA, #1a5490); }
+    
+    .token-info {
+      flex: 1;
+    }
+    
+    .token-name {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    
+    .token-balance {
+      font-size: 13px;
+      color: rgba(255,255,255,0.5);
+    }
+    
+    .token-value {
+      text-align: right;
+    }
+    
+    .token-usd {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    
+    .token-change {
+      font-size: 13px;
+      color: #4ade80;
+    }
+    
+    .token-change.negative { color: #f87171; }
+    
+    /* Overlay */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+      z-index: 4;
+    }
+    
+    .overlay.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    
+    /* Toast */
+    .toast {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.9);
+      background: rgba(255,255,255,0.15);
+      backdrop-filter: blur(20px);
+      padding: 20px 40px;
+      border-radius: 16px;
+      font-size: 18px;
+      font-weight: 600;
+      opacity: 0;
+      transition: all 0.3s;
+      pointer-events: none;
+      z-index: 100;
+    }
+    
+    .toast.show {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="profile">🍊</div>
+    <div class="header-icons">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+      </svg>
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+      </svg>
+    </div>
+  </div>
+  
+  <div class="balance-section">
+    <div class="balance-label">Total Balance</div>
+    <div class="balance-amount">$2,847</div>
+    <div class="balance-change">
+      <svg width="12" height="12" fill="currentColor" viewBox="0 0 20 20">
+        <path fill-rule="evenodd" d="M12 7a1 1 0 011-1h5a1 1 0 011 1v5a1 1 0 11-2 0V9.414l-4.293 4.293a1 1 0 01-1.414 0L8 10.414l-4.293 4.293a1 1 0 01-1.414-1.414l5-5a1 1 0 011.414 0L12 11.586 15.586 8H13a1 1 0 01-1-1z" clip-rule="evenodd"/>
+      </svg>
+      +4.6% today
+    </div>
+  </div>
+  
+  <!-- FAB Section replaces the 4 circle buttons -->
+  <div class="fab-section" id="fabSection">
+    <div class="fab-actions">
+      <div class="fab-action" data-action="Send">
+        <div class="fab-action-icon">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+          </svg>
+        </div>
+        <span>Send</span>
+      </div>
+      <div class="fab-action" data-action="Receive">
+        <div class="fab-action-icon">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+          </svg>
+        </div>
+        <span>Receive</span>
+      </div>
+      <div class="fab-action" data-action="Swap">
+        <div class="fab-action-icon">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+          </svg>
+        </div>
+        <span>Swap</span>
+      </div>
+      <div class="fab-action" data-action="Buy">
+        <div class="fab-action-icon">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+        </div>
+        <span>Buy</span>
+      </div>
+    </div>
+    
+    <button class="fab-trigger" id="fabTrigger">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+      </svg>
+    </button>
+    <div class="fab-hint">Tap to expand actions</div>
+  </div>
+  
+  <div class="tokens-section">
+    <div class="section-header">
+      <span class="section-title">Tokens</span>
+      <span class="section-link">See all</span>
+    </div>
+    
+    <div class="token-item">
+      <div class="token-icon">ETH</div>
+      <div class="token-info">
+        <div class="token-name">Ethereum</div>
+        <div class="token-balance">0.82 ETH</div>
+      </div>
+      <div class="token-value">
+        <div class="token-usd">$1,892.40</div>
+        <div class="token-change">+3.2%</div>
+      </div>
+    </div>
+    
+    <div class="token-item">
+      <div class="token-icon btc">BTC</div>
+      <div class="token-info">
+        <div class="token-name">Bitcoin</div>
+        <div class="token-balance">0.012 BTC</div>
+      </div>
+      <div class="token-value">
+        <div class="token-usd">$724.80</div>
+        <div class="token-change">+1.8%</div>
+      </div>
+    </div>
+    
+    <div class="token-item">
+      <div class="token-icon usdc">USDC</div>
+      <div class="token-info">
+        <div class="token-name">USD Coin</div>
+        <div class="token-balance">230.12 USDC</div>
+      </div>
+      <div class="token-value">
+        <div class="token-usd">$230.12</div>
+        <div class="token-change">0.0%</div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="overlay" id="overlay"></div>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const fabSection = document.getElementById('fabSection');
+    const fabTrigger = document.getElementById('fabTrigger');
+    const overlay = document.getElementById('overlay');
+    const toast = document.getElementById('toast');
+    const fabActions = document.querySelectorAll('.fab-action');
+    
+    let isExpanded = false;
+    
+    function toggleMenu() {
+      isExpanded = !isExpanded;
+      fabSection.classList.toggle('expanded', isExpanded);
+      fabTrigger.classList.toggle('expanded', isExpanded);
+      overlay.classList.toggle('visible', isExpanded);
+    }
+    
+    function showToast(action) {
+      toast.textContent = `${action} tapped!`;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 1500);
+    }
+    
+    fabTrigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleMenu();
+    });
+    
+    overlay.addEventListener('click', () => {
+      if (isExpanded) toggleMenu();
+    });
+    
+    fabActions.forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const action = item.dataset.action;
+        showToast(action);
+        toggleMenu();
+      });
+    });
+    
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && isExpanded) toggleMenu();
+    });
+  </script>
+</body>
+</html>
