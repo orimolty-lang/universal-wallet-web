@@ -2199,7 +2199,10 @@ const PerpsModal = ({
         const executionFeeEth = (Number(executionFee) / 1e18).toFixed(8);
         addDebug(`Execution fee: ${executionFeeEth} ETH`);
         
-        // Option A: Match Polymarket pattern - no value field, let UA handle ETH via expectTokens
+        // Try value as string (wei amount) instead of hex
+        const executionFeeWei = executionFee.toString();
+        addDebug(`Execution fee (wei string): ${executionFeeWei}`);
+        
         tx = await universalAccount.createUniversalTransaction({
           chainId: CHAIN_ID.BASE_MAINNET,
           expectTokens: [
@@ -2215,13 +2218,14 @@ const PerpsModal = ({
           transactions: [
             // 1. Approve USDC to Avantis
             {
-              to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as `0x${string}`, // USDC on Base
+              to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as `0x${string}`,
               data: approveCalldata as `0x${string}`,
             },
-            // 2. openTrade - no value field, UA should route ETH from expectTokens
+            // 2. openTrade with value as string (wei)
             {
               to: AVANTIS_TRADING_ADDRESS as `0x${string}`,
               data: openTradeCalldata as `0x${string}`,
+              value: executionFeeWei,
             },
           ],
         });
