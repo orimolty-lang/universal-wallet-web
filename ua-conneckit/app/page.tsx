@@ -21,6 +21,7 @@ import AssetBreakdownDialog from "./components/AssetBreakdownDialog";
 import TokenDetailModal from "./components/TokenDetailModal";
 import SwapModal from "./components/SwapModal";
 import { encodeFunctionData } from "viem";
+import { toBeHex } from "ethers";
 
 // Mobula API for token search
 const MOBULA_API_KEY = "a8e6a174-9dfd-4929-b0e0-9f6ece767923";
@@ -2199,9 +2200,11 @@ const PerpsModal = ({
         const executionFeeEth = (Number(executionFee) / 1e18).toFixed(8);
         addDebug(`Execution fee: ${executionFeeEth} ETH`);
         
-        // Try value as string (wei amount) instead of hex
-        const executionFeeWei = executionFee.toString();
-        addDebug(`Execution fee (wei string): ${executionFeeWei}`);
+        // Match official Particle example EXACTLY: toBeHex for value
+        // See: custom-transaction-evm-with-money.ts
+        const valueHex = toBeHex(executionFee);
+        addDebug(`Execution fee hex (toBeHex): ${valueHex}`);
+        addDebug(`Execution fee ETH: ${executionFeeEth}`);
         
         tx = await universalAccount.createUniversalTransaction({
           chainId: CHAIN_ID.BASE_MAINNET,
@@ -2216,16 +2219,17 @@ const PerpsModal = ({
             },
           ],
           transactions: [
-            // 1. Approve USDC to Avantis
+            // 1. Approve USDC to Avantis (non-payable, value = 0x0)
             {
               to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as `0x${string}`,
               data: approveCalldata as `0x${string}`,
+              value: '0x0',
             },
-            // 2. openTrade with value as string (wei)
+            // 2. openTrade with execution fee (payable, value = hex wei)
             {
               to: AVANTIS_TRADING_ADDRESS as `0x${string}`,
               data: openTradeCalldata as `0x${string}`,
-              value: executionFeeWei,
+              value: valueHex,
             },
           ],
         });
