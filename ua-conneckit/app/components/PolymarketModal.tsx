@@ -7,34 +7,76 @@ import { CHAIN_ID, SUPPORTED_TOKEN_TYPE } from "@particle-network/universal-acco
 import { Contract, JsonRpcProvider } from "ethers";
 import { useWallets, useAccount } from "@particle-network/connectkit";
 import { ClobClient, OrderType, Side, SignatureType } from "@polymarket/clob-client";
+import { BuilderConfig } from "@polymarket/builder-signing-sdk";
+import { RelayClient, RelayerTxType } from "@polymarket/builder-relayer-client";
 import type { WalletClient } from "viem";
-import { keccak256, getCreate2Address, encodePacked } from "viem";
 import { getLifiSwapQuote } from "../lib/swapService";
 
 const RELAYER_URL = "https://relayer-v2.polymarket.com";
+const BUILDER_SIGN_URL = "https://polymarket-builder-worker-ori.orimolty.workers.dev/builder/sign";
 const POLYGON_RPC_URL = "https://polygon-bor-rpc.publicnode.com";
 
-// Polygon proxy contract config
-const PROXY_FACTORY = "0xaB45c5A4B0c941a2F231C04C3f49182e1A254052";
-const PROXY_INIT_CODE_HASH = "0xd21df8dc65880a8606f09fe0ce3df9b8869287ab0b058be05aa9e8af6330a00b" as `0x${string}`;
 
-// Check if proxy wallet is deployed
-async function checkProxyDeployed(address: string): Promise<boolean> {
-  const resp = await fetch(`${RELAYER_URL}/deployed?address=${address}`);
-  if (!resp.ok) return false;
-  const data = await resp.json();
-  return data.deployed === true;
-}
+/* eslint-disable @typescript-eslint/no-explicit-any */
+class PolygonSignerWrapper {
+  private walletClient: any;
+  private userAddress: string;
+  public chain: { id: number; name: string; network: string; rpcUrls: { default: { http: string[] } } };
+  public transport: {
+    config: { key: string; name: string; retryCount: number; retryDelay: number; timeout: number; type: string };
+    name: string;
+    request: (args: { method: string; params?: any[] }) => Promise<any>;
+    type: string;
+    value: { url: string };
+  };
+  public account: { address: `0x${string}`; type: string };
 
-// Derive proxy wallet address from owner EOA (CREATE2)
-function deriveProxyWallet(ownerAddress: string): `0x${string}` {
-  const salt = keccak256(encodePacked(["address"], [ownerAddress as `0x${string}`]));
-  return getCreate2Address({
-    bytecodeHash: PROXY_INIT_CODE_HASH,
-    from: PROXY_FACTORY as `0x${string}`,
-    salt,
-  });
+  constructor(walletClient: any, address: string) {
+    this.walletClient = walletClient;
+    this.userAddress = address;
+    this.chain = {
+      id: 137,
+      name: "Polygon",
+      network: "matic",
+      rpcUrls: { default: { http: [POLYGON_RPC_URL] } },
+    };
+    this.transport = {
+      config: { key: "http", name: "HTTP JSON-RPC", retryCount: 3, retryDelay: 150, timeout: 10000, type: "http" },
+      name: "HTTP JSON-RPC",
+      request: async (args: { method: string; params?: any[] }) => {
+        const response = await fetch(POLYGON_RPC_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method: args.method, params: args.params || [] }),
+        });
+        const json = await response.json();
+        if (json.error) throw new Error(json.error.message);
+        return json.result;
+      },
+      type: "http",
+      value: { url: POLYGON_RPC_URL },
+    };
+    this.account = { address: address as `0x${string}`, type: "json-rpc" };
+  }
+
+  async signMessage({ message }: { message: string | { raw: any } }): Promise<string> {
+    if (typeof message === "object" && "raw" in message) {
+      return this.walletClient.signMessage({ account: this.userAddress as `0x${string}`, message: { raw: message.raw } });
+    }
+    return this.walletClient.signMessage({ account: this.userAddress as `0x${string}`, message: message as string });
+  }
+
+  async signTypedData({ domain, types, primaryType, message }: any): Promise<string> {
+    return this.walletClient.signTypedData({
+      account: this.userAddress as `0x${string}`,
+      domain: { ...domain, chainId: 137 },
+      types,
+      primaryType,
+      message,
+    });
+  }
 }
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 // Polymarket API endpoints
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -315,39 +357,49 @@ export default function PolymarketModal({
 
   // Initialize proxy wallet - derive address locally (auto-deploys on first tx)
   const initializeProxy = async () => {
-    if (!address) {
+    if (!address || !primaryWallet) {
       setDebugInfo(prev => ({ ...prev, polyError: "Wallet not connected", walletAddress: "none" }));
       throw new Error("Wallet not connected");
     }
-    
+
     if (isProxyReady && proxyWalletAddress) {
-      setDebugInfo(prev => ({ ...prev, proxyStatus: `Proxy: ${proxyWalletAddress.slice(0, 10)}...` }));
+      setDebugInfo(prev => ({ ...prev, proxyStatus: `Safe: ${proxyWalletAddress.slice(0, 10)}...` }));
       return proxyWalletAddress;
     }
 
-    setDebugInfo(prev => ({ ...prev, proxyStatus: "Deriving proxy address...", walletAddress: address }));
-    
+    setDebugInfo(prev => ({ ...prev, proxyStatus: "phase=safe_deploy", walletAddress: address }));
+
     try {
-      // Derive proxy wallet address from owner EOA
-      const proxyAddr = deriveProxyWallet(address);
-      
-      // Check if it's already deployed
-      const deployed = await checkProxyDeployed(address);
-      
-      setProxyWalletAddress(proxyAddr);
+      const walletClient = primaryWallet.getWalletClient();
+      if (!walletClient) throw new Error("No wallet client");
+
+      const builderConfig = new BuilderConfig({
+        remoteBuilderConfig: { url: BUILDER_SIGN_URL },
+      });
+
+      // RelayClient expects a viem-like signer object; wrap Particle client accordingly.
+      const polygonSigner = new PolygonSignerWrapper(walletClient, address);
+      const relay = new RelayClient(
+        RELAYER_URL,
+        137,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        polygonSigner as any,
+        builderConfig,
+        RelayerTxType.SAFE,
+      );
+
+      const response = await relay.deploy();
+      const result = await response.wait();
+      const safeAddr = result?.proxyAddress;
+      if (!safeAddr) throw new Error("Safe deploy returned no address");
+
+      setProxyWalletAddress(safeAddr);
       setIsProxyReady(true);
-      
-      const status = deployed 
-        ? `Proxy (deployed): ${proxyAddr.slice(0, 10)}...`
-        : `Proxy (pending): ${proxyAddr.slice(0, 10)}... (auto-deploys on first tx)`;
-      
-      setDebugInfo(prev => ({ ...prev, proxyStatus: status }));
-      console.log("[Polymarket] Proxy address:", proxyAddr, "deployed:", deployed);
-      
-      return proxyAddr;
+      setDebugInfo(prev => ({ ...prev, proxyStatus: `phase=safe_deploy done ${safeAddr.slice(0, 10)}...` }));
+      return safeAddr;
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
-      console.error("[Polymarket] Proxy init failed:", e);
+      console.error("[Polymarket] Safe init failed:", e);
       setDebugInfo(prev => ({ ...prev, polyError: errMsg, proxyStatus: "Init failed" }));
       throw e;
     }
