@@ -1,10 +1,9 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { IAssetsResponse, UniversalAccount, EIP7702Authorization } from "@particle-network/universal-account-sdk";
+import type { IAssetsResponse, UniversalAccount } from "@particle-network/universal-account-sdk";
 import { executeSwap, executeSell, getChainIdFromBlockchain, pollTransactionDetails, getChainName } from "../lib/swapService";
 import { useWallets } from "@particle-network/connectkit";
-import { BrowserProvider, getBytes } from "ethers";
 
 // Types
 interface TokenInfo {
@@ -360,43 +359,17 @@ export const SwapModal = ({
       if (result.requiresSignature && result.rootHash && primaryWallet) {
         try {
           const walletClient = primaryWallet.getWalletClient();
+          
+          // Sign the root hash using personal_sign
+          const signature = await walletClient.request({
+            method: 'personal_sign',
+            params: [result.rootHash as `0x${string}`, walletClient.account?.address as `0x${string}`],
+          });
 
-          // ConnectKit demo pattern: BrowserProvider -> signer
-          const ethersProvider = new BrowserProvider(walletClient as unknown as { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> });
-          const ethersSigner = await ethersProvider.getSigner();
-
-          // Handle 7702 Authorization
-          const authorizations: EIP7702Authorization[] = [];
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const txAny = result.transaction as any;
-          if (txAny?.userOps) {
-            const nonceMap = new Map<number, string>();
-            for (const userOp of txAny.userOps) {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const userOpData = userOp as any;
-              if (userOpData.eip7702Delegated === false && userOpData.eip7702Auth) {
-                let signatureSerialized = nonceMap.get(userOpData.eip7702Auth.nonce);
-                if (!signatureSerialized) {
-                  const signerWithAuthorize = ethersSigner as unknown as { authorizeSync?: (auth: unknown) => { signature: { serialized: string } } };
-                  if (!signerWithAuthorize.authorizeSync) throw new Error('Signer does not support authorizeSync');
-                  const authorization = signerWithAuthorize.authorizeSync(userOpData.eip7702Auth);
-                  signatureSerialized = authorization.signature.serialized;
-                  nonceMap.set(userOpData.eip7702Auth.nonce, signatureSerialized);
-                }
-                authorizations.push({
-                  userOpHash: userOp.userOpHash,
-                  signature: signatureSerialized,
-                });
-              }
-            }
-          }
-
-          const signature = await ethersSigner.signMessage(getBytes(result.rootHash as `0x${string}`));
-
-          // Step 3: Send transaction with 7702 authorizations
+          // Step 3: Send transaction
           setLoadingStatus("Sending transaction...");
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const sendResult = await universalAccount.sendTransaction(result.transaction as any, signature as string, authorizations);
+          const sendResult = await universalAccount.sendTransaction(result.transaction as any, signature as string);
           
           if (sendResult?.transactionId) {
             // Format expected amount

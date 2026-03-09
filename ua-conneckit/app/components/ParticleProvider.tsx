@@ -3,7 +3,7 @@
 import { ConnectKitProvider, createConfig } from "@particle-network/connectkit";
 import { authWalletConnectors } from "@particle-network/connectkit/auth";
 import { arbitrum } from "@particle-network/connectkit/chains";
-// Removed evmWalletConnectors - external wallets don't support 7702 mode
+import { evmWalletConnectors } from "@particle-network/connectkit/evm";
 import { wallet, EntryPosition } from "@particle-network/connectkit/wallet";
 import React from "react";
 import { useWalletVisibility } from "../context/WalletVisibilityContext";
@@ -17,7 +17,7 @@ if (!projectId || !clientKey || !appId) {
   throw new Error("Please configure the Particle project in .env first!");
 }
 
-// Export ConnectKitProvider - Social logins ONLY for 7702 mode support
+// Export ConnectKitProvider to be used within your index or layout file (or use createConfig directly within those files).
 export const ParticleConnectkit = ({ children }: React.PropsWithChildren) => {
   const { isWalletVisible } = useWalletVisibility();
 
@@ -29,16 +29,17 @@ export const ParticleConnectkit = ({ children }: React.PropsWithChildren) => {
       // NOTE: Apple Sign-in shows "UniversalX" because it's set in Particle dashboard project settings
       // To fix: Go to dashboard.particle.network > Your Project > Settings > App Name > Change to "Omni"
       splitEmailAndPhone: false,
-      collapseWalletList: true, // Hide wallet list since we only have social logins
+      collapseWalletList: false,
       hideContinueButton: true,
-      connectorsOrder: ["social", "email", "phone"], // Removed "wallet" - only social logins
+      connectorsOrder: ["social", "wallet", "email", "phone"],
       language: "en-US",
       mode: "dark",
+      recommendedWallets: [{ walletId: "metaMask", label: "Popular" }],
       logo: "https://orimolty-lang.github.io/universal-wallet-web/omni-logo.png",
     },
     walletConnectors: [
-      // ONLY social logins - required for 7702 mode to work
       authWalletConnectors({
+        // Optional, configure this if you're using social logins
         // Apple first (works in WebViews), Google last (blocked in WebViews)
         authTypes: [
           "apple",
@@ -48,20 +49,29 @@ export const ParticleConnectkit = ({ children }: React.PropsWithChildren) => {
           "discord",
           "github",
           "google", // Google OAuth blocked in WebViews - put last
-        ],
-        fiatCoin: "USD",
+        ], // Optional, restricts the types of social logins supported
+        fiatCoin: "USD", // Optional, also supports CNY, JPY, HKD, INR, and KRW
         promptSettingConfig: {
-          // 0 = Never ask, 1 = Ask once, 2 = Ask always, 3 = Force
+          // Optional, changes the frequency in which the user is asked to set a master or payment password
+          // 0 = Never ask
+          // 1 = Ask once
+          // 2 = Ask always, upon every entry
+          // 3 = Force the user to set this password
           promptMasterPasswordSettingWhenLogin: 1,
-          promptPaymentPasswordSettingWhenSign: 0, // Don't prompt for payment password (enables blind signing)
+          promptPaymentPasswordSettingWhenSign: 1,
         },
       }),
-      // NO evmWalletConnectors - external wallets don't support 7702 authorization
+      evmWalletConnectors({
+        walletConnectProjectId: process.env
+          .NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID as string,
+        multiInjectedProviderDiscovery: true,
+      }),
     ],
     plugins: [
       wallet({
-        entryPosition: EntryPosition.BR,
-        visible: isWalletVisible,
+        // Optional configurations for the attached embedded wallet modal
+        entryPosition: EntryPosition.BR, // Alters the position in which the modal button appears upon login
+        visible: isWalletVisible, // Dictates whether or not the wallet modal is included/visible or not
       }),
     ],
     chains: [arbitrum],

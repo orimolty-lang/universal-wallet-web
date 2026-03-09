@@ -15,14 +15,13 @@ import {
   CHAIN_ID,
   type IAssetsResponse,
   type IUniversalAccountConfig,
-  type EIP7702Authorization,
 } from "@particle-network/universal-account-sdk";
 import DepositDialog from "./components/DepositDialog";
 import AssetBreakdownDialog from "./components/AssetBreakdownDialog";
 import TokenDetailModal from "./components/TokenDetailModal";
 import SwapModal from "./components/SwapModal";
 import { encodeFunctionData } from "viem";
-import { BrowserProvider, getBytes, toBeHex } from "ethers";
+import { toBeHex } from "ethers";
 
 // Mobula API for token search
 const MOBULA_API_KEY = "a8e6a174-9dfd-4929-b0e0-9f6ece767923";
@@ -1318,50 +1317,25 @@ const ConvertModal = ({
       }
       
       // Sign and send transaction (same flow as Perps)
-      const txRootHash = (tx as unknown as { rootHash?: `0x${string}` }).rootHash;
-      if (txRootHash) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((tx as any).rootHash) {
         if (!primaryWallet) {
           throw new Error('Please connect wallet first');
         }
         
         setLoadingStatus('Waiting for signature...');
         const walletClient = primaryWallet.getWalletClient();
+        
+        // Sign the root hash
+        const signature = await walletClient.request({
+          method: 'personal_sign',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          params: [(tx as any).rootHash as `0x${string}`, walletClient.account?.address as `0x${string}`],
+        });
 
-        // ConnectKit demo pattern: BrowserProvider -> signer
-        const ethersProvider = new BrowserProvider(walletClient as unknown as { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> });
-        const ethersSigner = await ethersProvider.getSigner();
-
-        // Handle 7702 authorizations
-        const convertAuthorizations: EIP7702Authorization[] = [];
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const convertTxAny = tx as any;
-        if (convertTxAny.userOps) {
-          const nonceMap = new Map<number, string>();
-          for (const userOp of convertTxAny.userOps) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const userOpData = userOp as any;
-            if (userOpData.eip7702Delegated === false && userOpData.eip7702Auth) {
-              let signatureSerialized = nonceMap.get(userOpData.eip7702Auth.nonce);
-              if (!signatureSerialized) {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const signerWithAuthorize = ethersSigner as unknown as { authorizeSync?: (auth: unknown) => { signature: { serialized: string } } };
-                if (!signerWithAuthorize.authorizeSync) throw new Error('Signer does not support authorizeSync');
-                const authorization = signerWithAuthorize.authorizeSync(userOpData.eip7702Auth);
-                signatureSerialized = authorization.signature.serialized;
-                nonceMap.set(userOpData.eip7702Auth.nonce, signatureSerialized);
-              }
-              convertAuthorizations.push({
-                userOpHash: userOp.userOpHash,
-                signature: signatureSerialized,
-              });
-            }
-          }
-        }
-
-        const signature = await ethersSigner.signMessage(getBytes(txRootHash));
-
+        // Send transaction
         setLoadingStatus('Sending transaction...');
-        const sendResult = await universalAccount.sendTransaction(tx, signature as string, convertAuthorizations);
+        const sendResult = await universalAccount.sendTransaction(tx, signature as string);
         
         if (sendResult?.transactionId) {
           console.log('[Convert] Transaction sent:', sendResult.transactionId);
@@ -2242,20 +2216,31 @@ const PerpsModal = ({
         addDebug(`Execution fee hex (toBeHex): ${valueHex}`);
         addDebug(`Execution fee ETH: ${executionFeeEth}`);
         
-        // Single call test: openTrade ONLY (skip batch to test value routing)
-        // Approval was already done separately
-        addDebug('Using single-call mode: openTrade only (approval already done)');
+        // Seamless flow: Request extra ETH buffer so UA funds the smart account
+        // Add 50% buffer to ensure enough ETH for execution + any gas variations
+        const ethWithBuffer = (Number(executionFeeEth) * 1.5).toFixed(8);
+        addDebug(`Requesting ETH with buffer: ${ethWithBuffer}`);
         
         tx = await universalAccount.createUniversalTransaction({
           chainId: CHAIN_ID.BASE_MAINNET,
           expectTokens: [
+            {
+              type: SUPPORTED_TOKEN_TYPE.ETH,
+              amount: ethWithBuffer, // Extra buffer
+            },
             {
               type: SUPPORTED_TOKEN_TYPE.USDC,
               amount: collateralAmount.toString(),
             },
           ],
           transactions: [
-            // Single call: openTrade with execution fee
+            // 1. Approve USDC to Avantis
+            {
+              to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as `0x${string}`,
+              data: approveCalldata as `0x${string}`,
+              value: '0x0',
+            },
+            // 2. openTrade with execution fee
             {
               to: AVANTIS_TRADING_ADDRESS as `0x${string}`,
               data: openTradeCalldata as `0x${string}`,
@@ -2282,50 +2267,25 @@ const PerpsModal = ({
       console.log('[Perps] UA transaction created:', tx);
 
       // Step 2: Sign with wallet (same flow as SwapModal)
-      const txRootHash = (tx as unknown as { rootHash?: `0x${string}` }).rootHash;
-      if (txRootHash) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((tx as any).rootHash) {
         setLoadingStatus('Waiting for signature...');
         
         const walletClient = primaryWallet.getWalletClient();
+        
+        // Note: 7702 auth handling removed - we're using Smart Account mode
+        // If 7702 mode is needed, switch useEIP7702: true and use Particle Auth (not Connect)
+        
+        // Sign the root hash using personal_sign
+        const signature = await walletClient.request({
+          method: 'personal_sign',
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          params: [(tx as any).rootHash as `0x${string}`, walletClient.account?.address as `0x${string}`],
+        });
 
-        // ConnectKit demo pattern: BrowserProvider -> signer
-        const ethersProvider = new BrowserProvider(walletClient as unknown as { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> });
-        const ethersSigner = await ethersProvider.getSigner();
-
-        // Handle 7702 Authorization
-        const authorizations: EIP7702Authorization[] = [];
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const txAny = tx as any;
-        if (txAny.userOps) {
-          const nonceMap = new Map<number, string>();
-          for (const userOp of txAny.userOps) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const userOpData = userOp as any;
-            if (userOpData.eip7702Delegated === false && userOpData.eip7702Auth) {
-              addDebug(`7702 auth needed for chain ${userOpData.eip7702Auth.chainId}`);
-              let signatureSerialized = nonceMap.get(userOpData.eip7702Auth.nonce);
-              if (!signatureSerialized) {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const signerWithAuthorize = ethersSigner as unknown as { authorizeSync?: (auth: unknown) => { signature: { serialized: string } } };
-                if (!signerWithAuthorize.authorizeSync) throw new Error('Signer does not support authorizeSync');
-                const authorization = signerWithAuthorize.authorizeSync(userOpData.eip7702Auth);
-                signatureSerialized = authorization.signature.serialized;
-                nonceMap.set(userOpData.eip7702Auth.nonce, signatureSerialized);
-              }
-              authorizations.push({
-                userOpHash: userOp.userOpHash,
-                signature: signatureSerialized,
-              });
-            }
-          }
-        }
-
-        const signature = await ethersSigner.signMessage(getBytes(txRootHash));
-
-        // Step 3: Send transaction with 7702 authorizations
+        // Step 3: Send transaction
         setLoadingStatus('Sending transaction...');
-        addDebug(`Sending with ${authorizations.length} 7702 authorizations`);
-        const sendResult = await universalAccount.sendTransaction(tx, signature as string, authorizations);
+        const sendResult = await universalAccount.sendTransaction(tx, signature as string);
         
         if (sendResult?.transactionId) {
           console.log('[Perps] Transaction sent:', sendResult.transactionId);
@@ -4601,7 +4561,7 @@ const App = () => {
     projectClientKey: process.env.NEXT_PUBLIC_CLIENT_KEY || "",
     projectAppUuid: process.env.NEXT_PUBLIC_APP_ID || "",
     smartAccountOptions: {
-      useEIP7702: true, // 7702 mode: EOA = Universal Account - works with embedded wallets (social login)
+      useEIP7702: false, // Smart Account mode - 7702 requires Particle Auth (not Connect)
       name: "UNIVERSAL",
       version: UNIVERSAL_ACCOUNT_VERSION,
       ownerAddress: address!,
