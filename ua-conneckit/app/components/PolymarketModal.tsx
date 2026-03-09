@@ -116,8 +116,8 @@ export default function PolymarketModal({
     try {
       // Primary endpoint (prefer dedicated proxy to avoid WebView/CORS failures)
       const primaryEndpoint = POLY_PROXY
-        ? `${POLY_PROXY.replace(/\/$/, "")}/markets?limit=100`
-        : `${GAMMA_API}/markets?limit=100`;
+        ? `${POLY_PROXY.replace(/\/$/, "")}/markets?active=true&closed=false&limit=100`
+        : `${GAMMA_API}/markets?active=true&closed=false&limit=100`;
       const response = await fetch(primaryEndpoint);
       const data = await response.json();
       let list: Market[] = Array.isArray(data) ? data : Array.isArray((data as { data?: Market[] })?.data) ? (data as { data: Market[] }).data : [];
@@ -126,8 +126,8 @@ export default function PolymarketModal({
       // Fallback endpoint (events -> markets)
       if (!list.length) {
         const fallbackEndpoint = POLY_PROXY
-          ? `${POLY_PROXY.replace(/\/$/, "")}/events?limit=50`
-          : `${GAMMA_API}/events?limit=50`;
+          ? `${POLY_PROXY.replace(/\/$/, "")}/events?active=true&closed=false&limit=100`
+          : `${GAMMA_API}/events?active=true&closed=false&limit=100`;
         const fallbackRes = await fetch(fallbackEndpoint);
         const fallbackData = await fallbackRes.json();
         const events = Array.isArray(fallbackData) ? fallbackData : Array.isArray((fallbackData as { data?: unknown[] })?.data) ? (fallbackData as { data: unknown[] }).data : [];
@@ -151,7 +151,7 @@ export default function PolymarketModal({
 
       // Fallbacks
       const openMarkets = normalized.filter((m) => m.active && !m.closed);
-      const finalMarkets = tradable.length > 0 ? tradable : (openMarkets.length > 0 ? openMarkets : normalized);
+      const finalMarkets = tradable.length > 0 ? tradable : openMarkets;
 
       setDebugInfo({
         endpoint: usedEndpoint,
