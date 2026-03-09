@@ -367,6 +367,16 @@ export default function PolymarketModal({
       return proxyWalletAddress;
     }
 
+    // Reuse previously deployed Safe if known
+    const safeKey = `poly_safe_${address.toLowerCase()}`;
+    const cachedSafe = typeof window !== "undefined" ? localStorage.getItem(safeKey) : null;
+    if (cachedSafe) {
+      setProxyWalletAddress(cachedSafe);
+      setIsProxyReady(true);
+      setDebugInfo(prev => ({ ...prev, proxyStatus: `phase=safe_reuse ${cachedSafe.slice(0, 10)}...` }));
+      return cachedSafe;
+    }
+
     setDebugInfo(prev => ({ ...prev, proxyStatus: "phase=safe_deploy", walletAddress: address }));
 
     try {
@@ -393,12 +403,20 @@ export default function PolymarketModal({
       const safeAddr = result?.proxyAddress;
       if (!safeAddr) throw new Error("Safe deploy returned no address");
 
+      if (typeof window !== "undefined") localStorage.setItem(safeKey, safeAddr);
       setProxyWalletAddress(safeAddr);
       setIsProxyReady(true);
       setDebugInfo(prev => ({ ...prev, proxyStatus: `phase=safe_deploy done ${safeAddr.slice(0, 10)}...` }));
       return safeAddr;
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
+      // If deploy errors but we have a cached safe, continue with cached value
+      if (cachedSafe) {
+        setProxyWalletAddress(cachedSafe);
+        setIsProxyReady(true);
+        setDebugInfo(prev => ({ ...prev, proxyStatus: `phase=safe_reuse_after_error ${cachedSafe.slice(0, 10)}...` }));
+        return cachedSafe;
+      }
       console.error("[Polymarket] Safe init failed:", e);
       setDebugInfo(prev => ({ ...prev, polyError: errMsg, proxyStatus: "Init failed" }));
       throw e;
@@ -1009,10 +1027,10 @@ export default function PolymarketModal({
                   ))}
                 </div>
 
-                {/* Proxy Wallet Deposit Address */}
+                {/* Safe Wallet Info */}
                 {proxyWalletAddress && (
                   <div className="mb-4 bg-[#1a1a2e] rounded-lg p-3 border border-blue-600">
-                    <div className="text-xs text-blue-400 mb-1">📥 Deposit Address (Polygon USDC.e)</div>
+                    <div className="text-xs text-blue-400 mb-1">🛡️ Safe Wallet (Polygon)</div>
                     <div className="flex items-center gap-2">
                       <code className="text-xs text-white bg-[#0a0a1a] px-2 py-1 rounded flex-1 overflow-hidden text-ellipsis">
                         {proxyWalletAddress}
@@ -1029,14 +1047,16 @@ export default function PolymarketModal({
                       </button>
                     </div>
                     <div className="text-xs text-gray-500 mt-1">
-                      Send USDC.e on Polygon to this address to fund trading
+                      Trading funder wallet for Polymarket (USDC.e on Polygon)
                     </div>
+                    <div className="text-xs text-gray-400 mt-2">Safe USDC.e Balance</div>
+                    <div className="text-white font-semibold">{formatUnits6(availableBalance)}</div>
                   </div>
                 )}
 
                 {/* Portfolio */}
                 <div className="mb-4 bg-[#1a1a2e] rounded-lg p-3 border border-gray-700">
-                  <div className="text-xs text-gray-400">Available to trade (USDC)</div>
+                  <div className="text-xs text-gray-400">Available to trade (USDC.e)</div>
                   <div className="text-white font-semibold">{formatUnits6(availableBalance)}</div>
                 </div>
 
