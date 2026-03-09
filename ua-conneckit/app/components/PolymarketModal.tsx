@@ -4,14 +4,17 @@ import { useState, useEffect, useCallback } from "react";
 import { X, TrendingUp, TrendingDown, Loader2, ExternalLink, Search } from "lucide-react";
 import type { UniversalAccount } from "@particle-network/universal-account-sdk";
 import { CHAIN_ID, SUPPORTED_TOKEN_TYPE } from "@particle-network/universal-account-sdk";
-import { Interface, Contract, JsonRpcProvider } from "ethers";
+import { Contract, JsonRpcProvider } from "ethers";
 import { useWallets, useAccount } from "@particle-network/connectkit";
 import { ClobClient, OrderType, Side, SignatureType } from "@polymarket/clob-client";
 import { BuilderConfig } from "@polymarket/builder-signing-sdk";
+import { RelayClient, RelayerTxType } from "@polymarket/builder-relayer-client";
 import { AssetType } from "@polymarket/clob-client/dist/types";
 import type { WalletClient } from "viem";
+import { encodeFunctionData, maxUint256 } from "viem";
 
 const BUILDER_SIGN_URL = "https://polymarket-builder-worker-ori.orimolty.workers.dev/builder/sign";
+const RELAYER_URL = "https://relayer-v2.polymarket.com/";
 
 // Polymarket API endpoints
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -22,8 +25,9 @@ const POLY_PROXY = process.env.NEXT_PUBLIC_POLYMARKET_PROXY_URL || "https://poly
 // Contract addresses on Polygon
 const USDC_E_ADDRESS = "0x2791bca1f2de4661ed88a30c99a7a9449aa84174";
 const CTF_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045";
-const NEG_RISK_ADAPTER = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296";
-const NEG_RISK_EXCHANGE = "0xC5d563A36AE78145C45a50134d48A1215220f80a";
+// Unused for now but may need later for CTF operations:
+// const NEG_RISK_ADAPTER = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296";
+// const NEG_RISK_EXCHANGE = "0xC5d563A36AE78145C45a50134d48A1215220f80a";
 const CTF_EXCHANGE = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E";
 
 interface Market {
@@ -56,7 +60,8 @@ export default function PolymarketModal({
   isOpen,
   onClose,
   universalAccount,
-  smartAccountAddress,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  smartAccountAddress, // UA smart account (kept for reference)
   onSuccess,
 }: PolymarketModalProps) {
   const [primaryWallet] = useWallets();
@@ -76,6 +81,8 @@ export default function PolymarketModal({
   const [showDebug, setShowDebug] = useState(false);
   const [debugInfo, setDebugInfo] = useState<{ endpoint?: string; rawCount?: number; openCount?: number; finalCount?: number; error?: string }>({});
   const [clobClient, setClobClient] = useState<ClobClient | null>(null);
+  const [relayClient, setRelayClient] = useState<RelayClient | null>(null);
+  const [proxyWalletAddress, setProxyWalletAddress] = useState<string | null>(null);
   const [availableBalance, setAvailableBalance] = useState<string>("0");
   const [positionBalances, setPositionBalances] = useState<Record<string, string>>({});
 
@@ -265,17 +272,42 @@ export default function PolymarketModal({
     if (clobClient) return clobClient;
 
     const walletClient = primaryWallet.getWalletClient();
-    const signatureType = smartAccountAddress && smartAccountAddress.toLowerCase() !== address.toLowerCase()
-      ? SignatureType.POLY_PROXY
-      : SignatureType.EOA;
-    const funderAddress = signatureType === SignatureType.POLY_PROXY ? smartAccountAddress : undefined;
-
+    
     // Builder config with remote signing (secrets stay server-side)
     const builderConfig = new BuilderConfig({
       remoteBuilderConfig: {
         url: BUILDER_SIGN_URL,
       },
     });
+
+    // Get proxy wallet address from relayer (for proper Polymarket context)
+    // For proxy wallets, deploy() returns the proxy address (idempotent if already deployed)
+    let polyProxyAddr = proxyWalletAddress;
+    if (!polyProxyAddr) {
+      try {
+        const relay = new RelayClient(
+          RELAYER_URL,
+          137,
+          walletClient,
+          builderConfig,
+          RelayerTxType.PROXY,
+        );
+        // Deploy proxy wallet (auto-deploys on first tx if not exists)
+        const deployResponse = await relay.deploy();
+        const result = await deployResponse.wait();
+        polyProxyAddr = result?.proxyAddress || null;
+        if (polyProxyAddr) {
+          setProxyWalletAddress(polyProxyAddr);
+        }
+        setRelayClient(relay);
+      } catch (e) {
+        console.warn("[Polymarket] Could not get proxy wallet, falling back to EOA", e);
+      }
+    }
+
+    // Use POLY_PROXY signature type with proxy wallet as funder
+    const signatureType = polyProxyAddr ? SignatureType.POLY_PROXY : SignatureType.EOA;
+    const funderAddress = polyProxyAddr || undefined;
 
     const client = new ClobClient(
       POLYMARKET_API,
@@ -303,6 +335,89 @@ export default function PolymarketModal({
     );
     setClobClient(authedClient);
     return authedClient;
+  };
+
+  // Initialize relay client for gasless transactions
+  const getRelayClient = async () => {
+    if (!primaryWallet || !address) throw new Error("Wallet not connected");
+    if (relayClient) return relayClient;
+
+    const walletClient = primaryWallet.getWalletClient();
+    const builderConfig = new BuilderConfig({
+      remoteBuilderConfig: {
+        url: BUILDER_SIGN_URL,
+      },
+    });
+
+    const client = new RelayClient(
+      RELAYER_URL,
+      137,
+      walletClient,
+      builderConfig,
+      RelayerTxType.PROXY, // Auto-deploys on first transaction
+    );
+
+    // Deploy proxy wallet to get address (idempotent)
+    if (!proxyWalletAddress) {
+      try {
+        const deployResponse = await client.deploy();
+        const result = await deployResponse.wait();
+        if (result?.proxyAddress) {
+          setProxyWalletAddress(result.proxyAddress);
+        }
+      } catch (e) {
+        console.warn("[Polymarket] Proxy deploy failed:", e);
+      }
+    }
+    
+    setRelayClient(client);
+    return client;
+  };
+
+  // Approve USDC.e for Polymarket via gasless relayer
+  const approveViaRelayer = async () => {
+    const relay = await getRelayClient();
+    
+    const approveTxs = [
+      {
+        to: USDC_E_ADDRESS,
+        data: encodeFunctionData({
+          abi: [{
+            name: "approve",
+            type: "function",
+            inputs: [
+              { name: "spender", type: "address" },
+              { name: "amount", type: "uint256" },
+            ],
+            outputs: [{ type: "bool" }],
+          }],
+          functionName: "approve",
+          args: [CTF_ADDRESS, maxUint256],
+        }),
+        value: "0",
+      },
+      {
+        to: USDC_E_ADDRESS,
+        data: encodeFunctionData({
+          abi: [{
+            name: "approve",
+            type: "function",
+            inputs: [
+              { name: "spender", type: "address" },
+              { name: "amount", type: "uint256" },
+            ],
+            outputs: [{ type: "bool" }],
+          }],
+          functionName: "approve",
+          args: [CTF_EXCHANGE, maxUint256],
+        }),
+        value: "0",
+      },
+    ];
+
+    const response = await relay.execute(approveTxs, "Approve USDC.e for Polymarket");
+    await response.wait();
+    return true;
   };
 
   const formatUnits6 = (v: string | number) => {
@@ -346,72 +461,16 @@ export default function PolymarketModal({
     }
   }, [isOpen, selectedMarket, refreshPortfolio]);
 
-  // Approve USDC.e for Polymarket contracts
+  // Approve USDC.e for Polymarket contracts (gasless via relayer)
   const handleApprove = async () => {
-    if (!universalAccount || !primaryWallet || !address) return;
-    const walletClient = primaryWallet.getWalletClient();
+    if (!primaryWallet || !address) return;
     
     setIsApproving(true);
     setError(null);
-    setStatus("Approving USDC.e for Polymarket...");
+    setStatus("Approving USDC.e for Polymarket (gasless)...");
 
     try {
-      const ERC20_ABI = new Interface([
-        "function approve(address spender, uint256 amount) returns (bool)",
-      ]);
-      const CTF_ABI = new Interface([
-        "function setApprovalForAll(address operator, bool approved) external",
-      ]);
-
-      const maxApproval = BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-
-      // Create approval transactions
-      const transaction = await universalAccount.createUniversalTransaction({
-        chainId: CHAIN_ID.POLYGON_MAINNET,
-        expectTokens: [], // No token bridging needed for approvals
-        transactions: [
-          // Approve USDC.e for all Polymarket contracts
-          {
-            to: USDC_E_ADDRESS,
-            data: ERC20_ABI.encodeFunctionData("approve", [NEG_RISK_ADAPTER, maxApproval]),
-          },
-          {
-            to: USDC_E_ADDRESS,
-            data: ERC20_ABI.encodeFunctionData("approve", [NEG_RISK_EXCHANGE, maxApproval]),
-          },
-          {
-            to: USDC_E_ADDRESS,
-            data: ERC20_ABI.encodeFunctionData("approve", [CTF_EXCHANGE, maxApproval]),
-          },
-          // Approve CTF tokens for exchanges
-          {
-            to: CTF_ADDRESS,
-            data: CTF_ABI.encodeFunctionData("setApprovalForAll", [NEG_RISK_ADAPTER, true]),
-          },
-          {
-            to: CTF_ADDRESS,
-            data: CTF_ABI.encodeFunctionData("setApprovalForAll", [NEG_RISK_EXCHANGE, true]),
-          },
-          {
-            to: CTF_ADDRESS,
-            data: CTF_ABI.encodeFunctionData("setApprovalForAll", [CTF_EXCHANGE, true]),
-          },
-        ],
-      });
-
-      setStatus("Waiting for signature...");
-      
-      // Sign the root hash
-      const signature = await walletClient?.signMessage({
-        account: address as `0x${string}`,
-        message: { raw: transaction.rootHash as `0x` },
-      });
-
-      setStatus("Sending approval transaction...");
-      
-      const result = await universalAccount.sendTransaction(transaction, signature);
-      console.log("[Polymarket] Approval tx:", result.transactionId);
-
+      await approveViaRelayer();
       setStatus("Approvals complete!");
       setNeedsApproval(false);
       refreshPortfolio();
