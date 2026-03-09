@@ -353,8 +353,9 @@ export default function PolymarketModal({
       label: string,
     ) => {
       let lastErr: unknown;
-      for (let attempt = 1; attempt <= 2; attempt++) {
+      for (let attempt = 1; attempt <= 4; attempt++) {
         try {
+          setStatus(`${label} (attempt ${attempt}/4)...`);
           const tx = await buildTx();
           const sig = await walletClient?.signMessage({
             account: address as `0x${string}`,
@@ -365,34 +366,48 @@ export default function PolymarketModal({
           lastErr = e;
           const msg = e instanceof Error ? e.message : String(e);
           const expired = msg.toLowerCase().includes("expired");
-          if (!(expired && attempt < 2)) throw e;
-          setStatus(`${label} expired, retrying...`);
+          if (!(expired && attempt < 4)) throw e;
+          setStatus(`${label} expired, rebuilding...`);
+          await new Promise(r => setTimeout(r, 400));
         }
       }
       throw lastErr;
     };
 
-    setDebugInfo(prev => ({ ...prev, proxyStatus: `Funding start: ${humanAmount} USDC.e -> proxy` }));
+    const provider = new JsonRpcProvider("https://polygon-rpc.com");
+    const ERC20_ABI = ["function balanceOf(address) view returns (uint256)"];
+    const usdce = new Contract(USDC_E_ADDRESS, ERC20_ABI, provider);
 
-    // Step 1: Convert/sync to Polygon USDC liquidity
-    setStatus("Converting to Polygon USDC...");
+    const needed = BigInt(Math.round(Number(humanAmount) * 1_000_000));
+    const current = BigInt((await usdce.balanceOf(proxy)).toString());
+
+    if (current >= needed) {
+      setDebugInfo(prev => ({ ...prev, proxyStatus: `Funding skipped (enough balance in proxy)` }));
+      return { proxy, txId: "already-funded" };
+    }
+
+    const shortfall = needed - current;
+    const shortfallHuman = (Number(shortfall) / 1_000_000).toFixed(6).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+
+    setDebugInfo(prev => ({ ...prev, proxyStatus: `Funding shortfall: ${shortfallHuman} USDC.e` }));
+
+    // Step 1: Convert/sync just the shortfall
     await sendWithExpiryRetry(
       () => universalAccount.createConvertTransaction({
-        expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: humanAmount },
+        expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: shortfallHuman },
         chainId: CHAIN_ID.POLYGON_MAINNET,
       }),
       "Convert",
     );
 
     // Step 2: Transfer explicit Polygon USDC.e token to proxy wallet
-    setStatus("Transferring USDC.e to proxy wallet...");
     const transferRes = await sendWithExpiryRetry(
       () => universalAccount.createTransferTransaction({
         token: {
           chainId: CHAIN_ID.POLYGON_MAINNET,
-          address: USDC_E_ADDRESS, // explicit USDC.e
+          address: USDC_E_ADDRESS,
         },
-        amount: humanAmount,
+        amount: shortfallHuman,
         receiver: proxy,
       }),
       "Transfer",
