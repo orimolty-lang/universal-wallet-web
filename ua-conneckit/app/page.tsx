@@ -4203,28 +4203,36 @@ const ActivityModal = ({
                   </div>
                 )}
 
-                {/* Token change breakdown (fuller API data) */}
+                {/* Balance change block (screenshot style) */}
                 {(details.tokenChanges?.decr?.length || details.tokenChanges?.incr?.length) ? (
                   <div className="py-3 border-b border-white/10">
-                    <div className="text-gray-400 mb-2">Token Changes</div>
-                    <div className="space-y-1 text-sm">
-                      {(details.tokenChanges?.decr || []).map((d: { amount?: string; rawAmount?: string; token?: { symbol?: string } }, i: number) => (
-                        <div key={`decr-${i}`} className="text-red-400">
-                          - {d.amount || d.rawAmount || '0'} {d.token?.symbol || ''}
+                    <div className="text-gray-300 font-medium mb-2">Balance change</div>
+                    <div className="space-y-2 text-sm">
+                      {(details.tokenChanges?.decr || []).map((d: { amount?: string; rawAmount?: string; token?: { symbol?: string; image?: string } }, i: number) => (
+                        <div key={`decr-${i}`} className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            {d.token?.image ? <img src={d.token.image} alt="" className="w-5 h-5 rounded-full" /> : null}
+                            <span className="text-gray-200">{d.token?.symbol || 'Token'}</span>
+                          </div>
+                          <span className="text-red-400">- {d.amount || d.rawAmount || '0'}</span>
                         </div>
                       ))}
-                      {(details.tokenChanges?.incr || []).map((inc: { amount?: string; rawAmount?: string; token?: { symbol?: string } }, i: number) => (
-                        <div key={`incr-${i}`} className="text-green-400">
-                          + {inc.amount || inc.rawAmount || '0'} {inc.token?.symbol || ''}
+                      {(details.tokenChanges?.incr || []).map((inc: { amount?: string; rawAmount?: string; token?: { symbol?: string; image?: string } }, i: number) => (
+                        <div key={`incr-${i}`} className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            {inc.token?.image ? <img src={inc.token.image} alt="" className="w-5 h-5 rounded-full" /> : null}
+                            <span className="text-gray-200">{inc.token?.symbol || 'Token'}</span>
+                          </div>
+                          <span className="text-green-400">+ {inc.amount || inc.rawAmount || '0'}</span>
                         </div>
                       ))}
                     </div>
                   </div>
                 ) : null}
 
-                {/* Raw payload (as in get-transactions example visibility) */}
+                {/* Advanced raw payload (collapsed) */}
                 <details className="mt-3 bg-white/5 rounded-xl p-3">
-                  <summary className="cursor-pointer text-gray-300 text-sm">Advanced / Raw transaction data</summary>
+                  <summary className="cursor-pointer text-gray-300 text-sm">Advanced</summary>
                   <pre className="mt-2 text-xs text-gray-400 whitespace-pre-wrap break-all overflow-x-auto">
 {JSON.stringify(details, null, 2)}
                   </pre>

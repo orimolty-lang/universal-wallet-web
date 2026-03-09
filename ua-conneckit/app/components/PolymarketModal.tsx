@@ -70,15 +70,15 @@ export default function PolymarketModal({
     setError(null);
     try {
       // Primary endpoint
-      const response = await fetch(`${GAMMA_API}/markets?closed=false&active=true&limit=50`);
+      const response = await fetch(`${GAMMA_API}/markets?limit=100`);
       const data = await response.json();
-      let list: Market[] = Array.isArray(data) ? data : [];
+      let list: Market[] = Array.isArray(data) ? data : Array.isArray((data as { data?: Market[] })?.data) ? (data as { data: Market[] }).data : [];
 
       // Fallback endpoint (events -> markets)
       if (!list.length) {
-        const fallbackRes = await fetch(`${GAMMA_API}/events?closed=false&limit=30`);
+        const fallbackRes = await fetch(`${GAMMA_API}/events?limit=50`);
         const fallbackData = await fallbackRes.json();
-        const events = Array.isArray(fallbackData) ? fallbackData : [];
+        const events = Array.isArray(fallbackData) ? fallbackData : Array.isArray((fallbackData as { data?: unknown[] })?.data) ? (fallbackData as { data: unknown[] }).data : [];
         list = events.flatMap((e: unknown) => {
           const eventObj = e as { markets?: Market[] };
           return Array.isArray(eventObj?.markets) ? eventObj.markets : [];
@@ -86,7 +86,7 @@ export default function PolymarketModal({
       }
 
       // Final clean filter
-      list = list.filter((m) => !!m?.id && !!m?.question && !m?.closed);
+      list = list.filter((m) => !!m?.id && !!m?.question && m?.active !== false && m?.closed !== true);
       console.log("[Polymarket] Loaded markets:", list.length);
       setAllMarkets(list);
       setMarkets(list);
