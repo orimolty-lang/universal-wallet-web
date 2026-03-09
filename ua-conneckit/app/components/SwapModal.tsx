@@ -359,17 +359,80 @@ export const SwapModal = ({
       if (result.requiresSignature && result.rootHash && primaryWallet) {
         try {
           const walletClient = primaryWallet.getWalletClient();
-          
-          // Sign the root hash using personal_sign
+
+          // Resolve signer address robustly (embedded wallets may not expose walletClient.account)
+          let signerAddress = walletClient.account?.address as `0x${string}` | undefined;
+          if (!signerAddress) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const accounts = await (walletClient as any).request({ method: 'eth_accounts', params: [] }) as `0x${string}`[];
+            signerAddress = accounts?.[0];
+          }
+          if (!signerAddress) {
+            throw new Error('No signer address found for swap signing');
+          }
+
+          // Sign the root hash
           const signature = await walletClient.request({
             method: 'personal_sign',
-            params: [result.rootHash as `0x${string}`, walletClient.account?.address as `0x${string}`],
+            params: [result.rootHash as `0x${string}`, signerAddress],
           });
 
-          // Step 3: Send transaction (SDK handles 7702 auth for embedded wallets)
+          // 7702 auth pattern (only when needed by userOps)
+          const authorizations: Array<{ userOpHash: string; signature: string }> = [];
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const txAny = result.transaction as any;
+          if (txAny?.userOps?.length) {
+            const nonceMap = new Map<number, string>();
+            for (const userOp of txAny.userOps) {
+              if (!!userOp.eip7702Auth && !userOp.eip7702Delegated) {
+                let authSig = nonceMap.get(userOp.eip7702Auth.nonce);
+                if (!authSig) {
+                  // Preferred: wallet.authorizeSync(userOp.eip7702Auth) if available
+                  const authorizeSync =
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    (walletClient as any)?.authorizeSync ||
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    (primaryWallet as any)?.authorizeSync;
+
+                  if (typeof authorizeSync === 'function') {
+                    const authorization = authorizeSync(userOp.eip7702Auth);
+                    authSig = authorization?.signature?.serialized;
+                  } else {
+                    // Fallback: typed-data signing (embedded wallets often support this)
+                    const typedData = {
+                      types: {
+                        Authorization: [
+                          { name: 'chainId', type: 'uint256' },
+                          { name: 'address', type: 'address' },
+                          { name: 'nonce', type: 'uint256' },
+                        ],
+                      },
+                      primaryType: 'Authorization',
+                      domain: {},
+                      message: {
+                        chainId: String(userOp.eip7702Auth.chainId),
+                        address: userOp.eip7702Auth.address,
+                        nonce: String(userOp.eip7702Auth.nonce),
+                      },
+                    };
+                    authSig = await walletClient.request({
+                      method: 'eth_signTypedData_v4',
+                      params: [signerAddress, JSON.stringify(typedData)],
+                    }) as string;
+                  }
+
+                  if (!authSig) throw new Error('Failed to produce 7702 authorization signature');
+                  nonceMap.set(userOp.eip7702Auth.nonce, authSig);
+                }
+                authorizations.push({ userOpHash: userOp.userOpHash, signature: authSig });
+              }
+            }
+          }
+
+          // Step 3: Send transaction
           setLoadingStatus("Sending transaction...");
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const sendResult = await universalAccount.sendTransaction(result.transaction as any, signature as string);
+          const sendResult = await universalAccount.sendTransaction(result.transaction as any, signature as string, authorizations);
           
           if (sendResult?.transactionId) {
             // Format expected amount
