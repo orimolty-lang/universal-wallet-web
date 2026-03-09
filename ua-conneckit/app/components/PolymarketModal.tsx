@@ -689,8 +689,8 @@ export default function PolymarketModal({
       if (isNaN(amountNum) || amountNum <= 0) {
         throw new Error("Invalid amount");
       }
-      if (amountNum < 0.75) {
-        throw new Error("Minimum buy amount is 0.75 USDC.e.");
+      if (amountNum <= 0) {
+        throw new Error("Amount must be greater than 0.");
       }
 
       setStatus("Preparing funds (convert + deposit to proxy)...");
@@ -711,6 +711,17 @@ export default function PolymarketModal({
       const asks = (book.asks as unknown[] | undefined) || [];
       if (asks.length === 0) {
         throw new Error("No resting asks for this outcome right now. Try later or pick another market.");
+      }
+
+      // Dynamic market-specific minimum order size from orderbook
+      const minOrderSizeRaw = Number(book.min_order_size || 0);
+      if (Number.isFinite(minOrderSizeRaw) && minOrderSizeRaw > 0) {
+        const estPriceForMin = await clob.calculateMarketPrice(selectedToken.token_id, Side.BUY, Number(amount), OrderType.FOK).catch(() => 0);
+        // For BUY market orders, amount is USDC spend. Approx convert min shares -> min USDC via estimated price.
+        const minUsdcApprox = estPriceForMin > 0 ? minOrderSizeRaw * estPriceForMin : 0;
+        if (minUsdcApprox > 0 && Number(amount) < minUsdcApprox) {
+          throw new Error(`Min order for this market is ~${minUsdcApprox.toFixed(2)} USDC.e (min size ${minOrderSizeRaw}).`);
+        }
       }
 
       let estPrice = 0;
