@@ -1,9 +1,10 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { IAssetsResponse, UniversalAccount } from "@particle-network/universal-account-sdk";
+import type { IAssetsResponse, UniversalAccount, EIP7702Authorization } from "@particle-network/universal-account-sdk";
 import { executeSwap, executeSell, getChainIdFromBlockchain, pollTransactionDetails, getChainName } from "../lib/swapService";
-import { hashAuthorization } from "ethers";
+import { useWallets } from "@particle-network/connectkit";
+import { BrowserProvider, getBytes } from "ethers";
 
 // Types
 interface TokenInfo {
@@ -23,8 +24,6 @@ interface SwapModalProps {
   targetToken: TokenInfo | null;
   primaryAssets: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  walletClient: any;
   onSwapSuccess?: (txId: string) => void;
 }
 
@@ -86,7 +85,6 @@ export const SwapModal = ({
   targetToken,
   primaryAssets,
   universalAccount,
-  walletClient,
   onSwapSuccess,
 }: SwapModalProps) => {
   const [amount, setAmount] = useState("");
@@ -295,7 +293,7 @@ export const SwapModal = ({
   }, [targetToken, primaryAssets]);
 
   // Get wallet for signing
-  // walletClient comes from parent (native AuthKit)
+  const [primaryWallet] = useWallets();
 
   // Handle swap execution (buy or sell based on direction)
   const handleSwap = async () => {
@@ -359,60 +357,43 @@ export const SwapModal = ({
       }
 
       // Step 2: Sign with wallet
-      if (result.requiresSignature && result.rootHash && walletClient) {
+      if (result.requiresSignature && result.rootHash && primaryWallet) {
         try {
+          const walletClient = primaryWallet.getWalletClient();
 
-          // Sign root hash first (does not require explicit signer address)
-          const signature = await walletClient.signMessage({
-            message: { raw: result.rootHash as `0x${string}` },
-          });
+          // ConnectKit demo pattern: BrowserProvider -> signer
+          const ethersProvider = new BrowserProvider(walletClient as unknown as { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> });
+          const ethersSigner = await ethersProvider.getSigner();
 
-          // Resolve signer address ONLY if we actually need 7702 typed-data auth
-          let signerAddress = walletClient.account?.address as `0x${string}` | undefined;
-
-          // 7702 auth pattern (only when needed by userOps)
-          const authorizations: Array<{ userOpHash: string; signature: string }> = [];
+          // Handle 7702 Authorization
+          const authorizations: EIP7702Authorization[] = [];
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const txAny = result.transaction as any;
-          if (txAny?.userOps?.length) {
+          if (txAny?.userOps) {
             const nonceMap = new Map<number, string>();
             for (const userOp of txAny.userOps) {
-              if (!!userOp.eip7702Auth && !userOp.eip7702Delegated) {
-                let authSig = nonceMap.get(userOp.eip7702Auth.nonce);
-                if (!authSig) {
-                  // Preferred: wallet.authorizeSync(userOp.eip7702Auth) if available
-                  const authorizeSync =
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    (walletClient as any)?.authorizeSync;
-
-                  if (typeof authorizeSync === 'function') {
-                    const authorization = authorizeSync(userOp.eip7702Auth);
-                    authSig = authorization?.signature?.serialized;
-                  } else {
-                    // Match Particle example closer: sign hashAuthorization(eip7702Auth)
-                    if (!signerAddress) {
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      const accounts = await (walletClient as any).request({ method: 'eth_accounts', params: [] }) as `0x${string}`[];
-                      signerAddress = accounts?.[0];
-                    }
-                    if (!signerAddress) throw new Error('No signer address for 7702 authorization');
-
-                    const authHash = hashAuthorization(userOp.eip7702Auth) as `0x${string}`;
-                    authSig = await walletClient.request({
-                      method: 'eth_sign',
-                      params: [signerAddress, authHash],
-                    }) as string;
-                  }
-
-                  if (!authSig) throw new Error('Failed to produce 7702 authorization signature');
-                  nonceMap.set(userOp.eip7702Auth.nonce, authSig);
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const userOpData = userOp as any;
+              if (userOpData.eip7702Delegated === false && userOpData.eip7702Auth) {
+                let signatureSerialized = nonceMap.get(userOpData.eip7702Auth.nonce);
+                if (!signatureSerialized) {
+                  const signerWithAuthorize = ethersSigner as unknown as { authorizeSync?: (auth: unknown) => { signature: { serialized: string } } };
+                  if (!signerWithAuthorize.authorizeSync) throw new Error('Signer does not support authorizeSync');
+                  const authorization = signerWithAuthorize.authorizeSync(userOpData.eip7702Auth);
+                  signatureSerialized = authorization.signature.serialized;
+                  nonceMap.set(userOpData.eip7702Auth.nonce, signatureSerialized);
                 }
-                authorizations.push({ userOpHash: userOp.userOpHash, signature: authSig });
+                authorizations.push({
+                  userOpHash: userOp.userOpHash,
+                  signature: signatureSerialized,
+                });
               }
             }
           }
 
-          // Step 3: Send transaction
+          const signature = await ethersSigner.signMessage(getBytes(result.rootHash as `0x${string}`));
+
+          // Step 3: Send transaction with 7702 authorizations
           setLoadingStatus("Sending transaction...");
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const sendResult = await universalAccount.sendTransaction(result.transaction as any, signature as string, authorizations);
@@ -455,8 +436,7 @@ export const SwapModal = ({
           }
         } catch (signError) {
           console.error("Signing error:", signError);
-          const msg = signError instanceof Error ? signError.message : "Unknown signing error";
-          setError(`Failed to sign transaction: ${msg}`);
+          setError("Failed to sign transaction");
           return;
         }
       } else if (result.transactionId) {

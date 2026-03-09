@@ -1,6 +1,12 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
-import { useAuthCore, useConnect, useEthereum } from "@particle-network/authkit";
+import {
+  ConnectButton,
+  useAccount,
+  useWallets,
+  useDisconnect,
+  useParticleAuth,
+} from "@particle-network/connectkit";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   UniversalAccount,
@@ -9,13 +15,14 @@ import {
   CHAIN_ID,
   type IAssetsResponse,
   type IUniversalAccountConfig,
+  type EIP7702Authorization,
 } from "@particle-network/universal-account-sdk";
 import DepositDialog from "./components/DepositDialog";
 import AssetBreakdownDialog from "./components/AssetBreakdownDialog";
 import TokenDetailModal from "./components/TokenDetailModal";
 import SwapModal from "./components/SwapModal";
 import { encodeFunctionData } from "viem";
-import { toBeHex, hashAuthorization } from "ethers";
+import { BrowserProvider, getBytes, toBeHex } from "ethers";
 
 // Mobula API for token search
 const MOBULA_API_KEY = "a8e6a174-9dfd-4929-b0e0-9f6ece767923";
@@ -350,13 +357,7 @@ const formatMarketCap = (mc: number): string => {
 };
 
 // Animated Login Screen - Omni branding
-const LoginScreen = ({
-  onConnect,
-  isConnecting,
-}: {
-  onConnect: () => void;
-  isConnecting: boolean;
-}) => {
+const LoginScreen = () => {
   return (
     <div className="flex flex-col h-screen bg-[#0a0a0a] overflow-hidden relative" style={{ maxHeight: '100dvh' }}>
       {/* Animated gradient orb background - purple/cyan theme */}
@@ -449,13 +450,7 @@ const LoginScreen = ({
 
       {/* Bottom section - CTA */}
       <div className="px-6 pb-8" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 32px)' }}>
-        <button
-          onClick={onConnect}
-          disabled={isConnecting}
-          className="px-4 py-2 rounded-xl bg-accent-dynamic text-black font-semibold"
-        >
-          {isConnecting ? 'Connecting...' : 'Get Started'}
-        </button>
+        <ConnectButton label="Get Started" />
       </div>
       
       {/* CSS for animations */}
@@ -1094,7 +1089,6 @@ const ConvertModal = ({
   onClose,
   assets,
   universalAccount,
-  walletClient,
   onTransactionCreated,
   onSuccess,
 }: {
@@ -1103,11 +1097,10 @@ const ConvertModal = ({
   assets: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  walletClient: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onTransactionCreated?: (tx: any) => void;
   onSuccess?: () => void; // Callback to refresh balances
 }) => {
+  const [primaryWallet] = useWallets();
   const [fromAsset, setFromAsset] = useState<string>('');
   const [fromChain, setFromChain] = useState<number | null>(null);
   const [toAsset, setToAsset] = useState<string>('');
@@ -1325,51 +1318,48 @@ const ConvertModal = ({
       }
       
       // Sign and send transaction (same flow as Perps)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if ((tx as any).rootHash) {
-        if (!walletClient) {
+      const txRootHash = (tx as unknown as { rootHash?: `0x${string}` }).rootHash;
+      if (txRootHash) {
+        if (!primaryWallet) {
           throw new Error('Please connect wallet first');
         }
         
         setLoadingStatus('Waiting for signature...');
-        
-        // Sign root hash using signMessage (AuthKit embedded-wallet compatible)
-        const signature = await walletClient.signMessage({
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          message: { raw: (tx as any).rootHash as `0x${string}` },
-        });
+        const walletClient = primaryWallet.getWalletClient();
 
-        // Build 7702 authorizations when needed
-        const convertAuthorizations: Array<{ userOpHash: string; signature: string }> = [];
+        // ConnectKit demo pattern: BrowserProvider -> signer
+        const ethersProvider = new BrowserProvider(walletClient as unknown as { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> });
+        const ethersSigner = await ethersProvider.getSigner();
+
+        // Handle 7702 authorizations
+        const convertAuthorizations: EIP7702Authorization[] = [];
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const convertTxAny = tx as any;
-        if (convertTxAny?.userOps?.length) {
-          let signerAddress = walletClient.account?.address as `0x${string}` | undefined;
-          if (!signerAddress) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const accounts = await (walletClient as any).request({ method: 'eth_accounts', params: [] }) as `0x${string}`[];
-            signerAddress = accounts?.[0];
-          }
-          if (!signerAddress) throw new Error('No signer address for convert 7702 authorization');
-
+        if (convertTxAny.userOps) {
           const nonceMap = new Map<number, string>();
           for (const userOp of convertTxAny.userOps) {
-            if (!!userOp.eip7702Auth && !userOp.eip7702Delegated) {
-              let authSig = nonceMap.get(userOp.eip7702Auth.nonce);
-              if (!authSig) {
-                const authHash = hashAuthorization(userOp.eip7702Auth) as `0x${string}`;
-                authSig = await walletClient.request({
-                  method: 'eth_sign',
-                  params: [signerAddress, authHash],
-                }) as string;
-                nonceMap.set(userOp.eip7702Auth.nonce, authSig);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const userOpData = userOp as any;
+            if (userOpData.eip7702Delegated === false && userOpData.eip7702Auth) {
+              let signatureSerialized = nonceMap.get(userOpData.eip7702Auth.nonce);
+              if (!signatureSerialized) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const signerWithAuthorize = ethersSigner as unknown as { authorizeSync?: (auth: unknown) => { signature: { serialized: string } } };
+                if (!signerWithAuthorize.authorizeSync) throw new Error('Signer does not support authorizeSync');
+                const authorization = signerWithAuthorize.authorizeSync(userOpData.eip7702Auth);
+                signatureSerialized = authorization.signature.serialized;
+                nonceMap.set(userOpData.eip7702Auth.nonce, signatureSerialized);
               }
-              convertAuthorizations.push({ userOpHash: userOp.userOpHash, signature: authSig });
+              convertAuthorizations.push({
+                userOpHash: userOp.userOpHash,
+                signature: signatureSerialized,
+              });
             }
           }
         }
 
-        // Send transaction
+        const signature = await ethersSigner.signMessage(getBytes(txRootHash));
+
         setLoadingStatus('Sending transaction...');
         const sendResult = await universalAccount.sendTransaction(tx, signature as string, convertAuthorizations);
         
@@ -1883,15 +1873,13 @@ const PerpsModal = ({
   onClose,
   assets,
   universalAccount,
-  walletClient,
 }: {
   isOpen: boolean;
   onClose: () => void;
   assets: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  walletClient: any;
 }) => {
+  const [primaryWallet] = useWallets();
   const [view, setView] = useState<'markets' | 'trade'>('markets');
   const [selectedMarket, setSelectedMarket] = useState(PERPS_MARKETS[0]);
   const [selectedPair, setSelectedPair] = useState(AVANTIS_PAIRS[0]);
@@ -2043,7 +2031,7 @@ const PerpsModal = ({
       return;
     }
 
-    if (!walletClient) {
+    if (!primaryWallet) {
       setError('Please connect wallet first');
       return;
     }
@@ -2294,50 +2282,50 @@ const PerpsModal = ({
       console.log('[Perps] UA transaction created:', tx);
 
       // Step 2: Sign with wallet (same flow as SwapModal)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if ((tx as any).rootHash) {
+      const txRootHash = (tx as unknown as { rootHash?: `0x${string}` }).rootHash;
+      if (txRootHash) {
         setLoadingStatus('Waiting for signature...');
         
-        // walletClient comes from native AuthKit hook
-        
-        // Sign root hash using signMessage (AuthKit embedded-wallet compatible)
-        const signature = await walletClient.signMessage({
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          message: { raw: (tx as any).rootHash as `0x${string}` },
-        });
+        const walletClient = primaryWallet.getWalletClient();
 
-        // Step 3: Build 7702 authorizations (if required) + send transaction
-        const perpsAuthorizations: Array<{ userOpHash: string; signature: string }> = [];
+        // ConnectKit demo pattern: BrowserProvider -> signer
+        const ethersProvider = new BrowserProvider(walletClient as unknown as { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> });
+        const ethersSigner = await ethersProvider.getSigner();
+
+        // Handle 7702 Authorization
+        const authorizations: EIP7702Authorization[] = [];
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const perpsTxAny = tx as any;
-        if (perpsTxAny?.userOps?.length) {
-          let signerAddress = walletClient.account?.address as `0x${string}` | undefined;
-          if (!signerAddress) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const accounts = await (walletClient as any).request({ method: 'eth_accounts', params: [] }) as `0x${string}`[];
-            signerAddress = accounts?.[0];
-          }
-          if (!signerAddress) throw new Error('No signer address for perps 7702 authorization');
-
+        const txAny = tx as any;
+        if (txAny.userOps) {
           const nonceMap = new Map<number, string>();
-          for (const userOp of perpsTxAny.userOps) {
-            if (!!userOp.eip7702Auth && !userOp.eip7702Delegated) {
-              let authSig = nonceMap.get(userOp.eip7702Auth.nonce);
-              if (!authSig) {
-                const authHash = hashAuthorization(userOp.eip7702Auth) as `0x${string}`;
-                authSig = await walletClient.request({
-                  method: 'eth_sign',
-                  params: [signerAddress, authHash],
-                }) as string;
-                nonceMap.set(userOp.eip7702Auth.nonce, authSig);
+          for (const userOp of txAny.userOps) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const userOpData = userOp as any;
+            if (userOpData.eip7702Delegated === false && userOpData.eip7702Auth) {
+              addDebug(`7702 auth needed for chain ${userOpData.eip7702Auth.chainId}`);
+              let signatureSerialized = nonceMap.get(userOpData.eip7702Auth.nonce);
+              if (!signatureSerialized) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const signerWithAuthorize = ethersSigner as unknown as { authorizeSync?: (auth: unknown) => { signature: { serialized: string } } };
+                if (!signerWithAuthorize.authorizeSync) throw new Error('Signer does not support authorizeSync');
+                const authorization = signerWithAuthorize.authorizeSync(userOpData.eip7702Auth);
+                signatureSerialized = authorization.signature.serialized;
+                nonceMap.set(userOpData.eip7702Auth.nonce, signatureSerialized);
               }
-              perpsAuthorizations.push({ userOpHash: userOp.userOpHash, signature: authSig });
+              authorizations.push({
+                userOpHash: userOp.userOpHash,
+                signature: signatureSerialized,
+              });
             }
           }
         }
 
+        const signature = await ethersSigner.signMessage(getBytes(txRootHash));
+
+        // Step 3: Send transaction with 7702 authorizations
         setLoadingStatus('Sending transaction...');
-        const sendResult = await universalAccount.sendTransaction(tx, signature as string, perpsAuthorizations);
+        addDebug(`Sending with ${authorizations.length} 7702 authorizations`);
+        const sendResult = await universalAccount.sendTransaction(tx, signature as string, authorizations);
         
         if (sendResult?.transactionId) {
           console.log('[Perps] Transaction sent:', sendResult.transactionId);
@@ -3235,13 +3223,10 @@ const HomeTab = ({
 const SearchTab = ({ 
   primaryAssets,
   universalAccount,
-  walletClient,
   onSend,
 }: { 
   primaryAssets: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  walletClient: any;
   onSend?: () => void;
 }) => {
   const [query, setQuery] = useState("");
@@ -3602,7 +3587,6 @@ const SearchTab = ({
         } : null}
         primaryAssets={primaryAssets}
         universalAccount={universalAccount}
-        walletClient={walletClient}
         onSwapSuccess={(txId) => {
           console.log("Swap success:", txId);
         }}
@@ -4558,24 +4542,11 @@ const BottomNav = ({
 
 // Main App
 const App = () => {
-  const { address, provider, signMessage, signTypedData } = useEthereum();
-  const { connected: isConnected, connect, disconnect, connectionStatus } = useConnect();
-  const { openAccountAndSecurity, openSetMasterPassword } = useAuthCore();
+  useWallets();
+  const { address, isConnected } = useAccount();
+  const { disconnect } = useDisconnect();
+  const { openAccountAndSecurity, openSetMasterPassword } = useParticleAuth();
   
-  const walletClient = useMemo(() => {
-    if (!provider || !address) return null;
-    return {
-      account: { address: address as `0x${string}` },
-      request: ({ method, params }: { method: string; params?: unknown[] }) =>
-        provider.request({ method, params: params || [] }),
-      signMessage: ({ message }: { message: string | { raw: `0x${string}` } }) =>
-        typeof message === 'string' ? signMessage(message) : signMessage(message.raw),
-      signTypedData: ({ data, version }: { data: unknown; version?: string }) =>
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        signTypedData({ data: data as any, version: version as any }),
-    };
-  }, [provider, address, signMessage, signTypedData]);
-
   const [showSplash, setShowSplash] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>("home");
   const [universalAccountInstance, setUniversalAccountInstance] = useState<UniversalAccount | null>(null);
@@ -4855,7 +4826,7 @@ const App = () => {
     return <SplashScreen onComplete={() => setShowSplash(false)} />;
   }
 
-  if (!isConnected) return <LoginScreen onConnect={() => connect()} isConnecting={connectionStatus === 'connecting' || connectionStatus === 'loading'} />;
+  if (!isConnected) return <LoginScreen />;
 
   return (
     <div className="flex flex-col min-h-screen bg-[#0a0a0a]">
@@ -4906,7 +4877,6 @@ const App = () => {
         <SearchTab 
           primaryAssets={combinedAssets as IAssetsResponse | null}
           universalAccount={universalAccountInstance}
-          walletClient={walletClient}
           onSend={() => setShowSendModal(true)}
         />
       )}
@@ -4949,7 +4919,6 @@ const App = () => {
         onClose={() => setShowConvertModal(false)}
         assets={primaryAssets}
         universalAccount={universalAccountInstance}
-        walletClient={walletClient}
         onTransactionCreated={(tx) => {
           console.log('[Convert] Transaction created:', tx);
         }}
@@ -4965,7 +4934,6 @@ const App = () => {
         onClose={() => setShowPerpsModal(false)}
         assets={combinedAssets as IAssetsResponse | null}
         universalAccount={universalAccountInstance}
-        walletClient={walletClient}
       />
 
       {/* Sell is handled by SwapModal with direction flip */}
@@ -5027,7 +4995,6 @@ const App = () => {
         targetToken={homeSelectedToken}
         primaryAssets={combinedAssets as IAssetsResponse | null}
         universalAccount={universalAccountInstance}
-        walletClient={walletClient}
       />
     </div>
   );

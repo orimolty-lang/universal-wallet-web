@@ -2,6 +2,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import type { UniversalAccount } from "@particle-network/universal-account-sdk";
+import { useWallets } from "@particle-network/connectkit";
 
 interface TokenToSell {
   symbol: string;
@@ -43,6 +44,8 @@ export const SellModal = ({
   const [txResult, setTxResult] = useState<{ txId: string; received?: string } | null>(null);
 
   // Will be used when sell is implemented
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [primaryWallet] = useWallets();
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const _ua = universalAccount;
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
