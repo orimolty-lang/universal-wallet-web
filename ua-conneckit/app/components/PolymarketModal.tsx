@@ -16,6 +16,65 @@ import { encodeFunctionData, maxUint256 } from "viem";
 const BUILDER_SIGN_URL = "https://polymarket-builder-worker-ori.orimolty.workers.dev/builder/sign";
 const RELAYER_URL = "https://relayer-v2.polymarket.com/";
 
+// Custom signer wrapper for Polymarket relayer (handles chain mismatch)
+/* eslint-disable @typescript-eslint/no-explicit-any */
+class PolygonSignerWrapper {
+  private walletClient: any;
+  private userAddress: string;
+
+  constructor(walletClient: any, address: string) {
+    this.walletClient = walletClient;
+    this.userAddress = address;
+  }
+
+  async getAddress(): Promise<string> {
+    return this.userAddress;
+  }
+
+  async signMessage(message: string): Promise<string> {
+    return this.walletClient.signMessage({
+      account: this.userAddress as `0x${string}`,
+      message,
+    });
+  }
+
+  async signRawMessage(message: any): Promise<string> {
+    return this.walletClient.signMessage({
+      account: this.userAddress as `0x${string}`,
+      message: { raw: message },
+    });
+  }
+
+  async signTypedData(domain: any, types: any, value: any, primaryType?: string): Promise<string> {
+    // Override domain chainId to Polygon
+    const polygonDomain = { ...domain, chainId: 137 };
+    return this.walletClient.signTypedData({
+      account: this.userAddress as `0x${string}`,
+      domain: polygonDomain,
+      types,
+      primaryType: primaryType || Object.keys(types).find(k => k !== 'EIP712Domain') || 'Message',
+      message: value,
+    });
+  }
+
+  async estimateGas(): Promise<bigint> {
+    return BigInt(0); // Relayer handles gas
+  }
+
+  async signTransaction(): Promise<string> {
+    throw new Error("signTransaction not supported - use relayer");
+  }
+
+  async sendTransaction(): Promise<string> {
+    throw new Error("sendTransaction not supported - use relayer");
+  }
+
+  async waitTillMined(): Promise<any> {
+    throw new Error("waitTillMined not supported - use relayer");
+  }
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
 // Polymarket API endpoints
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const POLYMARKET_API = "https://clob.polymarket.com"; // For CLOB trading (future)
@@ -285,10 +344,13 @@ export default function PolymarketModal({
     let polyProxyAddr = proxyWalletAddress;
     if (!polyProxyAddr) {
       try {
+        // Use custom signer wrapper to handle chain mismatch
+        const polygonSigner = new PolygonSignerWrapper(walletClient, address);
         const relay = new RelayClient(
           RELAYER_URL,
           137,
-          walletClient,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          polygonSigner as any,
           builderConfig,
           RelayerTxType.PROXY,
         );
@@ -349,10 +411,13 @@ export default function PolymarketModal({
       },
     });
 
+    // Use custom signer wrapper to handle chain mismatch
+    const polygonSigner = new PolygonSignerWrapper(walletClient, address);
     const client = new RelayClient(
       RELAYER_URL,
       137,
-      walletClient,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      polygonSigner as any,
       builderConfig,
       RelayerTxType.PROXY, // Auto-deploys on first transaction
     );
@@ -722,6 +787,31 @@ export default function PolymarketModal({
                     </button>
                   ))}
                 </div>
+
+                {/* Proxy Wallet Deposit Address */}
+                {proxyWalletAddress && (
+                  <div className="mb-4 bg-[#1a1a2e] rounded-lg p-3 border border-blue-600">
+                    <div className="text-xs text-blue-400 mb-1">📥 Deposit Address (Polygon USDC.e)</div>
+                    <div className="flex items-center gap-2">
+                      <code className="text-xs text-white bg-[#0a0a1a] px-2 py-1 rounded flex-1 overflow-hidden text-ellipsis">
+                        {proxyWalletAddress}
+                      </code>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(proxyWalletAddress);
+                          setStatus("Address copied!");
+                          setTimeout(() => setStatus(null), 2000);
+                        }}
+                        className="text-xs bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded text-white"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      Send USDC.e on Polygon to this address to fund trading
+                    </div>
+                  </div>
+                )}
 
                 {/* Portfolio */}
                 <div className="mb-4 bg-[#1a1a2e] rounded-lg p-3 border border-gray-700">
