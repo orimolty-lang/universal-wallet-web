@@ -23,7 +23,7 @@ export const useParticleAuth = () => {
 };
 
 export const useWallets = () => {
-  const { provider, address, signMessage } = useEthereum();
+  const { provider, address, signMessage, signTypedData } = useEthereum();
 
   const walletClient = React.useMemo(() => {
     if (!provider) return null;
@@ -32,10 +32,24 @@ export const useWallets = () => {
       account: address ? { address: address as `0x${string}` } : undefined,
       request: async ({ method, params }: { method: string; params?: unknown[] }) => {
         if (method === "personal_sign") {
-          const message = params?.[0] as string;
-          // authkit signMessage handles hex and utf8
+          // Accept both shapes: [message, address] and [address, message]
+          const p0 = params?.[0] as string | undefined;
+          const p1 = params?.[1] as string | undefined;
+          const message = (p0?.startsWith("0x") ? p0 : p1) || p0 || "";
           return signMessage(message);
         }
+
+        if (method === "eth_signTypedData_v4") {
+          // Expected: [address, typedDataJson]
+          const typedDataRaw = params?.[1] as string;
+          const typedData = typeof typedDataRaw === "string" ? JSON.parse(typedDataRaw) : typedDataRaw;
+          return signTypedData({
+            data: typedData,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            version: "V4" as any,
+          });
+        }
+
         return provider.request({ method, params: params || [] });
       },
       signMessage: async ({ message }: { message: string | { raw: `0x${string}` } }) => {
@@ -43,7 +57,7 @@ export const useWallets = () => {
         return signMessage(message.raw);
       },
     };
-  }, [provider, address, signMessage]);
+  }, [provider, address, signMessage, signTypedData]);
 
   const primaryWallet = React.useMemo(() => {
     if (!walletClient) return null;
