@@ -336,12 +336,25 @@ export default function PolymarketModal({
   }, [address, universalAccount]);
 
 
+  const resetPolymarketState = () => {
+    setClobClient(null);
+    setRelayClient(null);
+    setProxyWalletAddress(null);
+    setDebugInfo(prev => ({ ...prev, proxyStatus: "reset", polyError: undefined, signerType: undefined }));
+  };
+
   const getClobClient = async () => {
+    console.log("[Polymarket] getClobClient called, clobClient:", clobClient ? "exists" : "null");
+    setDebugInfo(prev => ({ ...prev, proxyStatus: "getClobClient called..." }));
+    
     if (!primaryWallet || !address) {
       setDebugInfo(prev => ({ ...prev, polyError: "Wallet not connected", walletAddress: address || "none" }));
       throw new Error("Wallet not connected");
     }
-    if (clobClient) return clobClient;
+    if (clobClient) {
+      setDebugInfo(prev => ({ ...prev, proxyStatus: "Using cached clobClient" }));
+      return clobClient;
+    }
 
     setDebugInfo(prev => ({ ...prev, proxyStatus: "Initializing...", walletAddress: address }));
 
@@ -746,6 +759,12 @@ export default function PolymarketModal({
                   <div>clobClient: {clobClient ? 'initialized' : 'null'}</div>
                   <div>relayClient: {relayClient ? 'initialized' : 'null'}</div>
                   {debugInfo.polyError && <div className="text-red-400">polyError: {debugInfo.polyError}</div>}
+                  <button
+                    onClick={resetPolymarketState}
+                    className="mt-2 px-2 py-1 bg-red-600 hover:bg-red-700 rounded text-white text-xs"
+                  >
+                    Reset Polymarket State
+                  </button>
                 </div>
               )}
 
