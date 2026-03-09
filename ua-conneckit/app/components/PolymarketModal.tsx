@@ -394,18 +394,34 @@ export default function PolymarketModal({
         const polygonSigner = new PolygonSignerWrapper(walletClient, address);
         
         setDebugInfo(prev => ({ ...prev, proxyStatus: "Creating RelayClient..." }));
-        const relay = new RelayClient(
-          RELAYER_URL,
-          137,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          polygonSigner as any,
-          builderConfig,
-          RelayerTxType.PROXY,
-        );
+        let relay;
+        try {
+          relay = new RelayClient(
+            RELAYER_URL,
+            137,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            polygonSigner as any,
+            builderConfig,
+            RelayerTxType.PROXY,
+          );
+          setDebugInfo(prev => ({ ...prev, proxyStatus: "RelayClient created OK" }));
+        } catch (relayErr) {
+          const msg = relayErr instanceof Error ? relayErr.message : String(relayErr);
+          setDebugInfo(prev => ({ ...prev, polyError: `RelayClient constructor failed: ${msg}` }));
+          throw relayErr;
+        }
         
-        setDebugInfo(prev => ({ ...prev, proxyStatus: "Deploying proxy wallet..." }));
+        setDebugInfo(prev => ({ ...prev, proxyStatus: "Calling relay.deploy()..." }));
         // Deploy proxy wallet (auto-deploys on first tx if not exists)
-        const deployResponse = await relay.deploy();
+        let deployResponse;
+        try {
+          deployResponse = await relay.deploy();
+          setDebugInfo(prev => ({ ...prev, proxyStatus: "deploy() returned, waiting..." }));
+        } catch (deployErr) {
+          const msg = deployErr instanceof Error ? deployErr.message : String(deployErr);
+          setDebugInfo(prev => ({ ...prev, polyError: `relay.deploy() failed: ${msg}` }));
+          throw deployErr;
+        }
         
         setDebugInfo(prev => ({ ...prev, proxyStatus: "Waiting for deploy result..." }));
         const result = await deployResponse.wait();
