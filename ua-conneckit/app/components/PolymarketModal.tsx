@@ -54,6 +54,7 @@ export default function PolymarketModal({
   const [markets, setMarkets] = useState<Market[]>([]);
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [allMarkets, setAllMarkets] = useState<Market[]>([]);
   const [selectedOutcome, setSelectedOutcome] = useState<number>(0);
   const [amount, setAmount] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -66,37 +67,52 @@ export default function PolymarketModal({
   // Fetch trending/popular markets
   const fetchMarkets = useCallback(async () => {
     setIsLoadingMarkets(true);
+    setError(null);
     try {
-      // Fetch from Gamma API (public market data)
-      const response = await fetch(`${GAMMA_API}/markets?closed=false&limit=20`);
+      // Primary endpoint
+      const response = await fetch(`${GAMMA_API}/markets?closed=false&active=true&limit=50`);
       const data = await response.json();
-      console.log("[Polymarket] Markets:", data);
-      setMarkets(data || []);
+      let list: Market[] = Array.isArray(data) ? data : [];
+
+      // Fallback endpoint (events -> markets)
+      if (!list.length) {
+        const fallbackRes = await fetch(`${GAMMA_API}/events?closed=false&limit=30`);
+        const fallbackData = await fallbackRes.json();
+        const events = Array.isArray(fallbackData) ? fallbackData : [];
+        list = events.flatMap((e: unknown) => {
+          const eventObj = e as { markets?: Market[] };
+          return Array.isArray(eventObj?.markets) ? eventObj.markets : [];
+        });
+      }
+
+      // Final clean filter
+      list = list.filter((m) => !!m?.id && !!m?.question && !m?.closed);
+      console.log("[Polymarket] Loaded markets:", list.length);
+      setAllMarkets(list);
+      setMarkets(list);
     } catch (err) {
       console.error("[Polymarket] Failed to fetch markets:", err);
       setError("Failed to load markets");
+      setAllMarkets([]);
+      setMarkets([]);
     } finally {
       setIsLoadingMarkets(false);
     }
   }, []);
 
-  // Search markets
-  const searchMarkets = useCallback(async (query: string) => {
-    if (!query.trim()) {
-      fetchMarkets();
+  // Search markets (client-side filter for reliability)
+  const searchMarkets = useCallback((query: string) => {
+    const q = query.trim().toLowerCase();
+    if (!q) {
+      setMarkets(allMarkets);
       return;
     }
-    setIsLoadingMarkets(true);
-    try {
-      const response = await fetch(`${GAMMA_API}/markets?closed=false&limit=20&query=${encodeURIComponent(query)}`);
-      const data = await response.json();
-      setMarkets(data || []);
-    } catch (err) {
-      console.error("[Polymarket] Search failed:", err);
-    } finally {
-      setIsLoadingMarkets(false);
-    }
-  }, [fetchMarkets]);
+    const filtered = allMarkets.filter((m) =>
+      (m.question || "").toLowerCase().includes(q) ||
+      (m.slug || "").toLowerCase().includes(q)
+    );
+    setMarkets(filtered);
+  }, [allMarkets]);
 
   useEffect(() => {
     if (isOpen) {

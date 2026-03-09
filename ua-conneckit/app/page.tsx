@@ -4202,6 +4202,33 @@ const ActivityModal = ({
                     </span>
                   </div>
                 )}
+
+                {/* Token change breakdown (fuller API data) */}
+                {(details.tokenChanges?.decr?.length || details.tokenChanges?.incr?.length) ? (
+                  <div className="py-3 border-b border-white/10">
+                    <div className="text-gray-400 mb-2">Token Changes</div>
+                    <div className="space-y-1 text-sm">
+                      {(details.tokenChanges?.decr || []).map((d: { amount?: string; rawAmount?: string; token?: { symbol?: string } }, i: number) => (
+                        <div key={`decr-${i}`} className="text-red-400">
+                          - {d.amount || d.rawAmount || '0'} {d.token?.symbol || ''}
+                        </div>
+                      ))}
+                      {(details.tokenChanges?.incr || []).map((inc: { amount?: string; rawAmount?: string; token?: { symbol?: string } }, i: number) => (
+                        <div key={`incr-${i}`} className="text-green-400">
+                          + {inc.amount || inc.rawAmount || '0'} {inc.token?.symbol || ''}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Raw payload (as in get-transactions example visibility) */}
+                <details className="mt-3 bg-white/5 rounded-xl p-3">
+                  <summary className="cursor-pointer text-gray-300 text-sm">Advanced / Raw transaction data</summary>
+                  <pre className="mt-2 text-xs text-gray-400 whitespace-pre-wrap break-all overflow-x-auto">
+{JSON.stringify(details, null, 2)}
+                  </pre>
+                </details>
               </div>
             </>
           )}
