@@ -367,17 +367,7 @@ export default function PolymarketModal({
       return proxyWalletAddress;
     }
 
-    // Reuse previously deployed Safe if known
-    const safeKey = `poly_safe_${address.toLowerCase()}`;
-    const cachedSafe = typeof window !== "undefined" ? localStorage.getItem(safeKey) : null;
-    if (cachedSafe) {
-      setProxyWalletAddress(cachedSafe);
-      setIsProxyReady(true);
-      setDebugInfo(prev => ({ ...prev, proxyStatus: `phase=safe_reuse ${cachedSafe.slice(0, 10)}...` }));
-      return cachedSafe;
-    }
-
-    setDebugInfo(prev => ({ ...prev, proxyStatus: "phase=safe_deploy", walletAddress: address }));
+    setDebugInfo(prev => ({ ...prev, proxyStatus: "phase=safe_resolve", walletAddress: address }));
 
     try {
       const walletClient = primaryWallet.getWalletClient();
@@ -403,20 +393,12 @@ export default function PolymarketModal({
       const safeAddr = result?.proxyAddress;
       if (!safeAddr) throw new Error("Safe deploy returned no address");
 
-      if (typeof window !== "undefined") localStorage.setItem(safeKey, safeAddr);
       setProxyWalletAddress(safeAddr);
       setIsProxyReady(true);
-      setDebugInfo(prev => ({ ...prev, proxyStatus: `phase=safe_deploy done ${safeAddr.slice(0, 10)}...` }));
+      setDebugInfo(prev => ({ ...prev, proxyStatus: `phase=safe_resolve done ${safeAddr.slice(0, 10)}...` }));
       return safeAddr;
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
-      // If deploy errors but we have a cached safe, continue with cached value
-      if (cachedSafe) {
-        setProxyWalletAddress(cachedSafe);
-        setIsProxyReady(true);
-        setDebugInfo(prev => ({ ...prev, proxyStatus: `phase=safe_reuse_after_error ${cachedSafe.slice(0, 10)}...` }));
-        return cachedSafe;
-      }
       console.error("[Polymarket] Safe init failed:", e);
       setDebugInfo(prev => ({ ...prev, polyError: errMsg, proxyStatus: "Init failed" }));
       throw e;
