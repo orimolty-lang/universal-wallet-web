@@ -7,8 +7,11 @@ import { CHAIN_ID, SUPPORTED_TOKEN_TYPE } from "@particle-network/universal-acco
 import { Interface, Contract, JsonRpcProvider } from "ethers";
 import { useWallets, useAccount } from "@particle-network/connectkit";
 import { ClobClient, OrderType, Side, SignatureType } from "@polymarket/clob-client";
+import { BuilderConfig } from "@polymarket/builder-signing-sdk";
 import { AssetType } from "@polymarket/clob-client/dist/types";
 import type { WalletClient } from "viem";
+
+const BUILDER_SIGN_URL = "https://polymarket-builder-worker-ori.orimolty.workers.dev/builder/sign";
 
 // Polymarket API endpoints
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -78,7 +81,16 @@ export default function PolymarketModal({
 
   const normalizeMarket = (m: unknown): Market | null => {
     const raw = m as Record<string, unknown>;
-    const tokens = Array.isArray(raw.tokens) ? raw.tokens as Array<{ token_id: string; outcome: string; price: number }> : [];
+    // Normalize tokens array - handle both token_id and tokenId formats
+    const rawTokens = Array.isArray(raw.tokens) ? raw.tokens : [];
+    const tokens = rawTokens.map((t: unknown) => {
+      const tok = t as Record<string, unknown>;
+      return {
+        token_id: String(tok.token_id || tok.tokenId || tok.id || ''),
+        outcome: String(tok.outcome || tok.name || ''),
+        price: Number(tok.price ?? 0),
+      };
+    }).filter(t => !!t.token_id);
 
     let outcomes: string[] = [];
     const rawOutcomes = raw.outcomes;
@@ -231,6 +243,13 @@ export default function PolymarketModal({
       : SignatureType.EOA;
     const funderAddress = signatureType === SignatureType.POLY_PROXY ? smartAccountAddress : undefined;
 
+    // Builder config with remote signing (secrets stay server-side)
+    const builderConfig = new BuilderConfig({
+      remoteBuilderConfig: {
+        url: BUILDER_SIGN_URL,
+      },
+    });
+
     const client = new ClobClient(
       POLYMARKET_API,
       137,
@@ -240,6 +259,7 @@ export default function PolymarketModal({
       funderAddress,
       undefined,
       true,
+      builderConfig,
     );
 
     const creds = await client.createOrDeriveApiKey();
@@ -252,6 +272,7 @@ export default function PolymarketModal({
       funderAddress,
       undefined,
       true,
+      builderConfig,
     );
     setClobClient(authedClient);
     return authedClient;
