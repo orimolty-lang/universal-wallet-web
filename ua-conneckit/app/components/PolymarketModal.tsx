@@ -11,6 +11,7 @@ import type { WalletClient } from "viem";
 import { keccak256, getCreate2Address, encodePacked } from "viem";
 
 const RELAYER_URL = "https://relayer-v2.polymarket.com";
+const POLYGON_RPC_URL = "https://polygon-bor-rpc.publicnode.com";
 
 // Polygon proxy contract config
 const PROXY_FACTORY = "0xaB45c5A4B0c941a2F231C04C3f49182e1A254052";
@@ -281,7 +282,7 @@ export default function PolymarketModal({
     if (!address || !universalAccount) return;
     
     try {
-      const provider = new JsonRpcProvider("https://polygon-rpc.com");
+      const provider = new JsonRpcProvider(POLYGON_RPC_URL);
       const ERC20_ABI = ["function allowance(address owner, address spender) view returns (uint256)"];
       const usdce = new Contract(USDC_E_ADDRESS, ERC20_ABI, provider);
       const owner = proxyWalletAddress || address;
@@ -374,7 +375,7 @@ export default function PolymarketModal({
       throw lastErr;
     };
 
-    const provider = new JsonRpcProvider("https://polygon-rpc.com");
+    const provider = new JsonRpcProvider(POLYGON_RPC_URL);
     const ERC20_ABI = ["function balanceOf(address) view returns (uint256)"];
     const usdce = new Contract(USDC_E_ADDRESS, ERC20_ABI, provider);
 
@@ -469,7 +470,7 @@ export default function PolymarketModal({
     if (!address) return;
     
     try {
-      const provider = new JsonRpcProvider("https://polygon-rpc.com");
+      const provider = new JsonRpcProvider(POLYGON_RPC_URL);
       
       // Check USDC.e balance on Polygon (use proxy address if available)
       const checkAddr = proxyWalletAddress || address;
