@@ -20,6 +20,7 @@ import DepositDialog from "./components/DepositDialog";
 import AssetBreakdownDialog from "./components/AssetBreakdownDialog";
 import TokenDetailModal from "./components/TokenDetailModal";
 import SwapModal from "./components/SwapModal";
+import PolymarketModal from "./components/PolymarketModal";
 import { encodeFunctionData } from "viem";
 import { toBeHex } from "ethers";
 import { useUniversalAccountWS } from "./hooks/useUniversalAccountWS";
@@ -2780,6 +2781,7 @@ const HomeTab = ({
   onSend,
   onConvert,
   onPerps,
+  onPolymarket,
   onTokenSelect,
   onRefresh,
 }: {
@@ -2792,6 +2794,7 @@ const HomeTab = ({
   onSend: () => void;
   onConvert: () => void;
   onPerps: () => void;
+  onPolymarket: () => void;
   onTokenSelect?: (token: { id: string; symbol: string; name: string; logo?: string; price: number; contracts?: Array<{ address: string; blockchain: string }> }) => void;
   onRefresh?: () => Promise<void>;
 }) => {
@@ -3157,7 +3160,7 @@ const HomeTab = ({
       </div>
       
       {/* Perps Menu Item */}
-      <div className="px-4 mt-6 mb-24">
+      <div className="px-4 mt-6">
         <button 
           onClick={onPerps}
           className="w-full flex items-center justify-between p-4 bg-gray-900 rounded-2xl border border-gray-800 hover:border-accent-dynamic/50 transition-colors"
@@ -3169,6 +3172,27 @@ const HomeTab = ({
             <div className="text-left">
               <div className="text-white font-semibold">Perps</div>
               <div className="text-gray-500 text-sm">Trade perpetual futures</div>
+            </div>
+          </div>
+          <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Polymarket Menu Item */}
+      <div className="px-4 mt-3 mb-24">
+        <button 
+          onClick={onPolymarket}
+          className="w-full flex items-center justify-between p-4 bg-gray-900 rounded-2xl border border-gray-800 hover:border-purple-500/50 transition-colors"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-purple-500/20 flex items-center justify-center">
+              <span className="text-2xl">🔮</span>
+            </div>
+            <div className="text-left">
+              <div className="text-white font-semibold">Prediction Markets</div>
+              <div className="text-gray-500 text-sm">Bet on real-world events</div>
             </div>
           </div>
           <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -4523,6 +4547,7 @@ const App = () => {
   const [showSendModal, setShowSendModal] = useState(false);
   const [showConvertModal, setShowConvertModal] = useState(false);
   const [showPerpsModal, setShowPerpsModal] = useState(false);
+  const [showPolymarketModal, setShowPolymarketModal] = useState(false);
   const [showDepositDialog, setShowDepositDialog] = useState(false);
   const [showAssetBreakdown, setShowAssetBreakdown] = useState(false);
   const [showActivityModal, setShowActivityModal] = useState(false);
@@ -4856,6 +4881,7 @@ const App = () => {
           onSend={() => setShowSendModal(true)}
           onConvert={() => setShowConvertModal(true)}
           onPerps={() => setShowPerpsModal(true)}
+          onPolymarket={() => setShowPolymarketModal(true)}
           onTokenSelect={(token) => setHomeSelectedToken(token)}
           onRefresh={async () => {
             await fetchAssets();
@@ -4924,6 +4950,16 @@ const App = () => {
         onClose={() => setShowPerpsModal(false)}
         assets={combinedAssets as IAssetsResponse | null}
         universalAccount={universalAccountInstance}
+      />
+
+      <PolymarketModal
+        isOpen={showPolymarketModal}
+        onClose={() => setShowPolymarketModal(false)}
+        universalAccount={universalAccountInstance}
+        onSuccess={() => {
+          fetchAssets();
+          fetchMobulaAssets();
+        }}
       />
 
       {/* Sell is handled by SwapModal with direction flip */}
