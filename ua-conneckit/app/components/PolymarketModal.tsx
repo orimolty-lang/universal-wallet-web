@@ -755,74 +755,33 @@ export default function PolymarketModal({
         return false;
       };
 
-      // Try full size, then auto-slice if no fill
-      const baseAmount = Number(amount);
-      const attempts = [baseAmount, baseAmount * 0.5, baseAmount * 0.25].filter(a => a > 0.01);
-      let filled = false;
-      let lastOrderId = "";
+      // Immediate execution path per docs: FOK + generous worst-price limit.
+      const worstPrice = Math.min(0.99, Math.max(0.01, estPrice * 1.12));
+      setDebugInfo(prev => ({ ...prev, proxyStatus: `Posting FOK with worstPrice=${worstPrice.toFixed(4)}` }));
 
-      for (let i = 0; i < attempts.length; i++) {
-        const tryAmount = attempts[i];
-        setDebugInfo(prev => ({ ...prev, proxyStatus: `Posting FAK attempt ${i + 1}/${attempts.length} amount=${tryAmount}` }));
+      const orderResponse = await clob.createAndPostMarketOrder(
+        {
+          tokenID: selectedToken.token_id,
+          side: Side.BUY,
+          amount: Number(amount), // BUY amount is USDC spend
+          price: worstPrice,
+        },
+        { tickSize: "0.01", negRisk: false },
+        OrderType.FOK,
+      );
 
-        const orderResponse = await clob.createAndPostMarketOrder(
-          {
-            tokenID: selectedToken.token_id,
-            side: Side.BUY,
-            amount: tryAmount,
-          },
-          undefined,
-          OrderType.FAK,
-        );
+      const orderObj = (orderResponse ?? {}) as Record<string, unknown>;
+      const orderId = (orderObj.orderID || orderObj.id || orderObj.orderId || "") as string;
+      console.log("[Polymarket] Buy order response:", orderResponse);
 
-        const orderObj = (orderResponse ?? {}) as Record<string, unknown>;
-        const orderId = (orderObj.orderID || orderObj.id || orderObj.orderId || "") as string;
-        lastOrderId = orderId;
-        console.log("[Polymarket] Buy order response:", orderResponse);
-
-        filled = await verifyFill(orderId);
-        if (filled) break;
-      }
-
+      const filled = await verifyFill(orderId);
       if (!filled) {
-        // Fallback: place a resting GTC limit order near best ask
-        const bestAskObj = (asks[0] ?? {}) as Record<string, unknown>;
-        const bestAsk = Number(bestAskObj.price || bestAskObj.p || estPrice);
-        const limitPrice = Math.min(0.99, Math.max(0.01, bestAsk > 0 ? bestAsk * 1.01 : estPrice));
-        const sizeShares = Number(amount) / Math.max(limitPrice, 0.01);
-
         setDebugInfo(prev => ({
           ...prev,
-          proxyStatus: `No immediate fill; placing GTC at ${limitPrice.toFixed(4)}`,
+          proxyStatus: "Order accepted but no fill detected",
+          polyError: `No fill detected. orderId=${orderId || 'n/a'} est=${estPrice.toFixed(4)} worst=${worstPrice.toFixed(4)}`,
         }));
-
-        const gtcResp = await clob.createAndPostOrder(
-          {
-            tokenID: selectedToken.token_id,
-            side: Side.BUY,
-            price: limitPrice,
-            size: sizeShares,
-          },
-          undefined,
-          OrderType.GTC,
-        );
-
-        const gtcObj = (gtcResp ?? {}) as Record<string, unknown>;
-        const gtcId = String(gtcObj.orderID || gtcObj.id || gtcObj.orderId || "");
-        if (!gtcId) {
-          setDebugInfo(prev => ({
-            ...prev,
-            proxyStatus: "Order accepted but no fill detected",
-            polyError: `No fill detected. orderId=${lastOrderId || 'n/a'}`,
-          }));
-          throw new Error("Order accepted but not filled (FAK/no liquidity at current market). Funds remain in proxy.");
-        }
-
-        setDebugInfo(prev => ({ ...prev, proxyStatus: `Resting GTC placed: ${gtcId.slice(0, 10)}...` }));
-        setStatus("Resting order placed. It will fill when matched.");
-        onSuccess?.();
-        await refreshPortfolio(selectedMarket);
-        return;
+        throw new Error("Order not filled immediately (FOK). Increase worst-price tolerance or reduce size.");
       }
 
       setStatus("Order filled successfully!");
