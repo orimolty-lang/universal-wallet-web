@@ -138,7 +138,17 @@ export default function PolymarketModal({
   const [needsApproval, setNeedsApproval] = useState(true);
   const [isApproving, setIsApproving] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
-  const [debugInfo, setDebugInfo] = useState<{ endpoint?: string; rawCount?: number; openCount?: number; finalCount?: number; error?: string }>({});
+  const [debugInfo, setDebugInfo] = useState<{ 
+    endpoint?: string; 
+    rawCount?: number; 
+    openCount?: number; 
+    finalCount?: number; 
+    error?: string;
+    polyError?: string;
+    proxyStatus?: string;
+    signerType?: string;
+    walletAddress?: string;
+  }>({});
   const [clobClient, setClobClient] = useState<ClobClient | null>(null);
   const [relayClient, setRelayClient] = useState<RelayClient | null>(null);
   const [proxyWalletAddress, setProxyWalletAddress] = useState<string | null>(null);
@@ -327,25 +337,50 @@ export default function PolymarketModal({
 
 
   const getClobClient = async () => {
-    if (!primaryWallet || !address) throw new Error("Wallet not connected");
+    if (!primaryWallet || !address) {
+      setDebugInfo(prev => ({ ...prev, polyError: "Wallet not connected", walletAddress: address || "none" }));
+      throw new Error("Wallet not connected");
+    }
     if (clobClient) return clobClient;
 
-    const walletClient = primaryWallet.getWalletClient();
+    setDebugInfo(prev => ({ ...prev, proxyStatus: "Initializing...", walletAddress: address }));
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let walletClient: any;
+    try {
+      walletClient = primaryWallet.getWalletClient();
+      setDebugInfo(prev => ({ ...prev, signerType: walletClient ? "walletClient" : "none" }));
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      setDebugInfo(prev => ({ ...prev, polyError: `getWalletClient failed: ${errMsg}` }));
+      throw e;
+    }
     
     // Builder config with remote signing (secrets stay server-side)
-    const builderConfig = new BuilderConfig({
-      remoteBuilderConfig: {
-        url: BUILDER_SIGN_URL,
-      },
-    });
+    let builderConfig;
+    try {
+      builderConfig = new BuilderConfig({
+        remoteBuilderConfig: {
+          url: BUILDER_SIGN_URL,
+        },
+      });
+      setDebugInfo(prev => ({ ...prev, proxyStatus: "BuilderConfig created" }));
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      setDebugInfo(prev => ({ ...prev, polyError: `BuilderConfig failed: ${errMsg}` }));
+      throw e;
+    }
 
     // Get proxy wallet address from relayer (for proper Polymarket context)
     // For proxy wallets, deploy() returns the proxy address (idempotent if already deployed)
     let polyProxyAddr = proxyWalletAddress;
     if (!polyProxyAddr) {
       try {
+        setDebugInfo(prev => ({ ...prev, proxyStatus: "Creating signer wrapper..." }));
         // Use custom signer wrapper to handle chain mismatch
         const polygonSigner = new PolygonSignerWrapper(walletClient, address);
+        
+        setDebugInfo(prev => ({ ...prev, proxyStatus: "Creating RelayClient..." }));
         const relay = new RelayClient(
           RELAYER_URL,
           137,
@@ -354,16 +389,26 @@ export default function PolymarketModal({
           builderConfig,
           RelayerTxType.PROXY,
         );
+        
+        setDebugInfo(prev => ({ ...prev, proxyStatus: "Deploying proxy wallet..." }));
         // Deploy proxy wallet (auto-deploys on first tx if not exists)
         const deployResponse = await relay.deploy();
+        
+        setDebugInfo(prev => ({ ...prev, proxyStatus: "Waiting for deploy result..." }));
         const result = await deployResponse.wait();
+        
         polyProxyAddr = result?.proxyAddress || null;
         if (polyProxyAddr) {
           setProxyWalletAddress(polyProxyAddr);
+          setDebugInfo(prev => ({ ...prev, proxyStatus: `Proxy: ${polyProxyAddr}` }));
+        } else {
+          setDebugInfo(prev => ({ ...prev, proxyStatus: "No proxy address returned" }));
         }
         setRelayClient(relay);
       } catch (e) {
+        const errMsg = e instanceof Error ? e.message : String(e);
         console.warn("[Polymarket] Could not get proxy wallet, falling back to EOA", e);
+        setDebugInfo(prev => ({ ...prev, polyError: `Proxy deploy failed: ${errMsg}`, proxyStatus: "Fallback to EOA" }));
       }
     }
 
@@ -686,11 +731,21 @@ export default function PolymarketModal({
 
               {showDebug && (
                 <div className="bg-[#1a1a2e] border border-gray-700 rounded-lg p-3 text-xs text-gray-300 space-y-1">
+                  <div className="font-bold text-purple-400 mb-1">Markets Debug:</div>
                   <div>endpoint: {debugInfo.endpoint || 'n/a'}</div>
                   <div>rawCount: {debugInfo.rawCount ?? 0}</div>
                   <div>openCount: {debugInfo.openCount ?? 0}</div>
                   <div>finalCount: {debugInfo.finalCount ?? 0}</div>
-                  {debugInfo.error ? <div className="text-red-400">error: {debugInfo.error}</div> : null}
+                  {debugInfo.error && <div className="text-red-400">error: {debugInfo.error}</div>}
+                  
+                  <div className="font-bold text-blue-400 mt-2 mb-1">Polymarket Debug:</div>
+                  <div>walletAddress: {debugInfo.walletAddress || address || 'n/a'}</div>
+                  <div>signerType: {debugInfo.signerType || 'n/a'}</div>
+                  <div>proxyStatus: {debugInfo.proxyStatus || 'not started'}</div>
+                  <div>proxyWallet: {proxyWalletAddress || 'none'}</div>
+                  <div>clobClient: {clobClient ? 'initialized' : 'null'}</div>
+                  <div>relayClient: {relayClient ? 'initialized' : 'null'}</div>
+                  {debugInfo.polyError && <div className="text-red-400">polyError: {debugInfo.polyError}</div>}
                 </div>
               )}
 
