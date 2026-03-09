@@ -63,6 +63,8 @@ export default function PolymarketModal({
   const [error, setError] = useState<string | null>(null);
   const [needsApproval, setNeedsApproval] = useState(true);
   const [isApproving, setIsApproving] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<{ endpoint?: string; rawCount?: number; openCount?: number; finalCount?: number; error?: string }>({});
 
   // Fetch trending/popular markets
   const fetchMarkets = useCallback(async () => {
@@ -70,19 +72,23 @@ export default function PolymarketModal({
     setError(null);
     try {
       // Primary endpoint
-      const response = await fetch(`${GAMMA_API}/markets?limit=100`);
+      const primaryEndpoint = `${GAMMA_API}/markets?limit=100`;
+      const response = await fetch(primaryEndpoint);
       const data = await response.json();
       let list: Market[] = Array.isArray(data) ? data : Array.isArray((data as { data?: Market[] })?.data) ? (data as { data: Market[] }).data : [];
+      let usedEndpoint = primaryEndpoint;
 
       // Fallback endpoint (events -> markets)
       if (!list.length) {
-        const fallbackRes = await fetch(`${GAMMA_API}/events?limit=50`);
+        const fallbackEndpoint = `${GAMMA_API}/events?limit=50`;
+        const fallbackRes = await fetch(fallbackEndpoint);
         const fallbackData = await fallbackRes.json();
         const events = Array.isArray(fallbackData) ? fallbackData : Array.isArray((fallbackData as { data?: unknown[] })?.data) ? (fallbackData as { data: unknown[] }).data : [];
         list = events.flatMap((e: unknown) => {
           const eventObj = e as { markets?: Market[] };
           return Array.isArray(eventObj?.markets) ? eventObj.markets : [];
         });
+        usedEndpoint = fallbackEndpoint;
       }
 
       // Final clean filter (prefer open markets)
@@ -92,12 +98,21 @@ export default function PolymarketModal({
         ? openMarkets
         : list.filter((m) => !!m?.id && !!m?.question && m?.active !== false);
 
+      setDebugInfo({
+        endpoint: usedEndpoint,
+        rawCount: list.length,
+        openCount: openMarkets.length,
+        finalCount: finalMarkets.length,
+      });
+
       console.log("[Polymarket] Loaded markets:", finalMarkets.length, "(open:", openMarkets.length, ")");
       setAllMarkets(finalMarkets);
       setMarkets(finalMarkets);
     } catch (err) {
       console.error("[Polymarket] Failed to fetch markets:", err);
+      const msg = err instanceof Error ? err.message : "Unknown error";
       setError("Failed to load markets");
+      setDebugInfo({ error: msg });
       setAllMarkets([]);
       setMarkets([]);
     } finally {
@@ -317,6 +332,25 @@ export default function PolymarketModal({
                   className="w-full pl-10 pr-4 py-2 bg-[#2a2a4a] border border-gray-600 rounded-lg text-white placeholder-gray-400"
                 />
               </div>
+
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => setShowDebug(!showDebug)}
+                  className="text-xs text-gray-400 hover:text-gray-200"
+                >
+                  {showDebug ? 'Hide debug' : 'Show debug'}
+                </button>
+              </div>
+
+              {showDebug && (
+                <div className="bg-[#1a1a2e] border border-gray-700 rounded-lg p-3 text-xs text-gray-300 space-y-1">
+                  <div>endpoint: {debugInfo.endpoint || 'n/a'}</div>
+                  <div>rawCount: {debugInfo.rawCount ?? 0}</div>
+                  <div>openCount: {debugInfo.openCount ?? 0}</div>
+                  <div>finalCount: {debugInfo.finalCount ?? 0}</div>
+                  {debugInfo.error ? <div className="text-red-400">error: {debugInfo.error}</div> : null}
+                </div>
+              )}
 
               {/* Markets list */}
               {isLoadingMarkets ? (
