@@ -360,21 +360,13 @@ export const SwapModal = ({
         try {
           const walletClient = primaryWallet.getWalletClient();
 
-          // Resolve signer address robustly (embedded wallets may not expose walletClient.account)
-          let signerAddress = walletClient.account?.address as `0x${string}` | undefined;
-          if (!signerAddress) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const accounts = await (walletClient as any).request({ method: 'eth_accounts', params: [] }) as `0x${string}`[];
-            signerAddress = accounts?.[0];
-          }
-          if (!signerAddress) {
-            throw new Error('No signer address found for swap signing');
-          }
-
-          // Sign the root hash (use signMessage for better embedded-wallet compatibility)
+          // Sign root hash first (does not require explicit signer address)
           const signature = await walletClient.signMessage({
             message: { raw: result.rootHash as `0x${string}` },
           });
+
+          // Resolve signer address ONLY if we actually need 7702 typed-data auth
+          let signerAddress = walletClient.account?.address as `0x${string}` | undefined;
 
           // 7702 auth pattern (only when needed by userOps)
           const authorizations: Array<{ userOpHash: string; signature: string }> = [];
@@ -414,6 +406,13 @@ export const SwapModal = ({
                         nonce: String(userOp.eip7702Auth.nonce),
                       },
                     };
+                    if (!signerAddress) {
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      const accounts = await (walletClient as any).request({ method: 'eth_accounts', params: [] }) as `0x${string}`[];
+                      signerAddress = accounts?.[0];
+                    }
+                    if (!signerAddress) throw new Error('No signer address for 7702 authorization');
+
                     authSig = await walletClient.request({
                       method: 'eth_signTypedData_v4',
                       params: [signerAddress, JSON.stringify(typedData)],
@@ -471,7 +470,8 @@ export const SwapModal = ({
           }
         } catch (signError) {
           console.error("Signing error:", signError);
-          setError("Failed to sign transaction");
+          const msg = signError instanceof Error ? signError.message : "Unknown signing error";
+          setError(`Failed to sign transaction: ${msg}`);
           return;
         }
       } else if (result.transactionId) {
