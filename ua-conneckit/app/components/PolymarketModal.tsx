@@ -284,14 +284,15 @@ export default function PolymarketModal({
       const provider = new JsonRpcProvider("https://polygon-rpc.com");
       const ERC20_ABI = ["function allowance(address owner, address spender) view returns (uint256)"];
       const usdce = new Contract(USDC_E_ADDRESS, ERC20_ABI, provider);
+      const owner = proxyWalletAddress || address;
       
-      // Check allowance for CTF Exchange
-      const allowance = await usdce.allowance(address, CTF_EXCHANGE);
+      // Check allowance for CTF Exchange from the funder/proxy wallet context
+      const allowance = await usdce.allowance(owner, CTF_EXCHANGE);
       setNeedsApproval(BigInt(allowance) < BigInt("1000000000000")); // Less than 1M USDC.e approved
     } catch (err) {
       console.error("[Polymarket] Allowance check failed:", err);
     }
-  }, [address, universalAccount]);
+  }, [address, universalAccount, proxyWalletAddress]);
 
 
   const resetPolymarketState = () => {
@@ -371,7 +372,10 @@ export default function PolymarketModal({
       throw lastErr;
     };
 
+    setDebugInfo(prev => ({ ...prev, proxyStatus: `Funding start: ${humanAmount} USDC.e -> proxy` }));
+
     // Step 1: Convert/sync to Polygon USDC liquidity
+    setStatus("Converting to Polygon USDC...");
     await sendWithExpiryRetry(
       () => universalAccount.createConvertTransaction({
         expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: humanAmount },
@@ -381,6 +385,7 @@ export default function PolymarketModal({
     );
 
     // Step 2: Transfer explicit Polygon USDC.e token to proxy wallet
+    setStatus("Transferring USDC.e to proxy wallet...");
     const transferRes = await sendWithExpiryRetry(
       () => universalAccount.createTransferTransaction({
         token: {
@@ -393,6 +398,8 @@ export default function PolymarketModal({
       "Transfer",
     );
 
+    setDebugInfo(prev => ({ ...prev, proxyStatus: `Funding done: tx ${transferRes.transactionId}` }));
+
     return { proxy, txId: transferRes.transactionId };
   };
 
@@ -401,21 +408,32 @@ export default function PolymarketModal({
     const walletClient = primaryWallet.getWalletClient();
     if (!walletClient) throw new Error("No wallet client");
 
+    // Use signature type 2 (POLY_GNOSIS_SAFE) for embedded/browser-wallet style flows.
+    const signatureType = SignatureType.POLY_GNOSIS_SAFE;
+    setDebugInfo(prev => ({
+      ...prev,
+      signerType: `sigType=${signatureType}`,
+      proxyStatus: `CLOB auth init (funder ${proxy.slice(0, 10)}...)`,
+    }));
+
     const baseClient = new ClobClient(
       POLYMARKET_API,
       137,
       walletClient as unknown as WalletClient,
       undefined,
-      SignatureType.POLY_PROXY,
+      signatureType,
       proxy,
     );
     const creds = await baseClient.createOrDeriveApiKey();
+
+    setDebugInfo(prev => ({ ...prev, proxyStatus: "CLOB creds derived" }));
+
     return new ClobClient(
       POLYMARKET_API,
       137,
       walletClient as unknown as WalletClient,
       creds,
-      SignatureType.POLY_PROXY,
+      signatureType,
       proxy,
     );
   };
@@ -547,7 +565,9 @@ export default function PolymarketModal({
 
     } catch (err) {
       console.error("[Polymarket] Buy failed:", err);
-      setError(err instanceof Error ? err.message : "Transaction failed");
+      const msg = err instanceof Error ? err.message : "Transaction failed";
+      setDebugInfo(prev => ({ ...prev, polyError: msg, proxyStatus: "Buy failed" }));
+      setError(msg);
     } finally {
       setIsLoading(false);
     }
@@ -579,7 +599,9 @@ export default function PolymarketModal({
       await refreshPortfolio(selectedMarket);
       onSuccess?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Sell failed");
+      const msg = e instanceof Error ? e.message : "Sell failed";
+      setDebugInfo(prev => ({ ...prev, polyError: msg, proxyStatus: "Sell failed" }));
+      setError(msg);
     } finally {
       setIsLoading(false);
     }
