@@ -716,7 +716,7 @@ export default function PolymarketModal({
       // Dynamic market-specific minimum order size from orderbook
       const minOrderSizeRaw = Number(book.min_order_size || 0);
       if (Number.isFinite(minOrderSizeRaw) && minOrderSizeRaw > 0) {
-        const estPriceForMin = await clob.calculateMarketPrice(selectedToken.token_id, Side.BUY, Number(amount), OrderType.FOK).catch(() => 0);
+        const estPriceForMin = await clob.calculateMarketPrice(selectedToken.token_id, Side.BUY, Number(amount), OrderType.FAK).catch(() => 0);
         // For BUY market orders, amount is USDC spend. Approx convert min shares -> min USDC via estimated price.
         const minUsdcApprox = estPriceForMin > 0 ? minOrderSizeRaw * estPriceForMin : 0;
         if (minUsdcApprox > 0 && Number(amount) < minUsdcApprox) {
@@ -783,7 +783,7 @@ export default function PolymarketModal({
           price: worstPrice,
         },
         undefined,
-        OrderType.FOK,
+        OrderType.FAK,
       );
 
       const orderObj = (orderResponse ?? {}) as Record<string, unknown>;
@@ -797,7 +797,7 @@ export default function PolymarketModal({
           proxyStatus: "Order accepted but no fill detected",
           polyError: `No fill detected. orderId=${orderId || 'n/a'} est=${estPrice.toFixed(4)} worst=${worstPrice.toFixed(4)}`,
         }));
-        throw new Error("Order not filled immediately (FOK). Increase worst-price tolerance or reduce size.");
+        throw new Error("Order not filled immediately (FAK). Increase worst-price tolerance, reduce size, or place resting GTC.");
       }
 
       setStatus("Order filled successfully!");
