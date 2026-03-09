@@ -10,11 +10,14 @@ import { ClobClient, OrderType, Side, SignatureType } from "@polymarket/clob-cli
 import { BuilderConfig } from "@polymarket/builder-signing-sdk";
 import { RelayClient, RelayerTxType } from "@polymarket/builder-relayer-client";
 import type { WalletClient } from "viem";
+import { getCreate2Address, keccak256, encodeAbiParameters } from "viem";
 import { getLifiSwapQuote } from "../lib/swapService";
 
 const RELAYER_URL = "https://relayer-v2.polymarket.com";
 const BUILDER_SIGN_URL = "https://polymarket-builder-worker-ori.orimolty.workers.dev/builder/sign";
 const POLYGON_RPC_URL = "https://polygon-bor-rpc.publicnode.com";
+const SAFE_FACTORY = "0xaacFeEa03eb1561C4e67d661e40682Bd20E3541b";
+const SAFE_INIT_CODE_HASH = "0x2bce2127ff07fb632d16c8347c4ebf501f4841168bed00d9e6ef715ddb6fcecf" as `0x${string}`;
 
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -77,6 +80,19 @@ class PolygonSignerWrapper {
   }
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
+
+function deriveSafeWallet(ownerAddress: string): `0x${string}` {
+  return getCreate2Address({
+    bytecodeHash: SAFE_INIT_CODE_HASH,
+    from: SAFE_FACTORY,
+    salt: keccak256(
+      encodeAbiParameters(
+        [{ name: "address", type: "address" }],
+        [ownerAddress as `0x${string}`],
+      ),
+    ),
+  });
+}
 
 // Polymarket API endpoints
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -399,6 +415,16 @@ export default function PolymarketModal({
       return safeAddr;
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
+
+      // If safe already exists, resolve deterministically from signer and continue.
+      if (errMsg.toLowerCase().includes("safe already deployed")) {
+        const safeAddr = deriveSafeWallet(address);
+        setProxyWalletAddress(safeAddr);
+        setIsProxyReady(true);
+        setDebugInfo(prev => ({ ...prev, proxyStatus: `phase=safe_resolve existing ${safeAddr.slice(0, 10)}...` }));
+        return safeAddr;
+      }
+
       console.error("[Polymarket] Safe init failed:", e);
       setDebugInfo(prev => ({ ...prev, polyError: errMsg, proxyStatus: "Init failed" }));
       throw e;
@@ -615,6 +641,8 @@ export default function PolymarketModal({
 
   useEffect(() => {
     if (isOpen && address) {
+      // Resolve SAFE early so address/balance are visible before trade actions.
+      initializeProxy().catch(() => undefined);
       checkApprovals();
       refreshPortfolio();
     }
