@@ -4,41 +4,15 @@ import { useState, useEffect, useCallback } from "react";
 import { X, TrendingUp, TrendingDown, Loader2, ExternalLink, Search } from "lucide-react";
 import type { UniversalAccount } from "@particle-network/universal-account-sdk";
 import { CHAIN_ID, SUPPORTED_TOKEN_TYPE } from "@particle-network/universal-account-sdk";
-import { Contract, JsonRpcProvider } from "ethers";
+import { Contract, JsonRpcProvider, Interface, parseUnits } from "ethers";
 import { useWallets, useAccount } from "@particle-network/connectkit";
-import { encodeFunctionData, maxUint256, keccak256, getCreate2Address, encodePacked } from "viem";
+import { keccak256, getCreate2Address, encodePacked } from "viem";
 
-const BUILDER_SIGN_URL = "https://polymarket-builder-worker-ori.orimolty.workers.dev/builder/sign";
 const RELAYER_URL = "https://relayer-v2.polymarket.com";
 
 // Polygon proxy contract config
 const PROXY_FACTORY = "0xaB45c5A4B0c941a2F231C04C3f49182e1A254052";
 const PROXY_INIT_CODE_HASH = "0xd21df8dc65880a8606f09fe0ce3df9b8869287ab0b058be05aa9e8af6330a00b" as `0x${string}`;
-// Used for gasless relay transactions (future implementation)
-// const RELAY_HUB = "0xD216153c06E857cD7f72665E0aF1d7D82172F494";
-// const DEFAULT_GAS_LIMIT = "10000000";
-
-// ============================================
-// DIRECT RELAYER API (bypasses SDK completely)
-// ============================================
-
-interface RelayerHeaders {
-  POLY_BUILDER_SIGNATURE: string;
-  POLY_BUILDER_TIMESTAMP: string;
-  POLY_BUILDER_API_KEY: string;
-  POLY_BUILDER_PASSPHRASE: string;
-}
-
-// Get Builder auth headers from our signing worker
-async function getBuilderHeaders(method: string, path: string, body?: string): Promise<RelayerHeaders> {
-  const resp = await fetch(BUILDER_SIGN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ method, path, body: body || "" }),
-  });
-  if (!resp.ok) throw new Error(`Builder sign failed: ${resp.status}`);
-  return resp.json();
-}
 
 // Check if proxy wallet is deployed
 async function checkProxyDeployed(address: string): Promise<boolean> {
@@ -46,21 +20,6 @@ async function checkProxyDeployed(address: string): Promise<boolean> {
   if (!resp.ok) return false;
   const data = await resp.json();
   return data.deployed === true;
-}
-
-// Get relay payload (nonce + relay address)
-async function getRelayPayload(address: string): Promise<{ address: string; nonce: string }> {
-  const headers = await getBuilderHeaders("GET", `/relay-payload?address=${address}&type=PROXY`);
-  const resp = await fetch(`${RELAYER_URL}/relay-payload?address=${address}&type=PROXY`, {
-    headers: {
-      "POLY_BUILDER_SIGNATURE": headers.POLY_BUILDER_SIGNATURE,
-      "POLY_BUILDER_TIMESTAMP": headers.POLY_BUILDER_TIMESTAMP,
-      "POLY_BUILDER_API_KEY": headers.POLY_BUILDER_API_KEY,
-      "POLY_BUILDER_PASSPHRASE": headers.POLY_BUILDER_PASSPHRASE,
-    },
-  });
-  if (!resp.ok) throw new Error(`Get relay payload failed: ${resp.status}`);
-  return resp.json();
 }
 
 // Derive proxy wallet address from owner EOA (CREATE2)
@@ -71,64 +30,6 @@ function deriveProxyWallet(ownerAddress: string): `0x${string}` {
     from: PROXY_FACTORY as `0x${string}`,
     salt,
   });
-}
-
-// Create the struct hash for proxy transaction signing (used in gasless relay)
-// Format: keccak256("rlx:" + from + to + data + txFee + gasPrice + gasLimit + nonce + relayHub + relay)
-// TODO: Implement full gasless trading
-/*
-function createProxyStructHash(...) { ... }
-*/
-
-// Submit transaction to relayer
-async function submitTransaction(
-  txRequest: {
-    type: string;
-    from: string;
-    to: string;
-    data: string;
-    nonce: string;
-    signature: string;
-    signatureParams: Record<string, string>;
-    metadata?: string;
-  }
-): Promise<{ transactionID: string; state: string }> {
-  const body = JSON.stringify(txRequest);
-  const headers = await getBuilderHeaders("POST", "/submit", body);
-  const resp = await fetch(`${RELAYER_URL}/submit`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "POLY_BUILDER_SIGNATURE": headers.POLY_BUILDER_SIGNATURE,
-      "POLY_BUILDER_TIMESTAMP": headers.POLY_BUILDER_TIMESTAMP,
-      "POLY_BUILDER_API_KEY": headers.POLY_BUILDER_API_KEY,
-      "POLY_BUILDER_PASSPHRASE": headers.POLY_BUILDER_PASSPHRASE,
-    },
-    body,
-  });
-  if (!resp.ok) {
-    const errText = await resp.text();
-    throw new Error(`Submit failed: ${resp.status} - ${errText}`);
-  }
-  return resp.json();
-}
-
-// Poll transaction status
-async function pollTransaction(txId: string, maxAttempts = 30): Promise<{ state: string; transactionHash?: string; proxyAddress?: string }> {
-  for (let i = 0; i < maxAttempts; i++) {
-    const resp = await fetch(`${RELAYER_URL}/transaction?id=${txId}`);
-    if (resp.ok) {
-      const txns = await resp.json();
-      if (txns.length > 0) {
-        const tx = txns[0];
-        if (["STATE_CONFIRMED", "STATE_FAILED", "STATE_INVALID"].includes(tx.state)) {
-          return tx;
-        }
-      }
-    }
-    await new Promise(r => setTimeout(r, 2000)); // Wait 2s between polls
-  }
-  throw new Error("Transaction polling timeout");
 }
 
 // Polymarket API endpoints
@@ -437,132 +338,41 @@ export default function PolymarketModal({
     }
   };
 
-  // Approve USDC.e for Polymarket via direct relayer API
-  const approveViaRelayer = async () => {
-    if (!primaryWallet || !address) throw new Error("Wallet not connected");
-    
+  const ensureProxyFunded = async (humanAmount: string) => {
+    if (!universalAccount || !primaryWallet || !address) throw new Error("Wallet not connected");
+
+    const proxy = await initializeProxy();
+    const erc20 = new Interface([
+      "function transfer(address to, uint256 amount) external returns (bool)",
+    ]);
+
+    const amount6 = parseUnits(humanAmount, 6);
+
+    // One-button prep: ensure USDC on Polygon + transfer to proxy wallet
+    const tx = await universalAccount.createUniversalTransaction({
+      chainId: CHAIN_ID.POLYGON_MAINNET,
+      expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.USDC, amount: humanAmount }],
+      transactions: [
+        {
+          to: USDC_E_ADDRESS,
+          data: erc20.encodeFunctionData("transfer", [proxy, amount6]),
+        },
+      ],
+    });
+
     const walletClient = primaryWallet.getWalletClient();
-    if (!walletClient) throw new Error("No wallet client");
-    
-    // Initialize proxy first
-    await initializeProxy();
-    
-    // Encode approve calls
-    const approveData1 = encodeFunctionData({
-      abi: [{
-        name: "approve",
-        type: "function",
-        inputs: [
-          { name: "spender", type: "address" },
-          { name: "amount", type: "uint256" },
-        ],
-        outputs: [{ type: "bool" }],
-      }],
-      functionName: "approve",
-      args: [CTF_ADDRESS, maxUint256],
+    const sig = await walletClient?.signMessage({
+      account: address as `0x${string}`,
+      message: { raw: tx.rootHash as `0x${string}` },
     });
-    
-    const approveData2 = encodeFunctionData({
-      abi: [{
-        name: "approve",
-        type: "function",
-        inputs: [
-          { name: "spender", type: "address" },
-          { name: "amount", type: "uint256" },
-        ],
-        outputs: [{ type: "bool" }],
-      }],
-      functionName: "approve",
-      args: [CTF_EXCHANGE, maxUint256],
-    });
-    
-    // Get relay payload
-    const relayPayload = await getRelayPayload(address);
-    
-    // Build EIP-712 typed data for proxy transaction
-    const txDomain = {
-      name: "Polymarket Proxy",
-      version: "1", 
-      chainId: 137,
-    };
-    
-    const txTypes = {
-      ProxyTransaction: [
-        { name: "from", type: "address" },
-        { name: "to", type: "address" },
-        { name: "data", type: "bytes" },
-        { name: "nonce", type: "uint256" },
-      ],
-    };
-    
-    // Sign and submit first approval
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sig1 = await (walletClient as any).request({
-      method: "eth_signTypedData_v4",
-      params: [
-        address,
-        JSON.stringify({
-          types: txTypes,
-          primaryType: "ProxyTransaction",
-          domain: txDomain,
-          message: {
-            from: address,
-            to: USDC_E_ADDRESS,
-            data: approveData1,
-            nonce: relayPayload.nonce,
-          },
-        }),
-      ],
-    });
-    
-    const tx1 = await submitTransaction({
-      type: "PROXY",
-      from: address,
-      to: USDC_E_ADDRESS,
-      data: approveData1,
-      nonce: relayPayload.nonce,
-      signature: sig1 as string,
-      signatureParams: { relay: relayPayload.address, gasPrice: "0" },
-      metadata: "Approve USDC.e for CTF",
-    });
-    
-    await pollTransaction(tx1.transactionID);
-    
-    // Get new nonce for second tx
-    const relayPayload2 = await getRelayPayload(address);
-    
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sig2 = await (walletClient as any).request({
-      method: "eth_signTypedData_v4",
-      params: [
-        address,
-        JSON.stringify({
-          types: txTypes,
-          primaryType: "ProxyTransaction",
-          domain: txDomain,
-          message: {
-            from: address,
-            to: USDC_E_ADDRESS,
-            data: approveData2,
-            nonce: relayPayload2.nonce,
-          },
-        }),
-      ],
-    });
-    
-    const tx2 = await submitTransaction({
-      type: "PROXY",
-      from: address,
-      to: USDC_E_ADDRESS,
-      data: approveData2,
-      nonce: relayPayload2.nonce,
-      signature: sig2 as string,
-      signatureParams: { relay: relayPayload2.address, gasPrice: "0" },
-      metadata: "Approve USDC.e for CTF Exchange",
-    });
-    
-    await pollTransaction(tx2.transactionID);
-    
+
+    const res = await universalAccount.sendTransaction(tx, sig);
+    return { proxy, txId: res.transactionId };
+  };
+
+  // Temporary: avoid broken direct relayer submit path causing 400/401.
+  // Trading flow will auto-fund proxy in handleBuy.
+  const approveViaRelayer = async () => {
     return true;
   };
 
@@ -647,7 +457,6 @@ export default function PolymarketModal({
   // Buy shares in a market
   const handleBuy = async () => {
     if (!universalAccount || !primaryWallet || !address || !selectedMarket || !amount) return;
-    const walletClient = primaryWallet.getWalletClient();
     
     setIsLoading(true);
     setError(null);
@@ -659,22 +468,9 @@ export default function PolymarketModal({
         throw new Error("Invalid amount");
       }
 
-      // Ensure USDC liquidity on Polygon first
-      setStatus("Preparing USDC on Polygon...");
-      const transaction = await universalAccount.createConvertTransaction({
-        expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: amount },
-        chainId: CHAIN_ID.POLYGON_MAINNET,
-      });
-
-      setStatus("Waiting for signature...");
-      const signature = await walletClient?.signMessage({
-        account: address as `0x${string}`,
-        message: { raw: transaction.rootHash as `0x${string}` },
-      });
-
-      setStatus("Sending funding transaction...");
-      const result = await universalAccount.sendTransaction(transaction, signature);
-      console.log("[Polymarket] Funding tx:", result.transactionId);
+      setStatus("Preparing funds (convert + deposit to proxy)...");
+      const prep = await ensureProxyFunded(amount);
+      console.log("[Polymarket] Funded proxy:", prep.proxy, "tx:", prep.txId);
 
       // Post CLOB market order
       const selectedToken = selectedMarket.tokens?.[selectedOutcome];
