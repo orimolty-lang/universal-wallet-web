@@ -6,10 +6,17 @@ import type { UniversalAccount } from "@particle-network/universal-account-sdk";
 import { CHAIN_ID, SUPPORTED_TOKEN_TYPE } from "@particle-network/universal-account-sdk";
 import { Contract, JsonRpcProvider } from "ethers";
 import { useWallets, useAccount } from "@particle-network/connectkit";
-import { encodeFunctionData, maxUint256 } from "viem";
+import { encodeFunctionData, maxUint256, keccak256, getCreate2Address, encodePacked } from "viem";
 
 const BUILDER_SIGN_URL = "https://polymarket-builder-worker-ori.orimolty.workers.dev/builder/sign";
 const RELAYER_URL = "https://relayer-v2.polymarket.com";
+
+// Polygon proxy contract config
+const PROXY_FACTORY = "0xaB45c5A4B0c941a2F231C04C3f49182e1A254052";
+const PROXY_INIT_CODE_HASH = "0xd21df8dc65880a8606f09fe0ce3df9b8869287ab0b058be05aa9e8af6330a00b" as `0x${string}`;
+// Used for gasless relay transactions (future implementation)
+// const RELAY_HUB = "0xD216153c06E857cD7f72665E0aF1d7D82172F494";
+// const DEFAULT_GAS_LIMIT = "10000000";
 
 // ============================================
 // DIRECT RELAYER API (bypasses SDK completely)
@@ -56,8 +63,22 @@ async function getRelayPayload(address: string): Promise<{ address: string; nonc
   return resp.json();
 }
 
-// Note: Proxy wallet address is derived via CREATE2 from owner address
-// We get it from the relayer API rather than computing locally
+// Derive proxy wallet address from owner EOA (CREATE2)
+function deriveProxyWallet(ownerAddress: string): `0x${string}` {
+  const salt = keccak256(encodePacked(["address"], [ownerAddress as `0x${string}`]));
+  return getCreate2Address({
+    bytecodeHash: PROXY_INIT_CODE_HASH,
+    from: PROXY_FACTORY as `0x${string}`,
+    salt,
+  });
+}
+
+// Create the struct hash for proxy transaction signing (used in gasless relay)
+// Format: keccak256("rlx:" + from + to + data + txFee + gasPrice + gasLimit + nonce + relayHub + relay)
+// TODO: Implement full gasless trading
+/*
+function createProxyStructHash(...) { ... }
+*/
 
 // Submit transaction to relayer
 async function submitTransaction(
@@ -376,110 +397,38 @@ export default function PolymarketModal({
     setDebugInfo(prev => ({ ...prev, proxyStatus: "reset", polyError: undefined, signerType: undefined }));
   };
 
-  // Initialize proxy wallet via direct API (no SDK)
+  // Initialize proxy wallet - derive address locally (auto-deploys on first tx)
   const initializeProxy = async () => {
-    if (!primaryWallet || !address) {
-      setDebugInfo(prev => ({ ...prev, polyError: "Wallet not connected", walletAddress: address || "none" }));
+    if (!address) {
+      setDebugInfo(prev => ({ ...prev, polyError: "Wallet not connected", walletAddress: "none" }));
       throw new Error("Wallet not connected");
     }
     
     if (isProxyReady && proxyWalletAddress) {
-      setDebugInfo(prev => ({ ...prev, proxyStatus: `Proxy ready: ${proxyWalletAddress.slice(0, 10)}...` }));
+      setDebugInfo(prev => ({ ...prev, proxyStatus: `Proxy: ${proxyWalletAddress.slice(0, 10)}...` }));
       return proxyWalletAddress;
     }
 
-    setDebugInfo(prev => ({ ...prev, proxyStatus: "Checking proxy...", walletAddress: address }));
+    setDebugInfo(prev => ({ ...prev, proxyStatus: "Deriving proxy address...", walletAddress: address }));
     
     try {
-      // Check if proxy already deployed
+      // Derive proxy wallet address from owner EOA
+      const proxyAddr = deriveProxyWallet(address);
+      
+      // Check if it's already deployed
       const deployed = await checkProxyDeployed(address);
       
-      if (deployed) {
-        // Get proxy address from relay payload
-        const payload = await getRelayPayload(address);
-        setProxyWalletAddress(payload.address);
-        setIsProxyReady(true);
-        setDebugInfo(prev => ({ ...prev, proxyStatus: `Proxy exists: ${payload.address.slice(0, 10)}...` }));
-        return payload.address;
-      }
+      setProxyWalletAddress(proxyAddr);
+      setIsProxyReady(true);
       
-      // Need to deploy proxy - this requires a signature
-      setDebugInfo(prev => ({ ...prev, proxyStatus: "Deploying proxy wallet..." }));
+      const status = deployed 
+        ? `Proxy (deployed): ${proxyAddr.slice(0, 10)}...`
+        : `Proxy (pending): ${proxyAddr.slice(0, 10)}... (auto-deploys on first tx)`;
       
-      const walletClient = primaryWallet.getWalletClient();
-      if (!walletClient) throw new Error("No wallet client");
+      setDebugInfo(prev => ({ ...prev, proxyStatus: status }));
+      console.log("[Polymarket] Proxy address:", proxyAddr, "deployed:", deployed);
       
-      // Get relay payload for nonce
-      const relayPayload = await getRelayPayload(address);
-      
-      // Build deploy transaction (empty data = deploy)
-      // The EIP-712 typed data for proxy deploy
-      const deployDomain = {
-        name: "Polymarket Relayer",
-        version: "1",
-        chainId: 137,
-      };
-      
-      const deployTypes = {
-        ProxyDeploy: [
-          { name: "owner", type: "address" },
-          { name: "nonce", type: "uint256" },
-        ],
-      };
-      
-      const deployMessage = {
-        owner: address,
-        nonce: relayPayload.nonce,
-      };
-      
-      setDebugInfo(prev => ({ ...prev, proxyStatus: "Requesting signature..." }));
-      
-      // Sign with Particle's EOA
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const signature = await (walletClient as any).request({
-        method: "eth_signTypedData_v4",
-        params: [
-          address,
-          JSON.stringify({
-            types: deployTypes,
-            primaryType: "ProxyDeploy",
-            domain: deployDomain,
-            message: deployMessage,
-          }),
-        ],
-      });
-      
-      setDebugInfo(prev => ({ ...prev, proxyStatus: "Submitting deploy tx..." }));
-      
-      // Submit deploy transaction
-      const txResult = await submitTransaction({
-        type: "PROXY",
-        from: address,
-        to: "0x0000000000000000000000000000000000000000", // Deploy target
-        data: "0x", // Empty for deploy
-        nonce: relayPayload.nonce,
-        signature: signature as string,
-        signatureParams: {
-          relay: relayPayload.address,
-          gasPrice: "0",
-        },
-        metadata: "Proxy wallet deploy",
-      });
-      
-      setDebugInfo(prev => ({ ...prev, proxyStatus: "Waiting for confirmation..." }));
-      
-      // Poll for result
-      const result = await pollTransaction(txResult.transactionID);
-      
-      if (result.state === "STATE_CONFIRMED" && result.proxyAddress) {
-        const proxyAddr = result.proxyAddress;
-        setProxyWalletAddress(proxyAddr);
-        setIsProxyReady(true);
-        setDebugInfo(prev => ({ ...prev, proxyStatus: `Proxy deployed: ${proxyAddr.slice(0, 10)}...` }));
-        return proxyAddr;
-      } else {
-        throw new Error(`Deploy failed: ${result.state}`);
-      }
+      return proxyAddr;
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
       console.error("[Polymarket] Proxy init failed:", e);
