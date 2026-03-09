@@ -628,7 +628,7 @@ export default function PolymarketModal({
           amount: Number(amount),
         },
         undefined,
-        OrderType.FOK,
+        OrderType.FAK,
       );
       console.log("[Polymarket] Buy order response:", orderResponse);
       setDebugInfo(prev => ({ ...prev, proxyStatus: "Order posted, verifying fill..." }));
@@ -681,7 +681,7 @@ export default function PolymarketModal({
           amount: shares,
         },
         undefined,
-        OrderType.FOK,
+        OrderType.FAK,
       );
       console.log("[Polymarket] Sell response:", resp);
       setStatus("Sell order submitted");
