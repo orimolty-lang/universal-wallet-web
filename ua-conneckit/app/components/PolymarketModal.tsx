@@ -611,8 +611,29 @@ export default function PolymarketModal({
         throw new Error("Selected market has no tradable token id");
       }
 
-      setStatus("Posting market order...");
+      setStatus("Checking liquidity...");
       const clob = await getAuthedClobClient(prep.proxy);
+
+      // Pre-trade liquidity guard: avoid sending obviously unfillable orders
+      const book = (await clob.getOrderBook(selectedToken.token_id)) as unknown as Record<string, unknown>;
+      const asks = (book.asks as unknown[] | undefined) || [];
+      if (asks.length === 0) {
+        throw new Error("No resting asks for this outcome right now. Try later or pick another market.");
+      }
+
+      let estPrice = 0;
+      try {
+        estPrice = await clob.calculateMarketPrice(selectedToken.token_id, Side.BUY, Number(amount), OrderType.FAK);
+      } catch {
+        throw new Error("Could not estimate executable market price. Liquidity may be too thin.");
+      }
+
+      if (!Number.isFinite(estPrice) || estPrice <= 0 || estPrice >= 1) {
+        throw new Error("Estimated fill price invalid for this size. Try a smaller amount.");
+      }
+
+      setDebugInfo(prev => ({ ...prev, proxyStatus: `Liquidity OK, estPrice=${estPrice.toFixed(4)}` }));
+      setStatus("Posting market order...");
 
       // Snapshot balances pre-order for fill verification
       const provider = new JsonRpcProvider(POLYGON_RPC_URL);
