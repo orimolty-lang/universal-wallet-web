@@ -5091,6 +5091,7 @@ const App = () => {
         isOpen={showPolymarketModal}
         onClose={() => setShowPolymarketModal(false)}
         universalAccount={universalAccountInstance}
+        smartAccountAddress={accountInfo?.evmSmartAccount}
         onSuccess={() => {
           fetchAssets();
           fetchMobulaAssets();

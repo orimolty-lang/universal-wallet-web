@@ -6,6 +6,8 @@ import type { UniversalAccount } from "@particle-network/universal-account-sdk";
 import { CHAIN_ID, SUPPORTED_TOKEN_TYPE } from "@particle-network/universal-account-sdk";
 import { Interface, Contract, JsonRpcProvider } from "ethers";
 import { useWallets, useAccount } from "@particle-network/connectkit";
+import { ClobClient, OrderType, Side, SignatureType } from "@polymarket/clob-client";
+import type { WalletClient } from "viem";
 
 // Polymarket API endpoints
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -42,6 +44,7 @@ interface PolymarketModalProps {
   isOpen: boolean;
   onClose: () => void;
   universalAccount: UniversalAccount | null;
+  smartAccountAddress?: string;
   onSuccess?: () => void;
 }
 
@@ -49,6 +52,7 @@ export default function PolymarketModal({
   isOpen,
   onClose,
   universalAccount,
+  smartAccountAddress,
   onSuccess,
 }: PolymarketModalProps) {
   const [primaryWallet] = useWallets();
@@ -67,6 +71,7 @@ export default function PolymarketModal({
   const [isApproving, setIsApproving] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const [debugInfo, setDebugInfo] = useState<{ endpoint?: string; rawCount?: number; openCount?: number; finalCount?: number; error?: string }>({});
+  const [clobClient, setClobClient] = useState<ClobClient | null>(null);
 
   const normalizeMarket = (m: unknown): Market | null => {
     const raw = m as Record<string, unknown>;
@@ -218,6 +223,42 @@ export default function PolymarketModal({
     }
   }, [isOpen, address, checkApprovals]);
 
+  const getClobClient = async () => {
+    if (!primaryWallet || !address) throw new Error("Wallet not connected");
+    if (clobClient) return clobClient;
+
+    const walletClient = primaryWallet.getWalletClient();
+    const signatureType = smartAccountAddress && smartAccountAddress.toLowerCase() !== address.toLowerCase()
+      ? SignatureType.POLY_PROXY
+      : SignatureType.EOA;
+    const funderAddress = signatureType === SignatureType.POLY_PROXY ? smartAccountAddress : undefined;
+
+    const client = new ClobClient(
+      POLYMARKET_API,
+      137,
+      walletClient as unknown as WalletClient,
+      undefined,
+      signatureType,
+      funderAddress,
+      undefined,
+      true,
+    );
+
+    const creds = await client.createOrDeriveApiKey();
+    const authedClient = new ClobClient(
+      POLYMARKET_API,
+      137,
+      walletClient as unknown as WalletClient,
+      creds,
+      signatureType,
+      funderAddress,
+      undefined,
+      true,
+    );
+    setClobClient(authedClient);
+    return authedClient;
+  };
+
   // Approve USDC.e for Polymarket contracts
   const handleApprove = async () => {
     if (!universalAccount || !primaryWallet || !address) return;
@@ -310,40 +351,46 @@ export default function PolymarketModal({
         throw new Error("Invalid amount");
       }
 
-      // For now, we'll use UA's convert to get USDC on Polygon
-      // Then the user can interact with Polymarket directly
-      // Full CLOB integration requires EIP-712 signing which we'll add next
-      
+      // Ensure USDC liquidity on Polygon first
       setStatus("Preparing USDC on Polygon...");
-      
-      // Convert to USDC.e on Polygon
       const transaction = await universalAccount.createConvertTransaction({
-        expectToken: { 
-          type: SUPPORTED_TOKEN_TYPE.USDC, 
-          amount: amount,
-        },
+        expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: amount },
         chainId: CHAIN_ID.POLYGON_MAINNET,
       });
 
       setStatus("Waiting for signature...");
-      
       const signature = await walletClient?.signMessage({
         account: address as `0x${string}`,
-        message: { raw: transaction.rootHash as `0x` },
+        message: { raw: transaction.rootHash as `0x${string}` },
       });
 
-      setStatus("Sending transaction...");
-      
+      setStatus("Sending funding transaction...");
       const result = await universalAccount.sendTransaction(transaction, signature);
-      console.log("[Polymarket] Convert tx:", result.transactionId);
+      console.log("[Polymarket] Funding tx:", result.transactionId);
 
-      setStatus(`Success! USDC ready on Polygon. You can now trade on Polymarket.`);
+      // Post CLOB market order
+      const selectedToken = selectedMarket.tokens?.[selectedOutcome];
+      if (!selectedToken?.token_id) {
+        throw new Error("Selected market has no tradable token id");
+      }
+
+      setStatus("Authenticating with Polymarket CLOB...");
+      const client = await getClobClient();
+
+      setStatus("Posting market order...");
+      const orderResponse = await client.createAndPostMarketOrder(
+        {
+          tokenID: selectedToken.token_id,
+          side: Side.BUY,
+          amount: Number(amount),
+        },
+        undefined,
+        OrderType.FOK,
+      );
+      console.log("[Polymarket] Order response:", orderResponse);
+
+      setStatus("Order submitted successfully!");
       onSuccess?.();
-
-      // Open Polymarket in new tab
-      setTimeout(() => {
-        window.open(`https://polymarket.com/event/${selectedMarket.slug}`, "_blank");
-      }, 2000);
 
     } catch (err) {
       console.error("[Polymarket] Buy failed:", err);
@@ -574,7 +621,7 @@ export default function PolymarketModal({
               )}
 
               <p className="text-xs text-gray-500 text-center">
-                This will prepare USDC on Polygon for trading. Full CLOB integration coming soon.
+                This flow prepares USDC on Polygon and submits a live CLOB market order.
               </p>
             </>
           )}
