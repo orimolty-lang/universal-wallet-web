@@ -371,10 +371,10 @@ export const SwapModal = ({
             throw new Error('No signer address found for swap signing');
           }
 
-          // Sign the root hash
-          const signature = await walletClient.request({
-            method: 'personal_sign',
-            params: [result.rootHash as `0x${string}`, signerAddress],
+          // Sign the root hash (use signMessage for better embedded-wallet compatibility)
+          const signature = await walletClient.signMessage({
+            account: signerAddress,
+            message: { raw: result.rootHash as `0x${string}` },
           });
 
           // 7702 auth pattern (only when needed by userOps)
