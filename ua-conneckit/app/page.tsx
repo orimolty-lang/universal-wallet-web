@@ -6,7 +6,7 @@ import {
   useWallets,
   useDisconnect,
   useParticleAuth,
-} from "@particle-network/connectkit";
+} from "./lib/particleCompat";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   UniversalAccount,

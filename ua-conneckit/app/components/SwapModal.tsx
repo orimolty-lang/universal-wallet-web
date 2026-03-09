@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { IAssetsResponse, UniversalAccount } from "@particle-network/universal-account-sdk";
 import { executeSwap, executeSell, getChainIdFromBlockchain, pollTransactionDetails, getChainName } from "../lib/swapService";
-import { useWallets } from "@particle-network/connectkit";
+import { useWallets } from "../lib/particleCompat";
 
 // Types
 interface TokenInfo {
@@ -373,7 +373,6 @@ export const SwapModal = ({
 
           // Sign the root hash (use signMessage for better embedded-wallet compatibility)
           const signature = await walletClient.signMessage({
-            account: signerAddress,
             message: { raw: result.rootHash as `0x${string}` },
           });
 
