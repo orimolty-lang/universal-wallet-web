@@ -16,19 +16,31 @@ import { encodeFunctionData, maxUint256 } from "viem";
 const BUILDER_SIGN_URL = "https://polymarket-builder-worker-ori.orimolty.workers.dev/builder/sign";
 const RELAYER_URL = "https://relayer-v2.polymarket.com/";
 
-// Custom signer wrapper for Polymarket relayer (handles chain mismatch)
+// Custom viem-like WalletClient wrapper for Polymarket relayer
+// Must have chain, transport, account properties that SDK expects
 /* eslint-disable @typescript-eslint/no-explicit-any */
 class PolygonSignerWrapper {
   private walletClient: any;
   private userAddress: string;
-  // Provider stub that SDK may expect
-  public provider: { config: { chainId: number } };
+  
+  // viem WalletClient expected properties
+  public chain: { id: number; name: string; network: string; rpcUrls: { default: { http: string[] } } };
+  public transport: { type: string; url: string };
+  public account: { address: string; type: string };
 
   constructor(walletClient: any, address: string) {
     this.walletClient = walletClient;
     this.userAddress = address;
-    // SDK may access signer.provider.config
-    this.provider = { config: { chainId: 137 } };
+    
+    // SDK expects viem WalletClient shape with chain property
+    this.chain = {
+      id: 137,
+      name: 'Polygon',
+      network: 'polygon',
+      rpcUrls: { default: { http: ['https://polygon-rpc.com'] } }
+    };
+    this.transport = { type: 'http', url: 'https://polygon-rpc.com' };
+    this.account = { address: address, type: 'local' };
   }
 
   // Expose address as property (some SDK paths check this)
@@ -39,47 +51,34 @@ class PolygonSignerWrapper {
   async getAddress(): Promise<string> {
     return this.userAddress;
   }
+  
+  getChainId(): number {
+    return 137;
+  }
 
-  async signMessage(message: string): Promise<string> {
+  async signMessage({ message }: { message: string | { raw: any } }): Promise<string> {
+    if (typeof message === 'object' && 'raw' in message) {
+      return this.walletClient.signMessage({
+        account: this.userAddress as `0x${string}`,
+        message: { raw: message.raw },
+      });
+    }
     return this.walletClient.signMessage({
       account: this.userAddress as `0x${string}`,
-      message,
+      message: message as string,
     });
   }
 
-  async signRawMessage(message: any): Promise<string> {
-    return this.walletClient.signMessage({
-      account: this.userAddress as `0x${string}`,
-      message: { raw: message },
-    });
-  }
-
-  async signTypedData(domain: any, types: any, value: any, primaryType?: string): Promise<string> {
+  async signTypedData({ domain, types, primaryType, message }: any): Promise<string> {
     // Override domain chainId to Polygon
     const polygonDomain = { ...domain, chainId: 137 };
     return this.walletClient.signTypedData({
       account: this.userAddress as `0x${string}`,
       domain: polygonDomain,
       types,
-      primaryType: primaryType || Object.keys(types).find(k => k !== 'EIP712Domain') || 'Message',
-      message: value,
+      primaryType: primaryType || Object.keys(types).find((k: string) => k !== 'EIP712Domain') || 'Message',
+      message,
     });
-  }
-
-  async estimateGas(): Promise<bigint> {
-    return BigInt(0); // Relayer handles gas
-  }
-
-  async signTransaction(): Promise<string> {
-    throw new Error("signTransaction not supported - use relayer");
-  }
-
-  async sendTransaction(): Promise<string> {
-    throw new Error("sendTransaction not supported - use relayer");
-  }
-
-  async waitTillMined(): Promise<any> {
-    throw new Error("waitTillMined not supported - use relayer");
   }
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
