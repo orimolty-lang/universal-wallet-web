@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { IAssetsResponse, UniversalAccount } from "@particle-network/universal-account-sdk";
 import { executeSwap, executeSell, getChainIdFromBlockchain, pollTransactionDetails, getChainName } from "../lib/swapService";
-import { useWallets } from "../lib/particleCompat";
 import { hashAuthorization } from "ethers";
 
 // Types
@@ -24,6 +23,8 @@ interface SwapModalProps {
   targetToken: TokenInfo | null;
   primaryAssets: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  walletClient: any;
   onSwapSuccess?: (txId: string) => void;
 }
 
@@ -85,6 +86,7 @@ export const SwapModal = ({
   targetToken,
   primaryAssets,
   universalAccount,
+  walletClient,
   onSwapSuccess,
 }: SwapModalProps) => {
   const [amount, setAmount] = useState("");
@@ -293,7 +295,7 @@ export const SwapModal = ({
   }, [targetToken, primaryAssets]);
 
   // Get wallet for signing
-  const [primaryWallet] = useWallets();
+  // walletClient comes from parent (native AuthKit)
 
   // Handle swap execution (buy or sell based on direction)
   const handleSwap = async () => {
@@ -357,9 +359,8 @@ export const SwapModal = ({
       }
 
       // Step 2: Sign with wallet
-      if (result.requiresSignature && result.rootHash && primaryWallet) {
+      if (result.requiresSignature && result.rootHash && walletClient) {
         try {
-          const walletClient = primaryWallet.getWalletClient();
 
           // Sign root hash first (does not require explicit signer address)
           const signature = await walletClient.signMessage({
@@ -382,9 +383,7 @@ export const SwapModal = ({
                   // Preferred: wallet.authorizeSync(userOp.eip7702Auth) if available
                   const authorizeSync =
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    (walletClient as any)?.authorizeSync ||
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    (primaryWallet as any)?.authorizeSync;
+                    (walletClient as any)?.authorizeSync;
 
                   if (typeof authorizeSync === 'function') {
                     const authorization = authorizeSync(userOp.eip7702Auth);

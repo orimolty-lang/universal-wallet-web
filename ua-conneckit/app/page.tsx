@@ -1,12 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
-import {
-  ConnectButton,
-  useAccount,
-  useWallets,
-  useDisconnect,
-  useParticleAuth,
-} from "./lib/particleCompat";
+import { useAuthCore, useConnect, useEthereum } from "@particle-network/authkit";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   UniversalAccount,
@@ -356,7 +350,13 @@ const formatMarketCap = (mc: number): string => {
 };
 
 // Animated Login Screen - Omni branding
-const LoginScreen = () => {
+const LoginScreen = ({
+  onConnect,
+  isConnecting,
+}: {
+  onConnect: () => void;
+  isConnecting: boolean;
+}) => {
   return (
     <div className="flex flex-col h-screen bg-[#0a0a0a] overflow-hidden relative" style={{ maxHeight: '100dvh' }}>
       {/* Animated gradient orb background - purple/cyan theme */}
@@ -449,7 +449,13 @@ const LoginScreen = () => {
 
       {/* Bottom section - CTA */}
       <div className="px-6 pb-8" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 32px)' }}>
-        <ConnectButton label="Get Started" />
+        <button
+          onClick={onConnect}
+          disabled={isConnecting}
+          className="px-4 py-2 rounded-xl bg-accent-dynamic text-black font-semibold"
+        >
+          {isConnecting ? 'Connecting...' : 'Get Started'}
+        </button>
       </div>
       
       {/* CSS for animations */}
@@ -1088,6 +1094,7 @@ const ConvertModal = ({
   onClose,
   assets,
   universalAccount,
+  walletClient,
   onTransactionCreated,
   onSuccess,
 }: {
@@ -1096,10 +1103,11 @@ const ConvertModal = ({
   assets: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  walletClient: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onTransactionCreated?: (tx: any) => void;
   onSuccess?: () => void; // Callback to refresh balances
 }) => {
-  const [primaryWallet] = useWallets();
   const [fromAsset, setFromAsset] = useState<string>('');
   const [fromChain, setFromChain] = useState<number | null>(null);
   const [toAsset, setToAsset] = useState<string>('');
@@ -1319,12 +1327,11 @@ const ConvertModal = ({
       // Sign and send transaction (same flow as Perps)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ((tx as any).rootHash) {
-        if (!primaryWallet) {
+        if (!walletClient) {
           throw new Error('Please connect wallet first');
         }
         
         setLoadingStatus('Waiting for signature...');
-        const walletClient = primaryWallet.getWalletClient();
         
         // Sign root hash using signMessage (AuthKit embedded-wallet compatible)
         const signature = await walletClient.signMessage({
@@ -1876,13 +1883,15 @@ const PerpsModal = ({
   onClose,
   assets,
   universalAccount,
+  walletClient,
 }: {
   isOpen: boolean;
   onClose: () => void;
   assets: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  walletClient: any;
 }) => {
-  const [primaryWallet] = useWallets();
   const [view, setView] = useState<'markets' | 'trade'>('markets');
   const [selectedMarket, setSelectedMarket] = useState(PERPS_MARKETS[0]);
   const [selectedPair, setSelectedPair] = useState(AVANTIS_PAIRS[0]);
@@ -2034,7 +2043,7 @@ const PerpsModal = ({
       return;
     }
 
-    if (!primaryWallet) {
+    if (!walletClient) {
       setError('Please connect wallet first');
       return;
     }
@@ -2289,7 +2298,7 @@ const PerpsModal = ({
       if ((tx as any).rootHash) {
         setLoadingStatus('Waiting for signature...');
         
-        const walletClient = primaryWallet.getWalletClient();
+        // walletClient comes from native AuthKit hook
         
         // Sign root hash using signMessage (AuthKit embedded-wallet compatible)
         const signature = await walletClient.signMessage({
@@ -3226,10 +3235,13 @@ const HomeTab = ({
 const SearchTab = ({ 
   primaryAssets,
   universalAccount,
+  walletClient,
   onSend,
 }: { 
   primaryAssets: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  walletClient: any;
   onSend?: () => void;
 }) => {
   const [query, setQuery] = useState("");
@@ -3590,6 +3602,7 @@ const SearchTab = ({
         } : null}
         primaryAssets={primaryAssets}
         universalAccount={universalAccount}
+        walletClient={walletClient}
         onSwapSuccess={(txId) => {
           console.log("Swap success:", txId);
         }}
@@ -4545,11 +4558,24 @@ const BottomNav = ({
 
 // Main App
 const App = () => {
-  useWallets();
-  const { address, isConnected } = useAccount();
-  const { disconnect } = useDisconnect();
-  const { openAccountAndSecurity, openSetMasterPassword } = useParticleAuth();
+  const { address, provider, signMessage, signTypedData } = useEthereum();
+  const { connected: isConnected, connect, disconnect, connectionStatus } = useConnect();
+  const { openAccountAndSecurity, openSetMasterPassword } = useAuthCore();
   
+  const walletClient = useMemo(() => {
+    if (!provider || !address) return null;
+    return {
+      account: { address: address as `0x${string}` },
+      request: ({ method, params }: { method: string; params?: unknown[] }) =>
+        provider.request({ method, params: params || [] }),
+      signMessage: ({ message }: { message: string | { raw: `0x${string}` } }) =>
+        typeof message === 'string' ? signMessage(message) : signMessage(message.raw),
+      signTypedData: ({ data, version }: { data: unknown; version?: string }) =>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        signTypedData({ data: data as any, version: version as any }),
+    };
+  }, [provider, address, signMessage, signTypedData]);
+
   const [showSplash, setShowSplash] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>("home");
   const [universalAccountInstance, setUniversalAccountInstance] = useState<UniversalAccount | null>(null);
@@ -4829,7 +4855,7 @@ const App = () => {
     return <SplashScreen onComplete={() => setShowSplash(false)} />;
   }
 
-  if (!isConnected) return <LoginScreen />;
+  if (!isConnected) return <LoginScreen onConnect={() => connect()} isConnecting={connectionStatus === 'connecting' || connectionStatus === 'loading'} />;
 
   return (
     <div className="flex flex-col min-h-screen bg-[#0a0a0a]">
@@ -4880,6 +4906,7 @@ const App = () => {
         <SearchTab 
           primaryAssets={combinedAssets as IAssetsResponse | null}
           universalAccount={universalAccountInstance}
+          walletClient={walletClient}
           onSend={() => setShowSendModal(true)}
         />
       )}
@@ -4922,6 +4949,7 @@ const App = () => {
         onClose={() => setShowConvertModal(false)}
         assets={primaryAssets}
         universalAccount={universalAccountInstance}
+        walletClient={walletClient}
         onTransactionCreated={(tx) => {
           console.log('[Convert] Transaction created:', tx);
         }}
@@ -4937,6 +4965,7 @@ const App = () => {
         onClose={() => setShowPerpsModal(false)}
         assets={combinedAssets as IAssetsResponse | null}
         universalAccount={universalAccountInstance}
+        walletClient={walletClient}
       />
 
       {/* Sell is handled by SwapModal with direction flip */}
@@ -4998,6 +5027,7 @@ const App = () => {
         targetToken={homeSelectedToken}
         primaryAssets={combinedAssets as IAssetsResponse | null}
         universalAccount={universalAccountInstance}
+        walletClient={walletClient}
       />
     </div>
   );
