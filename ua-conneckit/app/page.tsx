@@ -3787,10 +3787,12 @@ const ActivityModal = ({
   const [selectedTx, setSelectedTx] = useState<TxData | null>(null);
   const [txDetails, setTxDetails] = useState<TxData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
+  const PAGE_SIZE = 20;
 
   // Fetch transactions when modal opens
   useEffect(() => {
@@ -3800,34 +3802,59 @@ const ActivityModal = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, universalAccount]);
 
+  // Auto-refresh list while modal is open (UX improvement)
+  useEffect(() => {
+    if (!isOpen || !universalAccount || selectedTx) return;
+    const interval = setInterval(() => {
+      fetchTransactions(1, true);
+    }, 15000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, universalAccount, selectedTx]);
+
   const fetchTransactions = async (pageNum: number, reset: boolean = false) => {
     if (!universalAccount) return;
-    
-    setIsLoading(true);
+
+    if (reset) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
     setError(null);
-    
+
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = await (universalAccount as any).getTransactions(pageNum, 20);
-      console.log('[Activity] Raw transactions:', JSON.stringify(result, null, 2));
-      
+      const result = await (universalAccount as any).getTransactions(pageNum, PAGE_SIZE);
       const txList = result?.transactions || result?.data || result || [];
-      
+
       if (reset) {
         setTransactions(txList);
       } else {
-        setTransactions(prev => [...prev, ...txList]);
+        // De-dupe by transaction id/hash while appending
+        setTransactions(prev => {
+          const merged = [...prev, ...txList];
+          const seen = new Set<string>();
+          return merged.filter((tx: TxData, idx: number) => {
+            const key = String(tx.transactionId || tx.id || tx.transaction_id || tx.hash || idx);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+        });
       }
-      
-      setHasMore(txList.length === 20);
+
+      setHasMore(txList.length === PAGE_SIZE);
       setPage(pageNum);
     } catch (err) {
       console.error('[Activity] Failed to fetch transactions:', err);
       setError('Failed to load transactions');
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   };
+
+  const refreshTransactions = () => fetchTransactions(1, true);
 
   const fetchTxDetails = async (txId: string) => {
     if (!universalAccount) return;
@@ -4187,7 +4214,16 @@ const ActivityModal = ({
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose}>
       <div className="px-6 pb-8 max-h-[70vh] overflow-y-auto">
-        <h2 className="text-white text-xl font-bold mb-6 text-center">Activity</h2>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-white text-xl font-bold">Activity</h2>
+          <button
+            onClick={refreshTransactions}
+            disabled={isLoading || isRefreshing}
+            className="text-sm px-3 py-1 rounded-lg bg-white/10 text-gray-200 hover:bg-white/20 disabled:opacity-50"
+          >
+            {isRefreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
         
         {isLoading && transactions.length === 0 ? (
           <div className="text-center py-8">
