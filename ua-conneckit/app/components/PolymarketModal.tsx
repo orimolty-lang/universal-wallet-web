@@ -613,6 +613,14 @@ export default function PolymarketModal({
 
       setStatus("Posting market order...");
       const clob = await getAuthedClobClient(prep.proxy);
+
+      // Snapshot balances pre-order for fill verification
+      const provider = new JsonRpcProvider(POLYGON_RPC_URL);
+      const usdce = new Contract(USDC_E_ADDRESS, ["function balanceOf(address) view returns (uint256)"], provider);
+      const ctf = new Contract(CTF_ADDRESS, ["function balanceOf(address, uint256) view returns (uint256)"], provider);
+      const usdcBefore = BigInt((await usdce.balanceOf(prep.proxy)).toString());
+      const posBefore = BigInt((await ctf.balanceOf(prep.proxy, selectedToken.token_id)).toString());
+
       const orderResponse = await clob.createAndPostMarketOrder(
         {
           tokenID: selectedToken.token_id,
@@ -623,8 +631,25 @@ export default function PolymarketModal({
         OrderType.FOK,
       );
       console.log("[Polymarket] Buy order response:", orderResponse);
+      setDebugInfo(prev => ({ ...prev, proxyStatus: "Order posted, verifying fill..." }));
 
-      setStatus("Order submitted successfully!");
+      // Verify fill: either position increases OR USDC decreases
+      let filled = false;
+      for (let i = 0; i < 8; i++) {
+        await new Promise(r => setTimeout(r, 1500));
+        const usdcAfter = BigInt((await usdce.balanceOf(prep.proxy)).toString());
+        const posAfter = BigInt((await ctf.balanceOf(prep.proxy, selectedToken.token_id)).toString());
+        if (posAfter > posBefore || usdcAfter < usdcBefore) {
+          filled = true;
+          break;
+        }
+      }
+
+      if (!filled) {
+        throw new Error("Order posted but not filled (FOK/liq/price). Funds remain in proxy.");
+      }
+
+      setStatus("Order filled successfully!");
       onSuccess?.();
       await refreshPortfolio(selectedMarket);
 
