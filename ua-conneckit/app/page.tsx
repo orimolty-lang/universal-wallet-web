@@ -21,7 +21,7 @@ import AssetBreakdownDialog from "./components/AssetBreakdownDialog";
 import TokenDetailModal from "./components/TokenDetailModal";
 import SwapModal from "./components/SwapModal";
 import { encodeFunctionData } from "viem";
-import { toBeHex } from "ethers";
+import { toBeHex, hashAuthorization } from "ethers";
 
 // Mobula API for token search
 const MOBULA_API_KEY = "a8e6a174-9dfd-4929-b0e0-9f6ece767923";
@@ -1332,9 +1332,39 @@ const ConvertModal = ({
           message: { raw: (tx as any).rootHash as `0x${string}` },
         });
 
+        // Build 7702 authorizations when needed
+        const convertAuthorizations: Array<{ userOpHash: string; signature: string }> = [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const convertTxAny = tx as any;
+        if (convertTxAny?.userOps?.length) {
+          let signerAddress = walletClient.account?.address as `0x${string}` | undefined;
+          if (!signerAddress) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const accounts = await (walletClient as any).request({ method: 'eth_accounts', params: [] }) as `0x${string}`[];
+            signerAddress = accounts?.[0];
+          }
+          if (!signerAddress) throw new Error('No signer address for convert 7702 authorization');
+
+          const nonceMap = new Map<number, string>();
+          for (const userOp of convertTxAny.userOps) {
+            if (!!userOp.eip7702Auth && !userOp.eip7702Delegated) {
+              let authSig = nonceMap.get(userOp.eip7702Auth.nonce);
+              if (!authSig) {
+                const authHash = hashAuthorization(userOp.eip7702Auth) as `0x${string}`;
+                authSig = await walletClient.request({
+                  method: 'eth_sign',
+                  params: [signerAddress, authHash],
+                }) as string;
+                nonceMap.set(userOp.eip7702Auth.nonce, authSig);
+              }
+              convertAuthorizations.push({ userOpHash: userOp.userOpHash, signature: authSig });
+            }
+          }
+        }
+
         // Send transaction
         setLoadingStatus('Sending transaction...');
-        const sendResult = await universalAccount.sendTransaction(tx, signature as string);
+        const sendResult = await universalAccount.sendTransaction(tx, signature as string, convertAuthorizations);
         
         if (sendResult?.transactionId) {
           console.log('[Convert] Transaction sent:', sendResult.transactionId);
@@ -2267,10 +2297,38 @@ const PerpsModal = ({
           message: { raw: (tx as any).rootHash as `0x${string}` },
         });
 
-        // Step 3: Send transaction
-        // For embedded wallets with 7702 mode, SDK may handle auth internally
+        // Step 3: Build 7702 authorizations (if required) + send transaction
+        const perpsAuthorizations: Array<{ userOpHash: string; signature: string }> = [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const perpsTxAny = tx as any;
+        if (perpsTxAny?.userOps?.length) {
+          let signerAddress = walletClient.account?.address as `0x${string}` | undefined;
+          if (!signerAddress) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const accounts = await (walletClient as any).request({ method: 'eth_accounts', params: [] }) as `0x${string}`[];
+            signerAddress = accounts?.[0];
+          }
+          if (!signerAddress) throw new Error('No signer address for perps 7702 authorization');
+
+          const nonceMap = new Map<number, string>();
+          for (const userOp of perpsTxAny.userOps) {
+            if (!!userOp.eip7702Auth && !userOp.eip7702Delegated) {
+              let authSig = nonceMap.get(userOp.eip7702Auth.nonce);
+              if (!authSig) {
+                const authHash = hashAuthorization(userOp.eip7702Auth) as `0x${string}`;
+                authSig = await walletClient.request({
+                  method: 'eth_sign',
+                  params: [signerAddress, authHash],
+                }) as string;
+                nonceMap.set(userOp.eip7702Auth.nonce, authSig);
+              }
+              perpsAuthorizations.push({ userOpHash: userOp.userOpHash, signature: authSig });
+            }
+          }
+        }
+
         setLoadingStatus('Sending transaction...');
-        const sendResult = await universalAccount.sendTransaction(tx, signature as string);
+        const sendResult = await universalAccount.sendTransaction(tx, signature as string, perpsAuthorizations);
         
         if (sendResult?.transactionId) {
           console.log('[Perps] Transaction sent:', sendResult.transactionId);

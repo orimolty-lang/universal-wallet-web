@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type { IAssetsResponse, UniversalAccount } from "@particle-network/universal-account-sdk";
 import { executeSwap, executeSell, getChainIdFromBlockchain, pollTransactionDetails, getChainName } from "../lib/swapService";
 import { useWallets } from "../lib/particleCompat";
+import { hashAuthorization } from "ethers";
 
 // Types
 interface TokenInfo {
@@ -389,23 +390,7 @@ export const SwapModal = ({
                     const authorization = authorizeSync(userOp.eip7702Auth);
                     authSig = authorization?.signature?.serialized;
                   } else {
-                    // Fallback: typed-data signing (embedded wallets often support this)
-                    const typedData = {
-                      types: {
-                        Authorization: [
-                          { name: 'chainId', type: 'uint256' },
-                          { name: 'address', type: 'address' },
-                          { name: 'nonce', type: 'uint256' },
-                        ],
-                      },
-                      primaryType: 'Authorization',
-                      domain: {},
-                      message: {
-                        chainId: String(userOp.eip7702Auth.chainId),
-                        address: userOp.eip7702Auth.address,
-                        nonce: String(userOp.eip7702Auth.nonce),
-                      },
-                    };
+                    // Match Particle example closer: sign hashAuthorization(eip7702Auth)
                     if (!signerAddress) {
                       // eslint-disable-next-line @typescript-eslint/no-explicit-any
                       const accounts = await (walletClient as any).request({ method: 'eth_accounts', params: [] }) as `0x${string}`[];
@@ -413,9 +398,10 @@ export const SwapModal = ({
                     }
                     if (!signerAddress) throw new Error('No signer address for 7702 authorization');
 
+                    const authHash = hashAuthorization(userOp.eip7702Auth) as `0x${string}`;
                     authSig = await walletClient.request({
-                      method: 'eth_signTypedData_v4',
-                      params: [signerAddress, JSON.stringify(typedData)],
+                      method: 'eth_sign',
+                      params: [signerAddress, authHash],
                     }) as string;
                   }
 
