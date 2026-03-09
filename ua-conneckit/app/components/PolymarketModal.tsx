@@ -7,6 +7,7 @@ import { CHAIN_ID, SUPPORTED_TOKEN_TYPE } from "@particle-network/universal-acco
 import { Interface, Contract, JsonRpcProvider } from "ethers";
 import { useWallets, useAccount } from "@particle-network/connectkit";
 import { ClobClient, OrderType, Side, SignatureType } from "@polymarket/clob-client";
+import { AssetType } from "@polymarket/clob-client/dist/types";
 import type { WalletClient } from "viem";
 
 // Polymarket API endpoints
@@ -72,6 +73,8 @@ export default function PolymarketModal({
   const [showDebug, setShowDebug] = useState(false);
   const [debugInfo, setDebugInfo] = useState<{ endpoint?: string; rawCount?: number; openCount?: number; finalCount?: number; error?: string }>({});
   const [clobClient, setClobClient] = useState<ClobClient | null>(null);
+  const [availableBalance, setAvailableBalance] = useState<string>("0");
+  const [positionBalances, setPositionBalances] = useState<Record<string, string>>({});
 
   const normalizeMarket = (m: unknown): Market | null => {
     const raw = m as Record<string, unknown>;
@@ -217,11 +220,6 @@ export default function PolymarketModal({
     }
   }, [address, universalAccount]);
 
-  useEffect(() => {
-    if (isOpen && address) {
-      checkApprovals();
-    }
-  }, [isOpen, address, checkApprovals]);
 
   const getClobClient = async () => {
     if (!primaryWallet || !address) throw new Error("Wallet not connected");
@@ -258,6 +256,47 @@ export default function PolymarketModal({
     setClobClient(authedClient);
     return authedClient;
   };
+
+  const formatUnits6 = (v: string | number) => {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return "0";
+    return (n / 1_000_000).toFixed(4);
+  };
+
+  const refreshPortfolio = useCallback(async (market?: Market | null) => {
+    try {
+      const client = await getClobClient();
+      const collateral = await client.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+      setAvailableBalance(collateral?.balance || "0");
+
+      const m = market || selectedMarket;
+      if (m?.tokens?.length) {
+        const balances: Record<string, string> = {};
+        for (const t of m.tokens) {
+          const b = await client.getBalanceAllowance({ asset_type: AssetType.CONDITIONAL, token_id: t.token_id });
+          balances[t.token_id] = b?.balance || "0";
+        }
+        setPositionBalances(balances);
+      } else {
+        setPositionBalances({});
+      }
+    } catch (e) {
+      console.error("[Polymarket] portfolio refresh failed", e);
+    }
+  }, [selectedMarket]);
+
+  useEffect(() => {
+    if (isOpen && address) {
+      checkApprovals();
+      refreshPortfolio();
+    }
+  }, [isOpen, address, checkApprovals, refreshPortfolio]);
+
+  useEffect(() => {
+    if (isOpen && selectedMarket) {
+      refreshPortfolio(selectedMarket);
+    }
+  }, [isOpen, selectedMarket, refreshPortfolio]);
 
   // Approve USDC.e for Polymarket contracts
   const handleApprove = async () => {
@@ -327,6 +366,7 @@ export default function PolymarketModal({
 
       setStatus("Approvals complete!");
       setNeedsApproval(false);
+      refreshPortfolio();
     } catch (err) {
       console.error("[Polymarket] Approval failed:", err);
       setError(err instanceof Error ? err.message : "Approval failed");
@@ -391,10 +431,38 @@ export default function PolymarketModal({
 
       setStatus("Order submitted successfully!");
       onSuccess?.();
+      await refreshPortfolio(selectedMarket);
 
     } catch (err) {
       console.error("[Polymarket] Buy failed:", err);
       setError(err instanceof Error ? err.message : "Transaction failed");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSell = async (tokenId: string, maxAmountRaw: string) => {
+    try {
+      const client = await getClobClient();
+      const shares = Number(maxAmountRaw) / 1_000_000;
+      if (!shares || shares <= 0) throw new Error("No position to sell");
+      setIsLoading(true);
+      setStatus("Posting sell order...");
+      const resp = await client.createAndPostMarketOrder(
+        {
+          tokenID: tokenId,
+          side: Side.SELL,
+          amount: shares,
+        },
+        undefined,
+        OrderType.FOK,
+      );
+      console.log("[Polymarket] Sell response:", resp);
+      setStatus("Sell order submitted");
+      await refreshPortfolio(selectedMarket);
+      onSuccess?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Sell failed");
     } finally {
       setIsLoading(false);
     }
@@ -548,6 +616,12 @@ export default function PolymarketModal({
                   ))}
                 </div>
 
+                {/* Portfolio */}
+                <div className="mb-4 bg-[#1a1a2e] rounded-lg p-3 border border-gray-700">
+                  <div className="text-xs text-gray-400">Available to trade (USDC)</div>
+                  <div className="text-white font-semibold">{formatUnits6(availableBalance)}</div>
+                </div>
+
                 {/* Amount input */}
                 <div className="mb-4">
                   <label className="block text-sm text-gray-400 mb-1">Amount (USDC)</label>
@@ -578,6 +652,34 @@ export default function PolymarketModal({
                   </div>
                 )}
               </div>
+
+              {/* Active positions */}
+              {selectedMarket.tokens?.length ? (
+                <div className="bg-[#1a1a2e] rounded-lg p-3 border border-gray-700">
+                  <div className="text-sm text-gray-300 mb-2">Active positions</div>
+                  <div className="space-y-2">
+                    {selectedMarket.tokens.map((t) => {
+                      const raw = positionBalances[t.token_id] || "0";
+                      const qty = Number(raw) / 1_000_000;
+                      return (
+                        <div key={t.token_id} className="flex items-center justify-between bg-[#2a2a4a] rounded px-3 py-2">
+                          <div>
+                            <div className="text-white text-sm">{t.outcome}</div>
+                            <div className="text-xs text-gray-400">{qty.toFixed(4)} shares</div>
+                          </div>
+                          <button
+                            onClick={() => handleSell(t.token_id, raw)}
+                            disabled={isLoading || qty <= 0}
+                            className="text-xs px-2 py-1 rounded bg-red-500/20 text-red-300 disabled:opacity-40"
+                          >
+                            Sell
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
 
               {/* Status/Error */}
               {status && (
