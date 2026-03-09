@@ -46,10 +46,10 @@ async function getRelayPayload(address: string): Promise<{ address: string; nonc
   const headers = await getBuilderHeaders("GET", `/relay-payload?address=${address}&type=PROXY`);
   const resp = await fetch(`${RELAYER_URL}/relay-payload?address=${address}&type=PROXY`, {
     headers: {
-      "POLY-BUILDER-SIGNATURE": headers.POLY_BUILDER_SIGNATURE,
-      "POLY-BUILDER-TIMESTAMP": headers.POLY_BUILDER_TIMESTAMP,
-      "POLY-BUILDER-API-KEY": headers.POLY_BUILDER_API_KEY,
-      "POLY-BUILDER-PASSPHRASE": headers.POLY_BUILDER_PASSPHRASE,
+      "POLY_BUILDER_SIGNATURE": headers.POLY_BUILDER_SIGNATURE,
+      "POLY_BUILDER_TIMESTAMP": headers.POLY_BUILDER_TIMESTAMP,
+      "POLY_BUILDER_API_KEY": headers.POLY_BUILDER_API_KEY,
+      "POLY_BUILDER_PASSPHRASE": headers.POLY_BUILDER_PASSPHRASE,
     },
   });
   if (!resp.ok) throw new Error(`Get relay payload failed: ${resp.status}`);
@@ -78,10 +78,10 @@ async function submitTransaction(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "POLY-BUILDER-SIGNATURE": headers.POLY_BUILDER_SIGNATURE,
-      "POLY-BUILDER-TIMESTAMP": headers.POLY_BUILDER_TIMESTAMP,
-      "POLY-BUILDER-API-KEY": headers.POLY_BUILDER_API_KEY,
-      "POLY-BUILDER-PASSPHRASE": headers.POLY_BUILDER_PASSPHRASE,
+      "POLY_BUILDER_SIGNATURE": headers.POLY_BUILDER_SIGNATURE,
+      "POLY_BUILDER_TIMESTAMP": headers.POLY_BUILDER_TIMESTAMP,
+      "POLY_BUILDER_API_KEY": headers.POLY_BUILDER_API_KEY,
+      "POLY_BUILDER_PASSPHRASE": headers.POLY_BUILDER_PASSPHRASE,
     },
     body,
   });
