@@ -4004,6 +4004,19 @@ const ActivityModal = ({
     return 'text-gray-400 bg-gray-400/20';
   };
 
+  const formatHexUsd = (value: string | number | undefined): string => {
+    if (value === undefined || value === null) return '0.00';
+    try {
+      const n = typeof value === 'string' && value.startsWith('0x')
+        ? Number(BigInt(value)) / 1e18
+        : Number(value);
+      if (!Number.isFinite(n)) return '0.00';
+      return n.toFixed(4);
+    } catch {
+      return '0.00';
+    }
+  };
+
   // Convert hex/BigInt string to human readable number
   const formatTokenAmount = (amount: string | number, decimals: number = 18): string => {
     if (!amount) return '0';
@@ -4146,84 +4159,79 @@ const ActivityModal = ({
                 );
               })()}
 
-              {/* Details */}
+              {/* Details (UniversalX-style layout with dynamic theme) */}
               <div className="space-y-3">
-                {txId && (
-                  <div className="flex justify-between py-2 border-b border-white/10">
-                    <span className="text-gray-400">Transaction ID</span>
-                    <span className="text-white font-mono text-sm">{shortenHash(txId)}</span>
+                <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <div className="text-gray-400">Type</div>
+                      <div className="text-white font-medium capitalize">{txType}</div>
+                    </div>
+                    <div>
+                      <div className="text-gray-400">Status</div>
+                      <div className="text-white font-medium">{status}</div>
+                    </div>
+                    {getTxDate(details) && (
+                      <>
+                        <div>
+                          <div className="text-gray-400">Time</div>
+                          <div className="text-white">{formatFullDate(getTxDate(details))}</div>
+                        </div>
+                        <div>
+                          <div className="text-gray-400">Tx Fee (USD)</div>
+                          <div className="text-white">${formatHexUsd(details.fees?.totals?.feeTokenAmountInUSD || details.totalFeeInUSD)}</div>
+                        </div>
+                      </>
+                    )}
                   </div>
-                )}
-                
-                {getTxDate(details) && (
-                  <div className="flex justify-between py-2 border-b border-white/10">
-                    <span className="text-gray-400">Time</span>
-                    <span className="text-white text-sm">{formatFullDate(getTxDate(details))}</span>
-                  </div>
-                )}
+                </div>
 
-                {/* Total Fee - try multiple formats */}
-                {(details.totalFeeInUSD || details.fees?.totals?.feeTokenAmountInUSD) && (
-                  <div className="flex justify-between py-2 border-b border-white/10">
-                    <span className="text-gray-400">Network Fee</span>
-                    <span className="text-white">
-                      {details.totalFeeInUSD 
-                        ? `$${Number(details.totalFeeInUSD).toFixed(4)}`
-                        : `$${(Number(details.fees.totals.feeTokenAmountInUSD) / 1e18).toFixed(4)}`
-                      }
-                    </span>
-                  </div>
-                )}
-
-                {details.sender && (
-                  <div className="flex justify-between py-2 border-b border-white/10">
-                    <span className="text-gray-400">From</span>
-                    <span className="text-white font-mono text-sm">{shortenHash(details.sender)}</span>
-                  </div>
-                )}
-
-                {details.receiver && details.receiver !== details.sender && (
-                  <div className="flex justify-between py-2 border-b border-white/10">
-                    <span className="text-gray-400">To</span>
-                    <span className="text-white font-mono text-sm">{shortenHash(details.receiver)}</span>
-                  </div>
-                )}
-
-                {/* Show chain info if available */}
-                {(details.chainId || details.tokenChanges?.decr?.[0]?.token?.chainId) && (
-                  <div className="flex justify-between py-2 border-b border-white/10">
-                    <span className="text-gray-400">Network</span>
-                    <span className="text-white">
-                      {(() => {
-                        const chainId = details.chainId || details.tokenChanges?.decr?.[0]?.token?.chainId;
-                        const chains: Record<number, string> = { 1: 'Ethereum', 8453: 'Base', 42161: 'Arbitrum', 10: 'Optimism', 137: 'Polygon' };
-                        return chains[chainId] || `Chain ${chainId}`;
-                      })()}
-                    </span>
-                  </div>
-                )}
-
-                {/* Balance change block (screenshot style) */}
                 {(details.tokenChanges?.decr?.length || details.tokenChanges?.incr?.length) ? (
-                  <div className="py-3 border-b border-white/10">
+                  <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                     <div className="text-gray-300 font-medium mb-2">Balance change</div>
                     <div className="space-y-2 text-sm">
-                      {(details.tokenChanges?.decr || []).map((d: { amount?: string; rawAmount?: string; token?: { symbol?: string; image?: string } }, i: number) => (
-                        <div key={`decr-${i}`} className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2">
+                      {(details.tokenChanges?.decr || []).map((d: { amount?: string; rawAmount?: string; amountInUSD?: string; token?: { symbol?: string; image?: string; realDecimals?: number } }, i: number) => (
+                        <div key={`decr-${i}`} className="flex items-center justify-between bg-black/20 rounded-lg px-3 py-2">
                           <div className="flex items-center gap-2">
                             {d.token?.image ? <img src={d.token.image} alt="" className="w-5 h-5 rounded-full" /> : null}
                             <span className="text-gray-200">{d.token?.symbol || 'Token'}</span>
                           </div>
-                          <span className="text-red-400">- {d.amount || d.rawAmount || '0'}</span>
+                          <div className="text-right">
+                            <div className="text-red-400">- {formatTokenAmount(d.amount || d.rawAmount || '0', d.token?.realDecimals || 6)}</div>
+                            {d.amountInUSD ? <div className="text-xs text-gray-400">${formatHexUsd(d.amountInUSD)}</div> : null}
+                          </div>
                         </div>
                       ))}
-                      {(details.tokenChanges?.incr || []).map((inc: { amount?: string; rawAmount?: string; token?: { symbol?: string; image?: string } }, i: number) => (
-                        <div key={`incr-${i}`} className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2">
+                      {(details.tokenChanges?.incr || []).map((inc: { amount?: string; rawAmount?: string; amountInUSD?: string; token?: { symbol?: string; image?: string; realDecimals?: number } }, i: number) => (
+                        <div key={`incr-${i}`} className="flex items-center justify-between bg-black/20 rounded-lg px-3 py-2">
                           <div className="flex items-center gap-2">
                             {inc.token?.image ? <img src={inc.token.image} alt="" className="w-5 h-5 rounded-full" /> : null}
                             <span className="text-gray-200">{inc.token?.symbol || 'Token'}</span>
                           </div>
-                          <span className="text-green-400">+ {inc.amount || inc.rawAmount || '0'}</span>
+                          <div className="text-right">
+                            <div className="text-green-400">+ {formatTokenAmount(inc.amount || inc.rawAmount || '0', inc.token?.realDecimals || 6)}</div>
+                            {inc.amountInUSD ? <div className="text-xs text-gray-400">${formatHexUsd(inc.amountInUSD)}</div> : null}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="bg-white/5 rounded-xl p-4 border border-white/10 space-y-2 text-sm">
+                  {txId && <div className="flex justify-between"><span className="text-gray-400">Tx ID</span><span className="text-white font-mono">{shortenHash(txId)}</span></div>}
+                  {details.sender && <div className="flex justify-between"><span className="text-gray-400">From</span><span className="text-white font-mono">{shortenHash(details.sender)}</span></div>}
+                  {details.receiver && <div className="flex justify-between"><span className="text-gray-400">To</span><span className="text-white font-mono">{shortenHash(details.receiver)}</span></div>}
+                </div>
+
+                {(details.depositUserOperations?.length || details.lendingUserOperations?.length || details.settlementUserOperations?.length) ? (
+                  <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+                    <div className="text-gray-300 font-medium mb-2">Execution</div>
+                    <div className="space-y-2 text-sm">
+                      {([...(details.depositUserOperations || []), ...(details.lendingUserOperations || []), ...(details.settlementUserOperations || [])] as Array<{ chainId?: number; txHash?: string; status?: number }>).map((op, i) => (
+                        <div key={i} className="flex justify-between bg-black/20 rounded-lg px-3 py-2">
+                          <span className="text-gray-300">Chain {op.chainId || '-'}</span>
+                          <span className="text-gray-400 font-mono">{op.txHash ? shortenHash(op.txHash) : `status ${op.status ?? '-'}`}</span>
                         </div>
                       ))}
                     </div>
