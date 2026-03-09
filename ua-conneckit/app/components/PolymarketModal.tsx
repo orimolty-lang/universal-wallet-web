@@ -34,6 +34,7 @@ interface Market {
   conditionId: string;
   slug: string;
   image?: string;
+  accepting_orders?: boolean;
   tokens?: Array<{ token_id: string; outcome: string; price: number }>;
 }
 
@@ -67,6 +68,47 @@ export default function PolymarketModal({
   const [showDebug, setShowDebug] = useState(false);
   const [debugInfo, setDebugInfo] = useState<{ endpoint?: string; rawCount?: number; openCount?: number; finalCount?: number; error?: string }>({});
 
+  const normalizeMarket = (m: unknown): Market | null => {
+    const raw = m as Record<string, unknown>;
+    const tokens = Array.isArray(raw.tokens) ? raw.tokens as Array<{ token_id: string; outcome: string; price: number }> : [];
+
+    let outcomes: string[] = [];
+    const rawOutcomes = raw.outcomes;
+    if (Array.isArray(rawOutcomes)) outcomes = rawOutcomes as string[];
+    else if (typeof rawOutcomes === 'string') {
+      try { outcomes = JSON.parse(rawOutcomes) as string[]; } catch { outcomes = []; }
+    }
+    if (!outcomes.length && tokens.length) outcomes = tokens.map(t => t.outcome);
+
+    let outcomePrices: string[] = [];
+    const rawOutcomePrices = raw.outcomePrices;
+    if (Array.isArray(rawOutcomePrices)) outcomePrices = rawOutcomePrices.map(String);
+    else if (typeof rawOutcomePrices === 'string') {
+      try { outcomePrices = (JSON.parse(rawOutcomePrices) as Array<string | number>).map(String); } catch { outcomePrices = []; }
+    }
+    if (!outcomePrices.length && tokens.length) outcomePrices = tokens.map(t => String(t.price ?? 0));
+
+    const endDate = String(raw.endDate || raw.end_date_iso || '');
+
+    return {
+      id: String(raw.id || raw.conditionId || raw.condition_id || ''),
+      question: String(raw.question || ''),
+      description: typeof raw.description === 'string' ? raw.description : undefined,
+      outcomes,
+      outcomePrices,
+      volume: String(raw.volume || raw.volumeNum || '0'),
+      liquidity: String(raw.liquidity || '0'),
+      endDate,
+      active: raw.active !== false,
+      closed: raw.closed === true,
+      conditionId: String(raw.conditionId || raw.condition_id || ''),
+      slug: String(raw.slug || raw.market_slug || ''),
+      image: typeof raw.image === 'string' ? raw.image : (typeof raw.icon === 'string' ? raw.icon : undefined),
+      accepting_orders: raw.accepting_orders === true,
+      tokens,
+    };
+  };
+
   // Fetch trending/popular markets
   const fetchMarkets = useCallback(async () => {
     setIsLoadingMarkets(true);
@@ -96,21 +138,29 @@ export default function PolymarketModal({
         usedEndpoint = fallbackEndpoint;
       }
 
-      // Final clean filter (prefer open markets)
-      const openMarkets = list.filter((m) => !!m?.id && !!m?.question && m?.active !== false && m?.closed !== true);
-      // If none, gracefully fall back to active list so UI is never empty
-      const finalMarkets = openMarkets.length > 0
-        ? openMarkets
-        : list.filter((m) => !!m?.id && !!m?.question && m?.active !== false);
+      // Normalize shape
+      const normalized = list.map(normalizeMarket).filter((m): m is Market => !!m);
+
+      // Prefer currently tradable markets (accepting orders, active, not closed, not expired)
+      const now = Date.now();
+      const tradable = normalized.filter((m) => {
+        const endTs = m.endDate ? Date.parse(m.endDate) : Number.NaN;
+        const notExpired = Number.isNaN(endTs) ? true : endTs > now;
+        return m.active && !m.closed && m.accepting_orders === true && notExpired;
+      });
+
+      // Fallbacks
+      const openMarkets = normalized.filter((m) => m.active && !m.closed);
+      const finalMarkets = tradable.length > 0 ? tradable : (openMarkets.length > 0 ? openMarkets : normalized);
 
       setDebugInfo({
         endpoint: usedEndpoint,
-        rawCount: list.length,
+        rawCount: normalized.length,
         openCount: openMarkets.length,
         finalCount: finalMarkets.length,
       });
 
-      console.log("[Polymarket] Loaded markets:", finalMarkets.length, "(open:", openMarkets.length, ")");
+      console.log("[Polymarket] Loaded markets:", finalMarkets.length, "(tradable:", tradable.length, ")");
       setAllMarkets(finalMarkets);
       setMarkets(finalMarkets);
     } catch (err) {
