@@ -21,10 +21,19 @@ const RELAYER_URL = "https://relayer-v2.polymarket.com/";
 class PolygonSignerWrapper {
   private walletClient: any;
   private userAddress: string;
+  // Provider stub that SDK may expect
+  public provider: { config: { chainId: number } };
 
   constructor(walletClient: any, address: string) {
     this.walletClient = walletClient;
     this.userAddress = address;
+    // SDK may access signer.provider.config
+    this.provider = { config: { chainId: 137 } };
+  }
+
+  // Expose address as property (some SDK paths check this)
+  get address(): string {
+    return this.userAddress;
   }
 
   async getAddress(): Promise<string> {
