@@ -11,6 +11,7 @@ import { useWallets, useAccount } from "@particle-network/connectkit";
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const POLYMARKET_API = "https://clob.polymarket.com"; // For CLOB trading (future)
 const GAMMA_API = "https://gamma-api.polymarket.com";
+const POLY_PROXY = process.env.NEXT_PUBLIC_POLYMARKET_PROXY_URL || "https://polymarket-proxy-ori.orimolty.workers.dev";
 
 // Contract addresses on Polygon
 const USDC_E_ADDRESS = "0x2791bca1f2de4661ed88a30c99a7a9449aa84174";
@@ -71,8 +72,10 @@ export default function PolymarketModal({
     setIsLoadingMarkets(true);
     setError(null);
     try {
-      // Primary endpoint
-      const primaryEndpoint = `${GAMMA_API}/markets?limit=100`;
+      // Primary endpoint (prefer dedicated proxy to avoid WebView/CORS failures)
+      const primaryEndpoint = POLY_PROXY
+        ? `${POLY_PROXY.replace(/\/$/, "")}/markets?limit=100`
+        : `${GAMMA_API}/markets?limit=100`;
       const response = await fetch(primaryEndpoint);
       const data = await response.json();
       let list: Market[] = Array.isArray(data) ? data : Array.isArray((data as { data?: Market[] })?.data) ? (data as { data: Market[] }).data : [];
@@ -80,7 +83,9 @@ export default function PolymarketModal({
 
       // Fallback endpoint (events -> markets)
       if (!list.length) {
-        const fallbackEndpoint = `${GAMMA_API}/events?limit=50`;
+        const fallbackEndpoint = POLY_PROXY
+          ? `${POLY_PROXY.replace(/\/$/, "")}/events?limit=50`
+          : `${GAMMA_API}/events?limit=50`;
         const fallbackRes = await fetch(fallbackEndpoint);
         const fallbackData = await fallbackRes.json();
         const events = Array.isArray(fallbackData) ? fallbackData : Array.isArray((fallbackData as { data?: unknown[] })?.data) ? (fallbackData as { data: unknown[] }).data : [];
