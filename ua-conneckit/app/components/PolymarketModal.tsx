@@ -85,11 +85,16 @@ export default function PolymarketModal({
         });
       }
 
-      // Final clean filter
-      list = list.filter((m) => !!m?.id && !!m?.question && m?.active !== false && m?.closed !== true);
-      console.log("[Polymarket] Loaded markets:", list.length);
-      setAllMarkets(list);
-      setMarkets(list);
+      // Final clean filter (prefer open markets)
+      const openMarkets = list.filter((m) => !!m?.id && !!m?.question && m?.active !== false && m?.closed !== true);
+      // If none, gracefully fall back to active list so UI is never empty
+      const finalMarkets = openMarkets.length > 0
+        ? openMarkets
+        : list.filter((m) => !!m?.id && !!m?.question && m?.active !== false);
+
+      console.log("[Polymarket] Loaded markets:", finalMarkets.length, "(open:", openMarkets.length, ")");
+      setAllMarkets(finalMarkets);
+      setMarkets(finalMarkets);
     } catch (err) {
       console.error("[Polymarket] Failed to fetch markets:", err);
       setError("Failed to load markets");
