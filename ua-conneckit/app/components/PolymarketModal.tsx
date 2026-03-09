@@ -9,6 +9,7 @@ import { useWallets, useAccount } from "@particle-network/connectkit";
 import { ClobClient, OrderType, Side, SignatureType } from "@polymarket/clob-client";
 import type { WalletClient } from "viem";
 import { keccak256, getCreate2Address, encodePacked } from "viem";
+import { getLifiSwapQuote } from "../lib/swapService";
 
 const RELAYER_URL = "https://relayer-v2.polymarket.com";
 const POLYGON_RPC_URL = "https://polygon-bor-rpc.publicnode.com";
@@ -43,6 +44,7 @@ const POLY_PROXY = process.env.NEXT_PUBLIC_POLYMARKET_PROXY_URL || "https://poly
 
 // Contract addresses on Polygon
 const USDC_E_ADDRESS = "0x2791bca1f2de4661ed88a30c99a7a9449aa84174";
+const BASE_USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const CTF_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045";
 // Unused for now but may need later for CTF operations:
 // const NEG_RISK_ADAPTER = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296";
@@ -347,6 +349,7 @@ export default function PolymarketModal({
 
     const proxy = await initializeProxy();
     const walletClient = primaryWallet.getWalletClient();
+    if (!walletClient) throw new Error("No wallet client");
 
     const sendWithExpiryRetry = async (
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -358,7 +361,7 @@ export default function PolymarketModal({
         try {
           setStatus(`${label} (attempt ${attempt}/4)...`);
           const tx = await buildTx();
-          const sig = await walletClient?.signMessage({
+          const sig = await walletClient.signMessage({
             account: address as `0x${string}`,
             message: { raw: tx.rootHash as `0x${string}` },
           });
@@ -383,25 +386,60 @@ export default function PolymarketModal({
     const current = BigInt((await usdce.balanceOf(proxy)).toString());
 
     if (current >= needed) {
-      setDebugInfo(prev => ({ ...prev, proxyStatus: `Funding skipped (enough balance in proxy)` }));
+      setDebugInfo(prev => ({ ...prev, proxyStatus: "Funding skipped (enough balance in proxy)" }));
       return { proxy, txId: "already-funded" };
     }
 
     const shortfall = needed - current;
-    const shortfallHuman = (Number(shortfall) / 1_000_000).toFixed(6).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+    const shortfallHuman = (Number(shortfall) / 1_000_000)
+      .toFixed(6)
+      .replace(/\.0+$/, "")
+      .replace(/(\.\d*?)0+$/, "$1");
 
     setDebugInfo(prev => ({ ...prev, proxyStatus: `Funding shortfall: ${shortfallHuman} USDC.e` }));
 
-    // Step 1: Convert/sync just the shortfall
-    await sendWithExpiryRetry(
-      () => universalAccount.createConvertTransaction({
-        expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: shortfallHuman },
-        chainId: CHAIN_ID.POLYGON_MAINNET,
-      }),
-      "Convert",
+    // Step 1: Direct Unified -> Polygon USDC.e via LiFi route
+    setDebugInfo(prev => ({ ...prev, proxyStatus: "Phase: quote unified->USDC.e (polygon)" }));
+    const smart = await universalAccount.getSmartAccountOptions();
+    const smartAddress = smart?.smartAccountAddress || address;
+
+    const sellAmount = String(Math.floor(Number(shortfallHuman) * 1e6));
+    const quote = await getLifiSwapQuote(
+      smartAddress,
+      8453,
+      137,
+      BASE_USDC_ADDRESS,
+      USDC_E_ADDRESS,
+      sellAmount,
+      100,
     );
 
-    // Step 2: Transfer explicit Polygon USDC.e token to proxy wallet
+    if (!quote.success || !quote.transaction) {
+      throw new Error(quote.error || "Failed to quote Unified -> USDC.e route");
+    }
+
+    const txs: Array<{ to: string; data: string; value: string }> = [];
+    if (quote.allowanceTarget) {
+      const approveData = `0x095ea7b3${quote.allowanceTarget.toLowerCase().replace("0x", "").padStart(64, "0")}${BigInt(sellAmount).toString(16).padStart(64, "0")}`;
+      txs.push({ to: BASE_USDC_ADDRESS, data: approveData, value: "0" });
+    }
+    txs.push({
+      to: quote.transaction.to,
+      data: quote.transaction.data,
+      value: quote.transaction.value || "0",
+    });
+
+    await sendWithExpiryRetry(
+      () => universalAccount.createUniversalTransaction({
+        chainId: CHAIN_ID.BASE_MAINNET,
+        transactions: txs,
+        expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.USDC, amount: shortfallHuman }],
+      }),
+      "Unified swap to USDC.e",
+    );
+
+    // Step 2: Transfer USDC.e from UA to proxy wallet
+    setDebugInfo(prev => ({ ...prev, proxyStatus: "Phase: transfer USDC.e -> proxy" }));
     const transferRes = await sendWithExpiryRetry(
       () => universalAccount.createTransferTransaction({
         token: {
@@ -415,7 +453,6 @@ export default function PolymarketModal({
     );
 
     setDebugInfo(prev => ({ ...prev, proxyStatus: `Funding done: tx ${transferRes.transactionId}` }));
-
     return { proxy, txId: transferRes.transactionId };
   };
 
