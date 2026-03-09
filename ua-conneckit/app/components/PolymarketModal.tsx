@@ -689,6 +689,9 @@ export default function PolymarketModal({
       if (isNaN(amountNum) || amountNum <= 0) {
         throw new Error("Invalid amount");
       }
+      if (amountNum < 2) {
+        throw new Error("Minimum buy amount is 2 USDC.e for reliable execution.");
+      }
 
       setStatus("Preparing funds (convert + deposit to proxy)...");
       const prep = await ensureProxyFunded(amount);
@@ -756,9 +759,11 @@ export default function PolymarketModal({
       };
 
       // Immediate execution path per docs: FOK + generous worst-price limit.
-      const worstPrice = Math.min(0.99, Math.max(0.01, estPrice * 1.12));
-      setDebugInfo(prev => ({ ...prev, proxyStatus: `Posting FOK with worstPrice=${worstPrice.toFixed(4)}` }));
+      const worstPrice = Math.min(0.99, Math.max(0.01, estPrice * 1.2));
+      const impliedShares = Number(amount) / Math.max(worstPrice, 0.01);
+      setDebugInfo(prev => ({ ...prev, proxyStatus: `Posting FOK worst=${worstPrice.toFixed(4)} impliedShares=${impliedShares.toFixed(4)}` }));
 
+      // Let SDK resolve tick size / fee rate / market flags internally.
       const orderResponse = await clob.createAndPostMarketOrder(
         {
           tokenID: selectedToken.token_id,
@@ -766,7 +771,7 @@ export default function PolymarketModal({
           amount: Number(amount), // BUY amount is USDC spend
           price: worstPrice,
         },
-        { tickSize: "0.01", negRisk: false },
+        undefined,
         OrderType.FOK,
       );
 
