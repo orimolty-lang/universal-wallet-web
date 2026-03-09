@@ -233,9 +233,18 @@ export default function PolymarketModal({
         return m.active && !m.closed && m.accepting_orders === true && notExpired;
       });
 
+      // Liquid-only filter
+      const minLiquidity = 5_000; // USD
+      const minVolume = 500; // USD
+      const liquidTradable = tradable.filter((m) => {
+        const liq = Number(m.liquidity || "0");
+        const vol = Number(m.volume || "0");
+        return Number.isFinite(liq) && Number.isFinite(vol) && liq >= minLiquidity && vol >= minVolume;
+      });
+
       // Fallbacks
       const openMarkets = normalized.filter((m) => m.active && !m.closed);
-      const finalMarkets = tradable.length > 0 ? tradable : openMarkets;
+      const finalMarkets = liquidTradable.length > 0 ? liquidTradable : (tradable.length > 0 ? tradable : openMarkets);
 
       setDebugInfo({
         endpoint: usedEndpoint,
@@ -244,7 +253,7 @@ export default function PolymarketModal({
         finalCount: finalMarkets.length,
       });
 
-      console.log("[Polymarket] Loaded markets:", finalMarkets.length, "(tradable:", tradable.length, ")");
+      console.log("[Polymarket] Loaded markets:", finalMarkets.length, "(liquid:", liquidTradable.length, ", tradable:", tradable.length, ")");
       setAllMarkets(finalMarkets);
       setMarkets(finalMarkets);
     } catch (err) {
@@ -696,12 +705,44 @@ export default function PolymarketModal({
       }
 
       if (!filled) {
+        // Fallback: place a resting GTC limit order near best ask
+        const bestAskObj = (asks[0] ?? {}) as Record<string, unknown>;
+        const bestAsk = Number(bestAskObj.price || bestAskObj.p || estPrice);
+        const limitPrice = Math.min(0.99, Math.max(0.01, bestAsk > 0 ? bestAsk * 1.01 : estPrice));
+        const sizeShares = Number(amount) / Math.max(limitPrice, 0.01);
+
         setDebugInfo(prev => ({
           ...prev,
-          proxyStatus: "Order accepted but no fill detected",
-          polyError: `No fill detected. orderId=${lastOrderId || 'n/a'}`,
+          proxyStatus: `No immediate fill; placing GTC at ${limitPrice.toFixed(4)}`,
         }));
-        throw new Error("Order accepted but not filled (FAK/no liquidity at current market). Funds remain in proxy.");
+
+        const gtcResp = await clob.createAndPostOrder(
+          {
+            tokenID: selectedToken.token_id,
+            side: Side.BUY,
+            price: limitPrice,
+            size: sizeShares,
+          },
+          undefined,
+          OrderType.GTC,
+        );
+
+        const gtcObj = (gtcResp ?? {}) as Record<string, unknown>;
+        const gtcId = String(gtcObj.orderID || gtcObj.id || gtcObj.orderId || "");
+        if (!gtcId) {
+          setDebugInfo(prev => ({
+            ...prev,
+            proxyStatus: "Order accepted but no fill detected",
+            polyError: `No fill detected. orderId=${lastOrderId || 'n/a'}`,
+          }));
+          throw new Error("Order accepted but not filled (FAK/no liquidity at current market). Funds remain in proxy.");
+        }
+
+        setDebugInfo(prev => ({ ...prev, proxyStatus: `Resting GTC placed: ${gtcId.slice(0, 10)}...` }));
+        setStatus("Resting order placed. It will fill when matched.");
+        onSuccess?.();
+        await refreshPortfolio(selectedMarket);
+        return;
       }
 
       setStatus("Order filled successfully!");
