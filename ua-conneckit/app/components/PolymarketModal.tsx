@@ -346,35 +346,53 @@ export default function PolymarketModal({
     const proxy = await initializeProxy();
     const walletClient = primaryWallet.getWalletClient();
 
-    // Step 1: Convert/sync UA funds to USDC on Polygon (same logic as Convert modal)
-    const convertTx = await universalAccount.createConvertTransaction({
-      expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: humanAmount },
-      chainId: CHAIN_ID.POLYGON_MAINNET,
-    });
+    const sendWithExpiryRetry = async (
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      buildTx: () => Promise<any>,
+      label: string,
+    ) => {
+      let lastErr: unknown;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const tx = await buildTx();
+          const sig = await walletClient?.signMessage({
+            account: address as `0x${string}`,
+            message: { raw: tx.rootHash as `0x${string}` },
+          });
+          return await universalAccount.sendTransaction(tx, sig);
+        } catch (e) {
+          lastErr = e;
+          const msg = e instanceof Error ? e.message : String(e);
+          const expired = msg.toLowerCase().includes("expired");
+          if (!(expired && attempt < 2)) throw e;
+          setStatus(`${label} expired, retrying...`);
+        }
+      }
+      throw lastErr;
+    };
 
-    const convertSig = await walletClient?.signMessage({
-      account: address as `0x${string}`,
-      message: { raw: convertTx.rootHash as `0x${string}` },
-    });
-
-    await universalAccount.sendTransaction(convertTx, convertSig);
-
-    // Step 2: Send USDC.e to proxy wallet (same logic as SendFunds modal)
-    const transferTx = await universalAccount.createTransferTransaction({
-      token: {
+    // Step 1: Convert/sync to Polygon USDC liquidity
+    await sendWithExpiryRetry(
+      () => universalAccount.createConvertTransaction({
+        expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: humanAmount },
         chainId: CHAIN_ID.POLYGON_MAINNET,
-        address: USDC_E_ADDRESS,
-      },
-      amount: humanAmount,
-      receiver: proxy,
-    });
+      }),
+      "Convert",
+    );
 
-    const transferSig = await walletClient?.signMessage({
-      account: address as `0x${string}`,
-      message: { raw: transferTx.rootHash as `0x${string}` },
-    });
+    // Step 2: Transfer explicit Polygon USDC.e token to proxy wallet
+    const transferRes = await sendWithExpiryRetry(
+      () => universalAccount.createTransferTransaction({
+        token: {
+          chainId: CHAIN_ID.POLYGON_MAINNET,
+          address: USDC_E_ADDRESS, // explicit USDC.e
+        },
+        amount: humanAmount,
+        receiver: proxy,
+      }),
+      "Transfer",
+    );
 
-    const transferRes = await universalAccount.sendTransaction(transferTx, transferSig);
     return { proxy, txId: transferRes.transactionId };
   };
 
