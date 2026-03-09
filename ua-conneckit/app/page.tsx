@@ -4560,6 +4560,7 @@ const App = () => {
     projectId: process.env.NEXT_PUBLIC_PROJECT_ID || "",
     projectClientKey: process.env.NEXT_PUBLIC_CLIENT_KEY || "",
     projectAppUuid: process.env.NEXT_PUBLIC_APP_ID || "",
+    rpcUrl: 'https://universal-rpc-staging.particle.network', // Bypass simulation for oracle-dependent contracts (Avantis perps)
     smartAccountOptions: {
       useEIP7702: false, // Smart Account mode - 7702 requires Particle Auth (not Connect)
       name: "UNIVERSAL",
