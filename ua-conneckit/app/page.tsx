@@ -4105,16 +4105,21 @@ const ActivityModal = ({
     return `${hash.slice(0, 6)}...${hash.slice(-4)}`;
   };
 
-  const getExplorerTxUrl = (chainId: number | undefined, txHash: string | undefined) => {
-    if (!chainId || !txHash) return "";
-    const map: Record<number, string> = {
-      1: "https://etherscan.io/tx/",
-      10: "https://optimistic.etherscan.io/tx/",
-      137: "https://polygonscan.com/tx/",
-      8453: "https://basescan.org/tx/",
-      42161: "https://arbiscan.io/tx/",
+  const getChainMeta = (chainId: number | undefined) => {
+    const map: Record<number, { name: string; logo: string; explorer: string }> = {
+      1: { name: 'Ethereum', logo: 'https://static.particle.network/token-list/ethereum/native.png', explorer: 'https://etherscan.io/tx/' },
+      10: { name: 'Optimism', logo: 'https://cryptologos.cc/logos/optimism-ethereum-op-logo.png', explorer: 'https://optimistic.etherscan.io/tx/' },
+      137: { name: 'Polygon', logo: 'https://cryptologos.cc/logos/polygon-matic-logo.png', explorer: 'https://polygonscan.com/tx/' },
+      8453: { name: 'Base', logo: 'https://cryptologos.cc/logos/base-base-logo.png', explorer: 'https://basescan.org/tx/' },
+      42161: { name: 'Arbitrum', logo: 'https://cryptologos.cc/logos/arbitrum-arb-logo.png', explorer: 'https://arbiscan.io/tx/' },
+      2013: { name: 'Settlement', logo: 'https://static.particle.network/token-list/ethereum/native.png', explorer: 'https://universalx.app/activity/details?id=' },
     };
-    return `${map[chainId] || "https://etherscan.io/tx/"}${txHash}`;
+    return map[chainId || 0] || { name: `Chain ${chainId || '-'}`, logo: 'https://static.particle.network/token-list/ethereum/native.png', explorer: 'https://etherscan.io/tx/' };
+  };
+
+  const getExplorerTxUrl = (chainId: number | undefined, txHash: string | undefined) => {
+    if (!chainId || !txHash) return '';
+    return `${getChainMeta(chainId).explorer}${txHash}`;
   };
 
   // Transaction Detail View
@@ -4234,14 +4239,7 @@ const ActivityModal = ({
                   {txId && (
                     <div className="flex justify-between">
                       <span className="text-gray-400">Tx ID</span>
-                      <a
-                        href={`https://universalx.app/activity/details?id=${txId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-accent-dynamic font-mono hover:underline"
-                      >
-                        {shortenHash(txId)}
-                      </a>
+                      <span className="text-white font-mono">{shortenHash(txId)}</span>
                     </div>
                   )}
                   {details.sender && <div className="flex justify-between"><span className="text-gray-400">From</span><span className="text-white font-mono">{shortenHash(details.sender)}</span></div>}
@@ -4263,9 +4261,17 @@ const ActivityModal = ({
                           <div className="space-y-2 text-sm">
                             {group.ops.map((op, i) => {
                               const href = getExplorerTxUrl(op.chainId, op.txHash);
+                              const chain = getChainMeta(op.chainId);
+                              const ok = op.status === 3 || op.status === 7;
                               return (
                                 <div key={`${group.label}-${i}`} className="flex items-center justify-between bg-black/20 rounded-lg px-3 py-2">
-                                  <span className="text-gray-300">Chain {op.chainId || '-'}</span>
+                                  <div className="flex items-center gap-2">
+                                    <img src={chain.logo} alt={chain.name} className="w-4 h-4 rounded-full" />
+                                    <span className="text-gray-200">{chain.name}</span>
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${ok ? 'text-green-300 bg-green-500/20' : 'text-yellow-300 bg-yellow-500/20'}`}>
+                                      {op.status ?? '-'}
+                                    </span>
+                                  </div>
                                   {op.txHash ? (
                                     <a
                                       href={href}
@@ -4276,7 +4282,7 @@ const ActivityModal = ({
                                       {shortenHash(op.txHash)}
                                     </a>
                                   ) : (
-                                    <span className="text-gray-400">status {op.status ?? '-'}</span>
+                                    <span className="text-gray-400">-</span>
                                   )}
                                 </div>
                               );
