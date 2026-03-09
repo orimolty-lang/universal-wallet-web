@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { X, TrendingUp, TrendingDown, Loader2, ExternalLink, Search } from "lucide-react";
 import type { UniversalAccount } from "@particle-network/universal-account-sdk";
 import { CHAIN_ID, SUPPORTED_TOKEN_TYPE } from "@particle-network/universal-account-sdk";
-import { Contract, JsonRpcProvider, Interface, parseUnits } from "ethers";
+import { Contract, JsonRpcProvider } from "ethers";
 import { useWallets, useAccount } from "@particle-network/connectkit";
 import { ClobClient, OrderType, Side, SignatureType } from "@polymarket/clob-client";
 import type { WalletClient } from "viem";
@@ -344,32 +344,38 @@ export default function PolymarketModal({
     if (!universalAccount || !primaryWallet || !address) throw new Error("Wallet not connected");
 
     const proxy = await initializeProxy();
-    const erc20 = new Interface([
-      "function transfer(address to, uint256 amount) external returns (bool)",
-    ]);
-
-    const amount6 = parseUnits(humanAmount, 6);
-
-    // One-button prep: ensure USDC on Polygon + transfer to proxy wallet
-    const tx = await universalAccount.createUniversalTransaction({
-      chainId: CHAIN_ID.POLYGON_MAINNET,
-      expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.USDC, amount: humanAmount }],
-      transactions: [
-        {
-          to: USDC_E_ADDRESS,
-          data: erc20.encodeFunctionData("transfer", [proxy, amount6]),
-        },
-      ],
-    });
-
     const walletClient = primaryWallet.getWalletClient();
-    const sig = await walletClient?.signMessage({
-      account: address as `0x${string}`,
-      message: { raw: tx.rootHash as `0x${string}` },
+
+    // Step 1: Convert/sync UA funds to USDC on Polygon (same logic as Convert modal)
+    const convertTx = await universalAccount.createConvertTransaction({
+      expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: humanAmount },
+      chainId: CHAIN_ID.POLYGON_MAINNET,
     });
 
-    const res = await universalAccount.sendTransaction(tx, sig);
-    return { proxy, txId: res.transactionId };
+    const convertSig = await walletClient?.signMessage({
+      account: address as `0x${string}`,
+      message: { raw: convertTx.rootHash as `0x${string}` },
+    });
+
+    await universalAccount.sendTransaction(convertTx, convertSig);
+
+    // Step 2: Send USDC.e to proxy wallet (same logic as SendFunds modal)
+    const transferTx = await universalAccount.createTransferTransaction({
+      token: {
+        chainId: CHAIN_ID.POLYGON_MAINNET,
+        address: USDC_E_ADDRESS,
+      },
+      amount: humanAmount,
+      receiver: proxy,
+    });
+
+    const transferSig = await walletClient?.signMessage({
+      account: address as `0x${string}`,
+      message: { raw: transferTx.rootHash as `0x${string}` },
+    });
+
+    const transferRes = await universalAccount.sendTransaction(transferTx, transferSig);
+    return { proxy, txId: transferRes.transactionId };
   };
 
   const getAuthedClobClient = async (proxy: string) => {
