@@ -364,7 +364,7 @@ export default function PolymarketModal({
       return clobClient;
     }
 
-    setDebugInfo(prev => ({ ...prev, proxyStatus: "Initializing...", walletAddress: address }));
+    setDebugInfo(prev => ({ ...prev, proxyStatus: "Initializing EOA mode...", walletAddress: address }));
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let walletClient: any;
@@ -385,100 +385,54 @@ export default function PolymarketModal({
           url: BUILDER_SIGN_URL,
         },
       });
-      setDebugInfo(prev => ({ ...prev, proxyStatus: "BuilderConfig created" }));
+      setDebugInfo(prev => ({ ...prev, proxyStatus: "BuilderConfig OK" }));
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
       setDebugInfo(prev => ({ ...prev, polyError: `BuilderConfig failed: ${errMsg}` }));
       throw e;
     }
 
-    // Get proxy wallet address from relayer (for proper Polymarket context)
-    // For proxy wallets, deploy() returns the proxy address (idempotent if already deployed)
-    let polyProxyAddr = proxyWalletAddress;
-    if (!polyProxyAddr) {
-      try {
-        setDebugInfo(prev => ({ ...prev, proxyStatus: "Creating signer wrapper..." }));
-        // Use custom signer wrapper to handle chain mismatch
-        const polygonSigner = new PolygonSignerWrapper(walletClient, address);
-        
-        setDebugInfo(prev => ({ ...prev, proxyStatus: "Creating RelayClient..." }));
-        let relay;
-        try {
-          relay = new RelayClient(
-            RELAYER_URL,
-            137,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            polygonSigner as any,
-            builderConfig,
-            RelayerTxType.PROXY,
-          );
-          setDebugInfo(prev => ({ ...prev, proxyStatus: "RelayClient created OK" }));
-        } catch (relayErr) {
-          const msg = relayErr instanceof Error ? relayErr.message : String(relayErr);
-          setDebugInfo(prev => ({ ...prev, polyError: `RelayClient constructor failed: ${msg}` }));
-          throw relayErr;
-        }
-        
-        setDebugInfo(prev => ({ ...prev, proxyStatus: "Calling relay.deploy()..." }));
-        // Deploy proxy wallet (auto-deploys on first tx if not exists)
-        let deployResponse;
-        try {
-          deployResponse = await relay.deploy();
-          setDebugInfo(prev => ({ ...prev, proxyStatus: "deploy() returned, waiting..." }));
-        } catch (deployErr) {
-          const msg = deployErr instanceof Error ? deployErr.message : String(deployErr);
-          setDebugInfo(prev => ({ ...prev, polyError: `relay.deploy() failed: ${msg}` }));
-          throw deployErr;
-        }
-        
-        setDebugInfo(prev => ({ ...prev, proxyStatus: "Waiting for deploy result..." }));
-        const result = await deployResponse.wait();
-        
-        polyProxyAddr = result?.proxyAddress || null;
-        if (polyProxyAddr) {
-          setProxyWalletAddress(polyProxyAddr);
-          setDebugInfo(prev => ({ ...prev, proxyStatus: `Proxy: ${polyProxyAddr}` }));
-        } else {
-          setDebugInfo(prev => ({ ...prev, proxyStatus: "No proxy address returned" }));
-        }
-        setRelayClient(relay);
-      } catch (e) {
-        const errMsg = e instanceof Error ? e.message : String(e);
-        console.warn("[Polymarket] Could not get proxy wallet, falling back to EOA", e);
-        setDebugInfo(prev => ({ ...prev, polyError: `Proxy deploy failed: ${errMsg}`, proxyStatus: "Fallback to EOA" }));
-      }
+    // Use EOA mode - simpler, no proxy wallet needed
+    // User's wallet signs directly, gasless relay handled separately if needed
+    setDebugInfo(prev => ({ ...prev, proxyStatus: "Creating ClobClient (EOA)..." }));
+    
+    try {
+      const client = new ClobClient(
+        POLYMARKET_API,
+        137,
+        walletClient as unknown as WalletClient,
+        undefined,
+        SignatureType.EOA,
+        undefined,
+        undefined,
+        true,
+        builderConfig,
+      );
+
+      setDebugInfo(prev => ({ ...prev, proxyStatus: "Deriving API key..." }));
+      const creds = await client.createOrDeriveApiKey();
+      
+      setDebugInfo(prev => ({ ...prev, proxyStatus: "Creating authed client..." }));
+      const authedClient = new ClobClient(
+        POLYMARKET_API,
+        137,
+        walletClient as unknown as WalletClient,
+        creds,
+        SignatureType.EOA,
+        undefined,
+        undefined,
+        true,
+        builderConfig,
+      );
+      
+      setClobClient(authedClient);
+      setDebugInfo(prev => ({ ...prev, proxyStatus: "ClobClient ready (EOA mode)" }));
+      return authedClient;
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e);
+      setDebugInfo(prev => ({ ...prev, polyError: `ClobClient init failed: ${errMsg}` }));
+      throw e;
     }
-
-    // Use POLY_PROXY signature type with proxy wallet as funder
-    const signatureType = polyProxyAddr ? SignatureType.POLY_PROXY : SignatureType.EOA;
-    const funderAddress = polyProxyAddr || undefined;
-
-    const client = new ClobClient(
-      POLYMARKET_API,
-      137,
-      walletClient as unknown as WalletClient,
-      undefined,
-      signatureType,
-      funderAddress,
-      undefined,
-      true,
-      builderConfig,
-    );
-
-    const creds = await client.createOrDeriveApiKey();
-    const authedClient = new ClobClient(
-      POLYMARKET_API,
-      137,
-      walletClient as unknown as WalletClient,
-      creds,
-      signatureType,
-      funderAddress,
-      undefined,
-      true,
-      builderConfig,
-    );
-    setClobClient(authedClient);
-    return authedClient;
   };
 
   // Initialize relay client for gasless transactions
