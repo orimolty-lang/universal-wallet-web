@@ -642,54 +642,64 @@ export default function PolymarketModal({
       const usdcBefore = BigInt((await usdce.balanceOf(prep.proxy)).toString());
       const posBefore = BigInt((await ctf.balanceOf(prep.proxy, selectedToken.token_id)).toString());
 
-      const orderResponse = await clob.createAndPostMarketOrder(
-        {
-          tokenID: selectedToken.token_id,
-          side: Side.BUY,
-          amount: Number(amount),
-        },
-        undefined,
-        OrderType.FAK,
-      );
-      console.log("[Polymarket] Buy order response:", orderResponse);
-      setDebugInfo(prev => ({ ...prev, proxyStatus: "Order posted (FAK), verifying fill..." }));
+      const verifyFill = async (orderId: string) => {
+        for (let i = 0; i < 20; i++) {
+          await new Promise(r => setTimeout(r, 2000));
 
-      // Verify fill with longer window + CLOB checks + on-chain deltas
-      let filled = false;
-      const orderObj = (orderResponse ?? {}) as Record<string, unknown>;
-      const orderId = (orderObj.orderID || orderObj.id || orderObj.orderId || "") as string;
-      for (let i = 0; i < 20; i++) {
-        await new Promise(r => setTimeout(r, 2000));
+          // On-chain signals
+          const usdcAfter = BigInt((await usdce.balanceOf(prep.proxy)).toString());
+          const posAfter = BigInt((await ctf.balanceOf(prep.proxy, selectedToken.token_id)).toString());
+          if (posAfter > posBefore || usdcAfter < usdcBefore) return true;
 
-        // On-chain signals
-        const usdcAfter = BigInt((await usdce.balanceOf(prep.proxy)).toString());
-        const posAfter = BigInt((await ctf.balanceOf(prep.proxy, selectedToken.token_id)).toString());
-        if (posAfter > posBefore || usdcAfter < usdcBefore) {
-          filled = true;
-          break;
-        }
-
-        // CLOB signal (if order id is available)
-        if (orderId) {
-          try {
-            const ord = (await clob.getOrder(orderId)) as unknown as Record<string, unknown>;
-            const ordState = String(ord.status || ord.state || "").toLowerCase();
-            const sizeMatched = Number(ord.size_matched || ord.matched_size || 0);
-            if (sizeMatched > 0 || ordState.includes("filled") || ordState.includes("matched")) {
-              filled = true;
-              break;
+          // CLOB signal (if order id is available)
+          if (orderId) {
+            try {
+              const ord = (await clob.getOrder(orderId)) as unknown as Record<string, unknown>;
+              const ordState = String(ord.status || ord.state || "").toLowerCase();
+              const sizeMatched = Number(ord.size_matched || ord.matched_size || 0);
+              if (sizeMatched > 0 || ordState.includes("filled") || ordState.includes("matched")) return true;
+            } catch {
+              // continue polling
             }
-          } catch {
-            // continue polling
           }
         }
+        return false;
+      };
+
+      // Try full size, then auto-slice if no fill
+      const baseAmount = Number(amount);
+      const attempts = [baseAmount, baseAmount * 0.5, baseAmount * 0.25].filter(a => a > 0.01);
+      let filled = false;
+      let lastOrderId = "";
+
+      for (let i = 0; i < attempts.length; i++) {
+        const tryAmount = attempts[i];
+        setDebugInfo(prev => ({ ...prev, proxyStatus: `Posting FAK attempt ${i + 1}/${attempts.length} amount=${tryAmount}` }));
+
+        const orderResponse = await clob.createAndPostMarketOrder(
+          {
+            tokenID: selectedToken.token_id,
+            side: Side.BUY,
+            amount: tryAmount,
+          },
+          undefined,
+          OrderType.FAK,
+        );
+
+        const orderObj = (orderResponse ?? {}) as Record<string, unknown>;
+        const orderId = (orderObj.orderID || orderObj.id || orderObj.orderId || "") as string;
+        lastOrderId = orderId;
+        console.log("[Polymarket] Buy order response:", orderResponse);
+
+        filled = await verifyFill(orderId);
+        if (filled) break;
       }
 
       if (!filled) {
         setDebugInfo(prev => ({
           ...prev,
           proxyStatus: "Order accepted but no fill detected",
-          polyError: `No fill detected. orderId=${orderId || 'n/a'}`,
+          polyError: `No fill detected. orderId=${lastOrderId || 'n/a'}`,
         }));
         throw new Error("Order accepted but not filled (FAK/no liquidity at current market). Funds remain in proxy.");
       }
