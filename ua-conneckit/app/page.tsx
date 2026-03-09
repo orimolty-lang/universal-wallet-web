@@ -22,6 +22,7 @@ import TokenDetailModal from "./components/TokenDetailModal";
 import SwapModal from "./components/SwapModal";
 import { encodeFunctionData } from "viem";
 import { toBeHex } from "ethers";
+import { useUniversalAccountWS } from "./hooks/useUniversalAccountWS";
 
 // Mobula API for token search
 const MOBULA_API_KEY = "a8e6a174-9dfd-4929-b0e0-9f6ece767923";
@@ -4660,6 +4661,34 @@ const App = () => {
       fetchMobulaAssets();
     }
   }, [accountInfo?.evmSmartAccount, accountInfo?.solanaSmartAccount, fetchMobulaAssets]);
+
+  // WebSocket for real-time balance and transaction updates
+  const handleAssetUpdate = useCallback((assets: Array<{ chainId: number; address: string; amountOnChain: string }>) => {
+    console.log("[WSS] Real-time asset update received:", assets.length, "assets");
+    // Refresh assets when we get a WebSocket update
+    fetchAssets();
+    fetchMobulaAssets();
+  }, [fetchAssets, fetchMobulaAssets]);
+
+  const handleTransactionUpdate = useCallback((tx: { transactionId: string; status: number }) => {
+    console.log("[WSS] Transaction update:", tx.transactionId, "status:", tx.status === 7 ? "success" : tx.status === 11 ? "failed" : tx.status);
+    // Refresh assets after transaction completes
+    if (tx.status === 7 || tx.status === 11) {
+      fetchAssets();
+      fetchMobulaAssets();
+    }
+  }, [fetchAssets, fetchMobulaAssets]);
+
+  // Real-time WebSocket updates (auto-refreshes assets on changes)
+  useUniversalAccountWS({
+    universalAccount: universalAccountInstance,
+    ownerAddress: address,
+    evmAddress: accountInfo?.evmSmartAccount,
+    solanaAddress: accountInfo?.solanaSmartAccount,
+    useEIP7702: false,
+    onAssetUpdate: handleAssetUpdate,
+    onTransactionUpdate: handleTransactionUpdate,
+  });
 
   // Merge UA primary assets with Mobula external assets
   const combinedAssets = useMemo(() => {
