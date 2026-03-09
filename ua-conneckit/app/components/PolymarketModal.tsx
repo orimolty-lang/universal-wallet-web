@@ -631,22 +631,46 @@ export default function PolymarketModal({
         OrderType.FAK,
       );
       console.log("[Polymarket] Buy order response:", orderResponse);
-      setDebugInfo(prev => ({ ...prev, proxyStatus: "Order posted, verifying fill..." }));
+      setDebugInfo(prev => ({ ...prev, proxyStatus: "Order posted (FAK), verifying fill..." }));
 
-      // Verify fill: either position increases OR USDC decreases
+      // Verify fill with longer window + CLOB checks + on-chain deltas
       let filled = false;
-      for (let i = 0; i < 8; i++) {
-        await new Promise(r => setTimeout(r, 1500));
+      const orderObj = (orderResponse ?? {}) as Record<string, unknown>;
+      const orderId = (orderObj.orderID || orderObj.id || orderObj.orderId || "") as string;
+      for (let i = 0; i < 20; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+
+        // On-chain signals
         const usdcAfter = BigInt((await usdce.balanceOf(prep.proxy)).toString());
         const posAfter = BigInt((await ctf.balanceOf(prep.proxy, selectedToken.token_id)).toString());
         if (posAfter > posBefore || usdcAfter < usdcBefore) {
           filled = true;
           break;
         }
+
+        // CLOB signal (if order id is available)
+        if (orderId) {
+          try {
+            const ord = (await clob.getOrder(orderId)) as unknown as Record<string, unknown>;
+            const ordState = String(ord.status || ord.state || "").toLowerCase();
+            const sizeMatched = Number(ord.size_matched || ord.matched_size || 0);
+            if (sizeMatched > 0 || ordState.includes("filled") || ordState.includes("matched")) {
+              filled = true;
+              break;
+            }
+          } catch {
+            // continue polling
+          }
+        }
       }
 
       if (!filled) {
-        throw new Error("Order posted but not filled (FOK/liq/price). Funds remain in proxy.");
+        setDebugInfo(prev => ({
+          ...prev,
+          proxyStatus: "Order accepted but no fill detected",
+          polyError: `No fill detected. orderId=${orderId || 'n/a'}`,
+        }));
+        throw new Error("Order accepted but not filled (FAK/no liquidity at current market). Funds remain in proxy.");
       }
 
       setStatus("Order filled successfully!");
