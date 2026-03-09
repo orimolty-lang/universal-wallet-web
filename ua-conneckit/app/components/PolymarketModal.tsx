@@ -689,8 +689,8 @@ export default function PolymarketModal({
       if (isNaN(amountNum) || amountNum <= 0) {
         throw new Error("Invalid amount");
       }
-      if (amountNum < 2) {
-        throw new Error("Minimum buy amount is 2 USDC.e for reliable execution.");
+      if (amountNum < 0.75) {
+        throw new Error("Minimum buy amount is 0.75 USDC.e.");
       }
 
       setStatus("Preparing funds (convert + deposit to proxy)...");
