@@ -81,31 +81,58 @@ export default function PolymarketModal({
 
   const normalizeMarket = (m: unknown): Market | null => {
     const raw = m as Record<string, unknown>;
-    // Normalize tokens array - handle both token_id and tokenId formats
-    const rawTokens = Array.isArray(raw.tokens) ? raw.tokens : [];
-    const tokens = rawTokens.map((t: unknown) => {
-      const tok = t as Record<string, unknown>;
-      return {
-        token_id: String(tok.token_id || tok.tokenId || tok.id || ''),
-        outcome: String(tok.outcome || tok.name || ''),
-        price: Number(tok.price ?? 0),
-      };
-    }).filter(t => !!t.token_id);
 
+    // Parse outcomes first (needed to build tokens)
     let outcomes: string[] = [];
     const rawOutcomes = raw.outcomes;
     if (Array.isArray(rawOutcomes)) outcomes = rawOutcomes as string[];
     else if (typeof rawOutcomes === 'string') {
       try { outcomes = JSON.parse(rawOutcomes) as string[]; } catch { outcomes = []; }
     }
-    if (!outcomes.length && tokens.length) outcomes = tokens.map(t => t.outcome);
 
+    // Parse outcome prices
     let outcomePrices: string[] = [];
     const rawOutcomePrices = raw.outcomePrices;
     if (Array.isArray(rawOutcomePrices)) outcomePrices = rawOutcomePrices.map(String);
     else if (typeof rawOutcomePrices === 'string') {
       try { outcomePrices = (JSON.parse(rawOutcomePrices) as Array<string | number>).map(String); } catch { outcomePrices = []; }
     }
+
+    // Parse clobTokenIds (API returns JSON string like "[\"123...\", \"456...\"]")
+    let clobTokenIds: string[] = [];
+    const rawClobTokenIds = raw.clobTokenIds;
+    if (Array.isArray(rawClobTokenIds)) clobTokenIds = rawClobTokenIds.map(String);
+    else if (typeof rawClobTokenIds === 'string') {
+      try { clobTokenIds = JSON.parse(rawClobTokenIds) as string[]; } catch { clobTokenIds = []; }
+    }
+
+    // Build tokens array from clobTokenIds + outcomes + prices
+    let tokens: Array<{ token_id: string; outcome: string; price: number }> = [];
+    
+    // First try existing tokens array
+    const rawTokens = Array.isArray(raw.tokens) ? raw.tokens : [];
+    if (rawTokens.length) {
+      tokens = rawTokens.map((t: unknown) => {
+        const tok = t as Record<string, unknown>;
+        return {
+          token_id: String(tok.token_id || tok.tokenId || tok.id || ''),
+          outcome: String(tok.outcome || tok.name || ''),
+          price: Number(tok.price ?? 0),
+        };
+      }).filter(t => !!t.token_id);
+    }
+    
+    // If no tokens but we have clobTokenIds, build from those
+    if (!tokens.length && clobTokenIds.length) {
+      tokens = clobTokenIds.map((tokenId, i) => ({
+        token_id: tokenId,
+        outcome: outcomes[i] || `Outcome ${i + 1}`,
+        price: parseFloat(outcomePrices[i] || '0'),
+      }));
+    }
+
+    // Update outcomes from tokens if empty
+    if (!outcomes.length && tokens.length) outcomes = tokens.map(t => t.outcome);
     if (!outcomePrices.length && tokens.length) outcomePrices = tokens.map(t => String(t.price ?? 0));
 
     const endDate = String(raw.endDate || raw.end_date_iso || '');
