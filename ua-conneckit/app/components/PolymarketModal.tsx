@@ -438,6 +438,18 @@ export default function PolymarketModal({
       "Unified swap to USDC.e",
     );
 
+    // Cross-chain route may settle asynchronously. Wait until Polygon USDC.e is actually available.
+    setDebugInfo(prev => ({ ...prev, proxyStatus: "Phase: wait for USDC.e settlement on Polygon" }));
+    const smart2 = await universalAccount.getSmartAccountOptions();
+    const uaAddress = smart2?.smartAccountAddress || address;
+
+    const waitUntil = Date.now() + 120000; // 2 min
+    while (Date.now() < waitUntil) {
+      const bal = BigInt((await usdce.balanceOf(uaAddress)).toString());
+      if (bal >= shortfall) break;
+      await new Promise(r => setTimeout(r, 4000));
+    }
+
     // Step 2: Transfer USDC.e from UA to proxy wallet
     setDebugInfo(prev => ({ ...prev, proxyStatus: "Phase: transfer USDC.e -> proxy" }));
     const transferRes = await sendWithExpiryRetry(
