@@ -4105,6 +4105,18 @@ const ActivityModal = ({
     return `${hash.slice(0, 6)}...${hash.slice(-4)}`;
   };
 
+  const getExplorerTxUrl = (chainId: number | undefined, txHash: string | undefined) => {
+    if (!chainId || !txHash) return "";
+    const map: Record<number, string> = {
+      1: "https://etherscan.io/tx/",
+      10: "https://optimistic.etherscan.io/tx/",
+      137: "https://polygonscan.com/tx/",
+      8453: "https://basescan.org/tx/",
+      42161: "https://arbiscan.io/tx/",
+    };
+    return `${map[chainId] || "https://etherscan.io/tx/"}${txHash}`;
+  };
+
   // Transaction Detail View
   if (selectedTx) {
     const details = txDetails || selectedTx;
@@ -4219,22 +4231,60 @@ const ActivityModal = ({
                 ) : null}
 
                 <div className="bg-white/5 rounded-xl p-4 border border-white/10 space-y-2 text-sm">
-                  {txId && <div className="flex justify-between"><span className="text-gray-400">Tx ID</span><span className="text-white font-mono">{shortenHash(txId)}</span></div>}
+                  {txId && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Tx ID</span>
+                      <a
+                        href={`https://universalx.app/activity/details?id=${txId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-accent-dynamic font-mono hover:underline"
+                      >
+                        {shortenHash(txId)}
+                      </a>
+                    </div>
+                  )}
                   {details.sender && <div className="flex justify-between"><span className="text-gray-400">From</span><span className="text-white font-mono">{shortenHash(details.sender)}</span></div>}
                   {details.receiver && <div className="flex justify-between"><span className="text-gray-400">To</span><span className="text-white font-mono">{shortenHash(details.receiver)}</span></div>}
                 </div>
 
                 {(details.depositUserOperations?.length || details.lendingUserOperations?.length || details.settlementUserOperations?.length) ? (
                   <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-                    <div className="text-gray-300 font-medium mb-2">Execution</div>
-                    <div className="space-y-2 text-sm">
-                      {([...(details.depositUserOperations || []), ...(details.lendingUserOperations || []), ...(details.settlementUserOperations || [])] as Array<{ chainId?: number; txHash?: string; status?: number }>).map((op, i) => (
-                        <div key={i} className="flex justify-between bg-black/20 rounded-lg px-3 py-2">
-                          <span className="text-gray-300">Chain {op.chainId || '-'}</span>
-                          <span className="text-gray-400 font-mono">{op.txHash ? shortenHash(op.txHash) : `status ${op.status ?? '-'}`}</span>
+                    <div className="text-gray-300 font-medium mb-3">Execution</div>
+
+                    {([
+                      { label: 'Deposit', ops: details.depositUserOperations || [] },
+                      { label: 'Lending', ops: details.lendingUserOperations || [] },
+                      { label: 'Settlement', ops: details.settlementUserOperations || [] },
+                    ] as Array<{ label: string; ops: Array<{ chainId?: number; txHash?: string; status?: number }> }>).map((group) => (
+                      group.ops.length ? (
+                        <div key={group.label} className="mb-3 last:mb-0">
+                          <div className="text-xs text-gray-400 mb-1">{group.label}</div>
+                          <div className="space-y-2 text-sm">
+                            {group.ops.map((op, i) => {
+                              const href = getExplorerTxUrl(op.chainId, op.txHash);
+                              return (
+                                <div key={`${group.label}-${i}`} className="flex items-center justify-between bg-black/20 rounded-lg px-3 py-2">
+                                  <span className="text-gray-300">Chain {op.chainId || '-'}</span>
+                                  {op.txHash ? (
+                                    <a
+                                      href={href}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-accent-dynamic font-mono hover:underline"
+                                    >
+                                      {shortenHash(op.txHash)}
+                                    </a>
+                                  ) : (
+                                    <span className="text-gray-400">status {op.status ?? '-'}</span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
-                      ))}
-                    </div>
+                      ) : null
+                    ))}
                   </div>
                 ) : null}
 
