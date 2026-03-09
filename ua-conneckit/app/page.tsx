@@ -1326,14 +1326,13 @@ const ConvertModal = ({
         setLoadingStatus('Waiting for signature...');
         const walletClient = primaryWallet.getWalletClient();
         
-        // Sign the root hash
-        const signature = await walletClient.request({
-          method: 'personal_sign',
+        // Sign root hash using signMessage (AuthKit embedded-wallet compatible)
+        const signature = await walletClient.signMessage({
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          params: [(tx as any).rootHash as `0x${string}`, walletClient.account?.address as `0x${string}`],
+          message: { raw: (tx as any).rootHash as `0x${string}` },
         });
 
-        // Send transaction (SDK handles 7702 auth for embedded wallets)
+        // Send transaction
         setLoadingStatus('Sending transaction...');
         const sendResult = await universalAccount.sendTransaction(tx, signature as string);
         
@@ -2262,11 +2261,10 @@ const PerpsModal = ({
         
         const walletClient = primaryWallet.getWalletClient();
         
-        // Sign the root hash using personal_sign
-        const signature = await walletClient.request({
-          method: 'personal_sign',
+        // Sign root hash using signMessage (AuthKit embedded-wallet compatible)
+        const signature = await walletClient.signMessage({
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          params: [(tx as any).rootHash as `0x${string}`, walletClient.account?.address as `0x${string}`],
+          message: { raw: (tx as any).rootHash as `0x${string}` },
         });
 
         // Step 3: Send transaction
