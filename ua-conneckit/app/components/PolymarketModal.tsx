@@ -18,15 +18,25 @@ const RELAYER_URL = "https://relayer-v2.polymarket.com/";
 
 // Custom viem-like WalletClient wrapper for Polymarket relayer
 // Must have chain, transport, account properties that SDK expects
+// The SDK's ViemSigner accesses: walletClient.transport.{config, name, request, type, value}
 /* eslint-disable @typescript-eslint/no-explicit-any */
+
+const POLYGON_RPC = "https://polygon-rpc.com";
+
 class PolygonSignerWrapper {
   private walletClient: any;
   private userAddress: string;
   
   // viem WalletClient expected properties
   public chain: { id: number; name: string; network: string; rpcUrls: { default: { http: string[] } } };
-  public transport: { type: string; url: string };
-  public account: { address: string; type: string };
+  public transport: {
+    config: { key: string; name: string; retryCount: number; retryDelay: number; timeout: number; type: string };
+    name: string;
+    request: (args: any) => Promise<any>;
+    type: string;
+    value: { url: string };
+  };
+  public account: { address: `0x${string}`; type: string };
 
   constructor(walletClient: any, address: string) {
     this.walletClient = walletClient;
@@ -36,11 +46,42 @@ class PolygonSignerWrapper {
     this.chain = {
       id: 137,
       name: 'Polygon',
-      network: 'polygon',
-      rpcUrls: { default: { http: ['https://polygon-rpc.com'] } }
+      network: 'matic',
+      rpcUrls: { default: { http: [POLYGON_RPC] } }
     };
-    this.transport = { type: 'http', url: 'https://polygon-rpc.com' };
-    this.account = { address: address, type: 'local' };
+    
+    // Full viem transport shape - SDK accesses transport.config, transport.request, etc.
+    this.transport = {
+      config: {
+        key: 'http',
+        name: 'HTTP JSON-RPC',
+        retryCount: 3,
+        retryDelay: 150,
+        timeout: 10000,
+        type: 'http',
+      },
+      name: 'HTTP JSON-RPC',
+      request: async (args: { method: string; params?: any[] }) => {
+        // Proxy RPC requests to Polygon
+        const response = await fetch(POLYGON_RPC, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: Date.now(),
+            method: args.method,
+            params: args.params || [],
+          }),
+        });
+        const json = await response.json();
+        if (json.error) throw new Error(json.error.message);
+        return json.result;
+      },
+      type: 'http',
+      value: { url: POLYGON_RPC },
+    };
+    
+    this.account = { address: address as `0x${string}`, type: 'json-rpc' };
   }
 
   // Expose address as property (some SDK paths check this)
@@ -54,6 +95,11 @@ class PolygonSignerWrapper {
   
   getChainId(): number {
     return 137;
+  }
+  
+  // viem method: requestAddresses
+  async requestAddresses(): Promise<`0x${string}`[]> {
+    return [this.userAddress as `0x${string}`];
   }
 
   async signMessage({ message }: { message: string | { raw: any } }): Promise<string> {
@@ -79,6 +125,17 @@ class PolygonSignerWrapper {
       primaryType: primaryType || Object.keys(types).find((k: string) => k !== 'EIP712Domain') || 'Message',
       message,
     });
+  }
+  
+  // SDK may call these - stub them (unused params intentional)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async signTransaction(tx: any): Promise<string> {
+    throw new Error("signTransaction not supported - use relayer");
+  }
+  
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async sendTransaction(tx: any): Promise<string> {
+    throw new Error("sendTransaction not supported - use relayer");
   }
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -364,7 +421,7 @@ export default function PolymarketModal({
       return clobClient;
     }
 
-    setDebugInfo(prev => ({ ...prev, proxyStatus: "Initializing EOA mode...", walletAddress: address }));
+    setDebugInfo(prev => ({ ...prev, proxyStatus: "Initializing...", walletAddress: address }));
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let walletClient: any;
@@ -392,9 +449,48 @@ export default function PolymarketModal({
       throw e;
     }
 
-    // Use EOA mode - simpler, no proxy wallet needed
-    // User's wallet signs directly, gasless relay handled separately if needed
-    setDebugInfo(prev => ({ ...prev, proxyStatus: "Creating ClobClient (EOA)..." }));
+    // Create signer wrapper with full viem transport shape
+    setDebugInfo(prev => ({ ...prev, proxyStatus: "Creating signer wrapper..." }));
+    const polygonSigner = new PolygonSignerWrapper(walletClient, address);
+    
+    // Deploy proxy wallet for gasless transactions
+    let polyProxyAddr = proxyWalletAddress;
+    if (!polyProxyAddr) {
+      try {
+        setDebugInfo(prev => ({ ...prev, proxyStatus: "Creating RelayClient..." }));
+        const relay = new RelayClient(
+          RELAYER_URL,
+          137,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          polygonSigner as any,
+          builderConfig,
+          RelayerTxType.PROXY,
+        );
+        setDebugInfo(prev => ({ ...prev, proxyStatus: "RelayClient created, deploying..." }));
+        
+        const deployResponse = await relay.deploy();
+        setDebugInfo(prev => ({ ...prev, proxyStatus: "Waiting for deploy..." }));
+        const result = await deployResponse.wait();
+        
+        polyProxyAddr = result?.proxyAddress || null;
+        if (polyProxyAddr) {
+          setProxyWalletAddress(polyProxyAddr);
+          const shortAddr = polyProxyAddr.slice(0, 10);
+          setDebugInfo(prev => ({ ...prev, proxyStatus: `Proxy: ${shortAddr}...` }));
+        }
+        setRelayClient(relay);
+      } catch (e) {
+        const errMsg = e instanceof Error ? e.message : String(e);
+        console.warn("[Polymarket] Proxy deploy failed, using EOA fallback:", e);
+        setDebugInfo(prev => ({ ...prev, polyError: `Proxy: ${errMsg}`, proxyStatus: "EOA fallback" }));
+      }
+    }
+
+    // Use POLY_PROXY if we have a proxy, otherwise EOA
+    const signatureType = polyProxyAddr ? SignatureType.POLY_PROXY : SignatureType.EOA;
+    const funderAddress = polyProxyAddr || undefined;
+    
+    setDebugInfo(prev => ({ ...prev, proxyStatus: `Creating ClobClient (${signatureType === SignatureType.POLY_PROXY ? 'PROXY' : 'EOA'})...` }));
     
     try {
       const client = new ClobClient(
@@ -402,8 +498,8 @@ export default function PolymarketModal({
         137,
         walletClient as unknown as WalletClient,
         undefined,
-        SignatureType.EOA,
-        undefined,
+        signatureType,
+        funderAddress,
         undefined,
         true,
         builderConfig,
@@ -412,25 +508,24 @@ export default function PolymarketModal({
       setDebugInfo(prev => ({ ...prev, proxyStatus: "Deriving API key..." }));
       const creds = await client.createOrDeriveApiKey();
       
-      setDebugInfo(prev => ({ ...prev, proxyStatus: "Creating authed client..." }));
       const authedClient = new ClobClient(
         POLYMARKET_API,
         137,
         walletClient as unknown as WalletClient,
         creds,
-        SignatureType.EOA,
-        undefined,
+        signatureType,
+        funderAddress,
         undefined,
         true,
         builderConfig,
       );
       
       setClobClient(authedClient);
-      setDebugInfo(prev => ({ ...prev, proxyStatus: "ClobClient ready (EOA mode)" }));
+      setDebugInfo(prev => ({ ...prev, proxyStatus: `Ready (${signatureType === SignatureType.POLY_PROXY ? 'gasless' : 'EOA'})` }));
       return authedClient;
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
-      setDebugInfo(prev => ({ ...prev, polyError: `ClobClient init failed: ${errMsg}` }));
+      setDebugInfo(prev => ({ ...prev, polyError: `ClobClient: ${errMsg}` }));
       throw e;
     }
   };
