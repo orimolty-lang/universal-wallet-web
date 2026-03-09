@@ -6,6 +6,8 @@ import type { UniversalAccount } from "@particle-network/universal-account-sdk";
 import { CHAIN_ID, SUPPORTED_TOKEN_TYPE } from "@particle-network/universal-account-sdk";
 import { Contract, JsonRpcProvider, Interface, parseUnits } from "ethers";
 import { useWallets, useAccount } from "@particle-network/connectkit";
+import { ClobClient, OrderType, Side, SignatureType } from "@polymarket/clob-client";
+import type { WalletClient } from "viem";
 import { keccak256, getCreate2Address, encodePacked } from "viem";
 
 const RELAYER_URL = "https://relayer-v2.polymarket.com";
@@ -370,6 +372,30 @@ export default function PolymarketModal({
     return { proxy, txId: res.transactionId };
   };
 
+  const getAuthedClobClient = async (proxy: string) => {
+    if (!primaryWallet) throw new Error("Wallet not connected");
+    const walletClient = primaryWallet.getWalletClient();
+    if (!walletClient) throw new Error("No wallet client");
+
+    const baseClient = new ClobClient(
+      POLYMARKET_API,
+      137,
+      walletClient as unknown as WalletClient,
+      undefined,
+      SignatureType.POLY_PROXY,
+      proxy,
+    );
+    const creds = await baseClient.createOrDeriveApiKey();
+    return new ClobClient(
+      POLYMARKET_API,
+      137,
+      walletClient as unknown as WalletClient,
+      creds,
+      SignatureType.POLY_PROXY,
+      proxy,
+    );
+  };
+
   // Temporary: avoid broken direct relayer submit path causing 400/401.
   // Trading flow will auto-fund proxy in handleBuy.
   const approveViaRelayer = async () => {
@@ -478,16 +504,18 @@ export default function PolymarketModal({
         throw new Error("Selected market has no tradable token id");
       }
 
-      setStatus("Initializing Polymarket proxy...");
-      await initializeProxy();
-      
-      // TODO: Implement direct CLOB API trading
-      // For now, we've funded the proxy - user can trade via Polymarket webapp
-      // Full implementation would call clob.polymarket.com/order endpoints
-      console.log("[Polymarket] Proxy funded, ready for trading");
-      
-      // Placeholder for CLOB order - needs direct API implementation
-      setStatus("Proxy funded! Trading via direct API coming soon.");
+      setStatus("Posting market order...");
+      const clob = await getAuthedClobClient(prep.proxy);
+      const orderResponse = await clob.createAndPostMarketOrder(
+        {
+          tokenID: selectedToken.token_id,
+          side: Side.BUY,
+          amount: Number(amount),
+        },
+        undefined,
+        OrderType.FOK,
+      );
+      console.log("[Polymarket] Buy order response:", orderResponse);
 
       setStatus("Order submitted successfully!");
       onSuccess?.();
@@ -508,13 +536,22 @@ export default function PolymarketModal({
       setIsLoading(true);
       
       setStatus("Initializing proxy...");
-      await initializeProxy();
-      
-      // TODO: Implement direct CLOB API trading
-      // For now, show status - full implementation needs clob.polymarket.com/order
-      console.log("[Polymarket] Sell order for token:", tokenId, "shares:", shares);
-      setStatus("Direct sell API coming soon");
-      
+      const proxy = await initializeProxy();
+      const clob = await getAuthedClobClient(proxy);
+
+      setStatus("Posting sell order...");
+      const resp = await clob.createAndPostMarketOrder(
+        {
+          tokenID: tokenId,
+          side: Side.SELL,
+          amount: shares,
+        },
+        undefined,
+        OrderType.FOK,
+      );
+      console.log("[Polymarket] Sell response:", resp);
+      setStatus("Sell order submitted");
+
       await refreshPortfolio(selectedMarket);
       onSuccess?.();
     } catch (e) {
