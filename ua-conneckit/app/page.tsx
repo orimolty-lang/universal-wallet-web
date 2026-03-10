@@ -2436,12 +2436,7 @@ const PerpsModal = ({
           <>
             {/* Header */}
             <div className="flex items-center justify-between px-4 mb-4">
-              <button
-                onClick={() => setView('deposit')}
-                className="px-3 py-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold"
-              >
-                Deposit
-              </button>
+              <div className="w-10 h-10" />
               <h2 className="text-white text-lg font-bold flex items-center gap-2">
                 <span>🔥</span> Perps
               </h2>
