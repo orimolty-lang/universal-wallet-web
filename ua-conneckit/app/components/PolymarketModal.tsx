@@ -706,33 +706,41 @@ export default function PolymarketModal({
       setStatus("Checking liquidity...");
       const clob = await getAuthedClobClient(prep.proxy);
 
-      // Pre-trade liquidity guard: avoid sending obviously unfillable orders
-      const book = (await clob.getOrderBook(selectedToken.token_id)) as unknown as Record<string, unknown>;
-      const asks = (book.asks as unknown[] | undefined) || [];
-      if (asks.length === 0) {
-        throw new Error("No resting asks for this outcome right now. Try later or pick another market.");
-      }
-
-      // Dynamic market-specific minimum order size from orderbook
-      const minOrderSizeRaw = Number(book.min_order_size || 0);
-      if (Number.isFinite(minOrderSizeRaw) && minOrderSizeRaw > 0) {
-        const estPriceForMin = await clob.calculateMarketPrice(selectedToken.token_id, Side.BUY, Number(amount), OrderType.FAK).catch(() => 0);
-        // For BUY market orders, amount is USDC spend. Approx convert min shares -> min USDC via estimated price.
-        const minUsdcApprox = estPriceForMin > 0 ? minOrderSizeRaw * estPriceForMin : 0;
-        if (minUsdcApprox > 0 && Number(amount) < minUsdcApprox) {
-          throw new Error(`Min order for this market is ~${minUsdcApprox.toFixed(2)} USDC.e (min size ${minOrderSizeRaw}).`);
-        }
-      }
-
+      // Live liquidity gate: wait briefly for executable depth (better UX than instant fail/GTC fallback)
+      let book: Record<string, unknown> = {};
+      let asks: unknown[] = [];
       let estPrice = 0;
-      try {
-        estPrice = await clob.calculateMarketPrice(selectedToken.token_id, Side.BUY, Number(amount), OrderType.FAK);
-      } catch {
-        throw new Error("Could not estimate executable market price. Liquidity may be too thin.");
+
+      const waitUntil = Date.now() + 20000; // 20s window
+      while (Date.now() < waitUntil) {
+        book = (await clob.getOrderBook(selectedToken.token_id)) as unknown as Record<string, unknown>;
+        asks = (book.asks as unknown[] | undefined) || [];
+
+        if (asks.length > 0) {
+          estPrice = await clob
+            .calculateMarketPrice(selectedToken.token_id, Side.BUY, Number(amount), OrderType.FAK)
+            .catch(() => 0);
+
+          // Dynamic market-specific minimum order size from orderbook
+          const minOrderSizeRaw = Number(book.min_order_size || 0);
+          if (Number.isFinite(minOrderSizeRaw) && minOrderSizeRaw > 0 && estPrice > 0) {
+            const minUsdcApprox = minOrderSizeRaw * estPrice;
+            if (Number(amount) < minUsdcApprox) {
+              throw new Error(`Min order for this market is ~${minUsdcApprox.toFixed(2)} USDC.e (min size ${minOrderSizeRaw}).`);
+            }
+          }
+
+          if (Number.isFinite(estPrice) && estPrice > 0 && estPrice < 1) {
+            break;
+          }
+        }
+
+        setDebugInfo(prev => ({ ...prev, proxyStatus: "Waiting for immediate liquidity..." }));
+        await new Promise(r => setTimeout(r, 2000));
       }
 
-      if (!Number.isFinite(estPrice) || estPrice <= 0 || estPrice >= 1) {
-        throw new Error("Estimated fill price invalid for this size. Try a smaller amount.");
+      if (!asks.length || !Number.isFinite(estPrice) || estPrice <= 0 || estPrice >= 1) {
+        throw new Error("No immediate liquidity right now. Try again in a moment.");
       }
 
       setDebugInfo(prev => ({ ...prev, proxyStatus: `Liquidity OK, estPrice=${estPrice.toFixed(4)}` }));
