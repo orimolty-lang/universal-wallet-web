@@ -1887,12 +1887,34 @@ const PerpsModal = ({
   const [txResult, setTxResult] = useState<{ txId: string; status: string } | null>(null);
   const [sortBy, setSortBy] = useState<'volume' | 'price' | 'change'>('volume');
 
-  // Get USDC balance from UA assets
-  // Use total UA balance - UA auto-converts any asset to USDC for collateral
-  const usdcBalance = useMemo(() => {
+  // Unified UA balance shown in Perps flows
+  const unifiedUaBalance = useMemo(() => {
     if (!assets?.totalAmountInUSD) return 0;
-    return assets.totalAmountInUSD;
+    return Number(assets.totalAmountInUSD);
   }, [assets]);
+
+  // Available USDC already present in UA (across chains as reported by SDK)
+  const uaUsdcAvailable = useMemo(() => {
+    const assetList = (assets?.assets || []) as Array<{
+      tokenType?: string;
+      symbol?: string;
+      amount?: number | string;
+    }>;
+    const usdcAsset = assetList.find((a) => {
+      const tokenType = a.tokenType?.toUpperCase();
+      const symbol = a.symbol?.toUpperCase();
+      return tokenType === "USDC" || symbol === "USDC";
+    });
+    if (!usdcAsset) return 0;
+    const amount =
+      typeof usdcAsset.amount === "string"
+        ? parseFloat(usdcAsset.amount)
+        : Number(usdcAsset.amount || 0);
+    return Number.isFinite(amount) ? amount : 0;
+  }, [assets]);
+
+  // Back-compat for existing trading UI labels/checks
+  const usdcBalance = unifiedUaBalance;
 
   // Calculate position details
   const positionSize = useMemo(() => {
@@ -2111,14 +2133,20 @@ const PerpsModal = ({
         throw lastErr;
       };
 
-      // 1) Convert unified balance to USDC on Base
-      await sendWithExpiryRetry(
-        () => universalAccount.createConvertTransaction({
-          expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: amount.toString() },
-          chainId: CHAIN_ID.BASE_MAINNET,
-        }),
-        'Convert to Base USDC',
-      );
+      // 1) Convert only missing USDC if current UA USDC is insufficient
+      const usdcShortfall = Math.max(0, amount - uaUsdcAvailable);
+      if (usdcShortfall > 0.000001) {
+        addDebug(`USDC available in UA: ${uaUsdcAvailable.toFixed(4)}. Converting shortfall: ${usdcShortfall.toFixed(4)} USDC`);
+        await sendWithExpiryRetry(
+          () => universalAccount.createConvertTransaction({
+            expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: usdcShortfall.toString() },
+            chainId: CHAIN_ID.BASE_MAINNET,
+          }),
+          'Convert missing USDC to Base',
+        );
+      } else {
+        addDebug(`USDC already available in UA (${uaUsdcAvailable.toFixed(4)}). Skipping USDC convert step`);
+      }
 
       // 2) Transfer USDC to owner EOA
       await sendWithExpiryRetry(
@@ -2427,6 +2455,8 @@ const PerpsModal = ({
 
   const canTrade = collateral && parseFloat(collateral) > 0 && parseFloat(collateral) <= usdcBalance;
   const canDeposit = parseFloat(depositAmount) > 0 && (!includeGasTopUp || parseFloat(gasTopUpAmount) > 0);
+  const depositAmountNum = parseFloat(depositAmount) || 0;
+  const needsUsdcConvert = depositAmountNum > uaUsdcAvailable + 0.000001;
 
   return (
     <BottomSheet isOpen={isOpen} onClose={() => { setView('markets'); onClose(); }}>
@@ -2599,6 +2629,9 @@ const PerpsModal = ({
                 <div className="text-[11px] text-gray-500 mt-2">
                   Sent to owner EOA on Base before opening positions.
                 </div>
+                <div className="text-[11px] text-gray-500 mt-1">
+                  Unified UA Balance: ${unifiedUaBalance.toFixed(2)} • UA USDC Available: {uaUsdcAvailable.toFixed(4)}
+                </div>
               </div>
 
               <div className="bg-[#252525] rounded-xl px-3 py-3">
@@ -2645,7 +2678,11 @@ const PerpsModal = ({
             <div className="bg-[#252525] rounded-xl px-3 py-3 mb-5">
               <div className="text-gray-400 text-xs uppercase tracking-wide mb-2">Deterministic Flow</div>
               <ol className="text-xs text-gray-300 space-y-1 list-decimal list-inside">
-                <li>Convert UA balance to Base USDC</li>
+                {needsUsdcConvert ? (
+                  <li>Convert missing UA balance to Base USDC</li>
+                ) : (
+                  <li>Skip USDC convert (already available in UA)</li>
+                )}
                 <li>Transfer Base USDC to owner EOA</li>
                 {includeGasTopUp && <li>Convert UA balance to Base ETH</li>}
                 {includeGasTopUp && <li>Transfer Base ETH to owner EOA</li>}
