@@ -6,7 +6,7 @@ import type { UniversalAccount } from "@particle-network/universal-account-sdk";
 import { CHAIN_ID, SUPPORTED_TOKEN_TYPE } from "@particle-network/universal-account-sdk";
 import { Contract, JsonRpcProvider } from "ethers";
 import { useWallets, useAccount } from "@particle-network/connectkit";
-import { ClobClient, OrderType, Side, SignatureType } from "@polymarket/clob-client";
+import { AssetType, ClobClient, OrderType, Side, SignatureType } from "@polymarket/clob-client";
 import { BuilderConfig } from "@polymarket/builder-signing-sdk";
 import { RelayClient, RelayerTxType } from "@polymarket/builder-relayer-client";
 import type { WalletClient } from "viem";
@@ -590,9 +590,22 @@ export default function PolymarketModal({
     );
   };
 
-  // Temporary: avoid broken direct relayer submit path causing 400/401.
-  // Trading flow will auto-fund proxy in handleBuy.
   const approveViaRelayer = async () => {
+    const proxy = await initializeProxy();
+    const clob = await getAuthedClobClient(proxy);
+
+    // Update collateral allowance (USDC.e)
+    await clob.updateBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+
+    // If market token is selected, also update conditional token allowance for sell path
+    const tokenId = selectedMarket?.tokens?.[selectedOutcome]?.token_id;
+    if (tokenId) {
+      await clob.updateBalanceAllowance({
+        asset_type: AssetType.CONDITIONAL,
+        token_id: tokenId,
+      });
+    }
+
     return true;
   };
 
@@ -705,6 +718,15 @@ export default function PolymarketModal({
 
       setStatus("Checking liquidity...");
       const clob = await getAuthedClobClient(prep.proxy);
+
+      // Ensure collateral allowance is active for current safe/funder
+      setStatus("Checking allowances...");
+      const col = await clob.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+      const neededRaw = Math.floor(Number(amount) * 1_000_000);
+      if (Number(col.allowance || "0") < neededRaw) {
+        setStatus("Updating allowances...");
+        await clob.updateBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+      }
 
       // Live liquidity gate: wait briefly for executable depth (better UX than instant fail/GTC fallback)
       let book: Record<string, unknown> = {};
