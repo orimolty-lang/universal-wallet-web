@@ -971,7 +971,7 @@ export default function PolymarketModal({
 
       const orderObj = (orderResponse ?? {}) as Record<string, unknown>;
       const nested = (orderObj.order ?? {}) as Record<string, unknown>;
-      let orderId = String(
+      const orderId = String(
         orderObj.orderID ||
         orderObj.id ||
         orderObj.orderId ||
@@ -980,26 +980,21 @@ export default function PolymarketModal({
         nested.orderId ||
         "",
       );
+      const successField = orderObj.success;
+      const errorMsg = String(orderObj.errorMsg || orderObj.error || "");
       console.log("[Polymarket] Buy order response:", orderResponse);
-
-      // Fallback: some SDK responses omit order id fields; resolve from open orders for this token.
-      if (!orderId) {
-        try {
-          const open = await clob.getOpenOrders({ asset_id: selectedToken.token_id });
-          const arr = ((open as unknown as Record<string, unknown>)?.data as unknown[] | undefined) || [];
-          const first = (arr[0] ?? {}) as Record<string, unknown>;
-          orderId = String(first.order_id || first.id || "");
-        } catch {
-          // ignore; keep n/a
-        }
-      }
 
       setDebugInfo(prev => ({
         ...prev,
         orderId: orderId || "n/a",
-        proxyStatus: orderId ? prev.proxyStatus : "GTC posted but orderId missing in response",
+        proxyStatus: orderId ? prev.proxyStatus : "Order response missing orderId",
+        polyError: !orderId ? `orderId missing; success=${String(successField)} err=${errorMsg || 'n/a'}` : prev.polyError,
         updatedAt: new Date().toISOString(),
       }));
+
+      if (!orderId) {
+        throw new Error(`Order not placed: missing orderId (success=${String(successField)} err=${errorMsg || 'n/a'})`);
+      }
 
       const filled = await verifyFill(orderId);
       if (!filled) {
