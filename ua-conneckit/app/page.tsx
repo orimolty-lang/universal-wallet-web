@@ -1893,24 +1893,42 @@ const PerpsModal = ({
     return Number(assets.totalAmountInUSD);
   }, [assets]);
 
-  // Available USDC already present in UA (across chains as reported by SDK)
-  const uaUsdcAvailable = useMemo(() => {
+  // Available USDC already present on Base inside UA
+  const uaBaseUsdcAvailable = useMemo(() => {
     const assetList = (assets?.assets || []) as Array<{
       tokenType?: string;
       symbol?: string;
       amount?: number | string;
+      chainAggregation?: Array<{
+        amount?: number | string;
+        token?: { chainId?: number | string };
+      }>;
     }>;
+
     const usdcAsset = assetList.find((a) => {
       const tokenType = a.tokenType?.toUpperCase();
       const symbol = a.symbol?.toUpperCase();
       return tokenType === "USDC" || symbol === "USDC";
     });
     if (!usdcAsset) return 0;
-    const amount =
+
+    const baseEntry = usdcAsset.chainAggregation?.find(
+      (c) => Number(c.token?.chainId) === CHAIN_ID.BASE_MAINNET
+    );
+    if (baseEntry) {
+      const baseAmount =
+        typeof baseEntry.amount === "string"
+          ? parseFloat(baseEntry.amount)
+          : Number(baseEntry.amount || 0);
+      return Number.isFinite(baseAmount) ? baseAmount : 0;
+    }
+
+    // Fallback when chain breakdown isn't available from SDK response.
+    const totalAmount =
       typeof usdcAsset.amount === "string"
         ? parseFloat(usdcAsset.amount)
         : Number(usdcAsset.amount || 0);
-    return Number.isFinite(amount) ? amount : 0;
+    return Number.isFinite(totalAmount) ? totalAmount : 0;
   }, [assets]);
 
   // Back-compat for existing trading UI labels/checks
@@ -2113,11 +2131,15 @@ const PerpsModal = ({
             const tx = await buildTx();
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const rootHash = (tx as any).rootHash as `0x${string}`;
-            const sig = await walletClient.signMessage({
-              account: ownerEOA as `0x${string}`,
-              message: { raw: rootHash },
+            if (!rootHash) {
+              throw new Error(`${label} missing rootHash`);
+            }
+            // Match ConvertModal flow for UA signing compatibility.
+            const signature = await walletClient.request({
+              method: 'personal_sign',
+              params: [rootHash, ownerEOA as `0x${string}`],
             });
-            const res = await universalAccount.sendTransaction(tx, sig);
+            const res = await universalAccount.sendTransaction(tx, signature as string);
             addDebug(`${label} sent: ${res?.transactionId || 'txid-missing'}`);
             return res;
           } catch (e) {
@@ -2134,9 +2156,9 @@ const PerpsModal = ({
       };
 
       // 1) Convert only missing USDC if current UA USDC is insufficient
-      const usdcShortfall = Math.max(0, amount - uaUsdcAvailable);
+      const usdcShortfall = Math.max(0, amount - uaBaseUsdcAvailable);
       if (usdcShortfall > 0.000001) {
-        addDebug(`USDC available in UA: ${uaUsdcAvailable.toFixed(4)}. Converting shortfall: ${usdcShortfall.toFixed(4)} USDC`);
+        addDebug(`Base USDC available in UA: ${uaBaseUsdcAvailable.toFixed(4)}. Converting shortfall: ${usdcShortfall.toFixed(4)} USDC`);
         await sendWithExpiryRetry(
           () => universalAccount.createConvertTransaction({
             expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: usdcShortfall.toString() },
@@ -2145,7 +2167,7 @@ const PerpsModal = ({
           'Convert missing USDC to Base',
         );
       } else {
-        addDebug(`USDC already available in UA (${uaUsdcAvailable.toFixed(4)}). Skipping USDC convert step`);
+        addDebug(`Sufficient Base USDC already in UA (${uaBaseUsdcAvailable.toFixed(4)}). Skipping convert step`);
       }
 
       // 2) Transfer USDC to owner EOA
@@ -2456,7 +2478,7 @@ const PerpsModal = ({
   const canTrade = collateral && parseFloat(collateral) > 0 && parseFloat(collateral) <= usdcBalance;
   const canDeposit = parseFloat(depositAmount) > 0 && (!includeGasTopUp || parseFloat(gasTopUpAmount) > 0);
   const depositAmountNum = parseFloat(depositAmount) || 0;
-  const needsUsdcConvert = depositAmountNum > uaUsdcAvailable + 0.000001;
+  const needsUsdcConvert = depositAmountNum > uaBaseUsdcAvailable + 0.000001;
 
   return (
     <BottomSheet isOpen={isOpen} onClose={() => { setView('markets'); onClose(); }}>
@@ -2630,7 +2652,7 @@ const PerpsModal = ({
                   Sent to owner EOA on Base before opening positions.
                 </div>
                 <div className="text-[11px] text-gray-500 mt-1">
-                  Unified UA Balance: ${unifiedUaBalance.toFixed(2)} • UA USDC Available: {uaUsdcAvailable.toFixed(4)}
+                  Unified UA Balance: ${unifiedUaBalance.toFixed(2)} • UA Base USDC Available: {uaBaseUsdcAvailable.toFixed(4)}
                 </div>
               </div>
 
