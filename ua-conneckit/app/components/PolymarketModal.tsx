@@ -719,13 +719,46 @@ export default function PolymarketModal({
       setStatus("Checking liquidity...");
       const clob = await getAuthedClobClient(prep.proxy);
 
-      // Ensure collateral allowance is active for current safe/funder
-      setStatus("Checking allowances...");
-      const col = await clob.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+      // Strict SAFE preflight: funder + balance + allowances must be ready before submit
+      setStatus("Checking SAFE preflight...");
+      if (!prep.proxy || !proxyWalletAddress || prep.proxy.toLowerCase() !== proxyWalletAddress.toLowerCase()) {
+        throw new Error("SAFE funder mismatch. Re-open modal and retry.");
+      }
+
       const neededRaw = Math.floor(Number(amount) * 1_000_000);
+
+      // Collateral (USDC.e) balance + allowance
+      let col = await clob.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
       if (Number(col.allowance || "0") < neededRaw) {
-        setStatus("Updating allowances...");
+        setStatus("Updating collateral allowance...");
         await clob.updateBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+        col = await clob.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+      }
+      if (Number(col.balance || "0") < neededRaw) {
+        throw new Error("Insufficient SAFE USDC.e balance for this order.");
+      }
+      if (Number(col.allowance || "0") < neededRaw) {
+        throw new Error("SAFE collateral allowance still too low after update.");
+      }
+
+      // Conditional token allowance (required for some matching/settlement paths)
+      setStatus("Checking conditional allowance...");
+      let cond = await clob.getBalanceAllowance({
+        asset_type: AssetType.CONDITIONAL,
+        token_id: selectedToken.token_id,
+      });
+      if (Number(cond.allowance || "0") <= 0) {
+        await clob.updateBalanceAllowance({
+          asset_type: AssetType.CONDITIONAL,
+          token_id: selectedToken.token_id,
+        });
+        cond = await clob.getBalanceAllowance({
+          asset_type: AssetType.CONDITIONAL,
+          token_id: selectedToken.token_id,
+        });
+      }
+      if (Number(cond.allowance || "0") <= 0) {
+        throw new Error("SAFE conditional allowance missing for this market token.");
       }
 
       // Live liquidity gate: wait briefly for executable depth (better UX than instant fail/GTC fallback)
@@ -832,7 +865,8 @@ export default function PolymarketModal({
           proxyStatus: `GTC placed (resting): ${orderId || 'n/a'}`,
           polyError: undefined,
         }));
-        setStatus("Order placed on book. Waiting for match...");
+        setStatus("Order placed on book (resting). Will fill when matched.");
+        setTimeout(() => setStatus(null), 4000);
         onSuccess?.();
         await refreshPortfolio(selectedMarket);
         return;
