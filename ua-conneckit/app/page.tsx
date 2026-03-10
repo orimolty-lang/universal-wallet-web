@@ -2610,7 +2610,7 @@ const PerpsModal = ({
               </div>
               <button
                 onClick={handleDepositToEOA}
-                disabled={isLoading || !collateral || parseFloat(collateral || '0') <= 0}
+                disabled={isLoading}
                 className="mt-2 w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white py-2 rounded-lg text-sm"
               >
                 {isLoading ? 'Processing...' : 'Deposit from UA to Owner EOA'}
