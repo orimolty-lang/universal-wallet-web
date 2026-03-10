@@ -31,6 +31,17 @@ Find your credentials in the [Particle Network Dashboard](https://dashboard.part
 4. Run the development server with `yarn dev`.
 5. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
+### Cloud agent setup and `gh-pages` build
+
+From the repo root:
+
+```bash
+npm run setup:cloud
+npm run build:gh-pages
+```
+
+This installs `ua-conneckit` dependencies, runs Next.js static export, and copies the generated site from `ua-conneckit/out` to the `gh-pages` branch root.
+
 ## Code Structure: `ua-conneckit/app/page.tsx`
 
 The `page.tsx` file is the heart of this demo, managing the entire lifecycle of the Universal Account. Here’s how it works:

@@ -101,10 +101,9 @@
 
 **Web (GitHub Pages):**
 ```bash
-cd /Users/garysingh/clawd/projects/universal-wallet-web/ua-conneckit
-npm run build
-cd ..
-cp -r ua-conneckit/out/* .
+cd /workspace
+npm run setup:cloud
+npm run build:gh-pages
 git add -A && git commit -m "message" && git push
 ```
 

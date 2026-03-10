@@ -9,13 +9,20 @@ import React from "react";
 import { useWalletVisibility } from "../context/WalletVisibilityContext";
 
 // Retrieved from https://dashboard.particle.network
-const projectId = process.env.NEXT_PUBLIC_PROJECT_ID as string;
-const clientKey = process.env.NEXT_PUBLIC_CLIENT_KEY as string;
-const appId = process.env.NEXT_PUBLIC_APP_ID as string;
+// Fallbacks keep static export builds deterministic in cloud agents.
+const DEFAULT_PARTICLE_PUBLIC_CONFIG = {
+  projectId: "c0cb9e74-192b-4bdc-ba62-852775c6e7fd",
+  clientKey: "caswUnSdr9LPg5HEhqAZouZAExKOKZPv791XBxSK",
+  appId: "e5be9376-1d3a-4882-b4a5-c5c0ce1b5182",
+};
 
-if (!projectId || !clientKey || !appId) {
-  throw new Error("Please configure the Particle project in .env first!");
-}
+const projectId =
+  process.env.NEXT_PUBLIC_PROJECT_ID || DEFAULT_PARTICLE_PUBLIC_CONFIG.projectId;
+const clientKey =
+  process.env.NEXT_PUBLIC_CLIENT_KEY || DEFAULT_PARTICLE_PUBLIC_CONFIG.clientKey;
+const appId = process.env.NEXT_PUBLIC_APP_ID || DEFAULT_PARTICLE_PUBLIC_CONFIG.appId;
+const walletConnectProjectId =
+  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "";
 
 // Export ConnectKitProvider to be used within your index or layout file (or use createConfig directly within those files).
 export const ParticleConnectkit = ({ children }: React.PropsWithChildren) => {
@@ -62,8 +69,7 @@ export const ParticleConnectkit = ({ children }: React.PropsWithChildren) => {
         },
       }),
       evmWalletConnectors({
-        walletConnectProjectId: process.env
-          .NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID as string,
+        walletConnectProjectId,
         multiInjectedProviderDiscovery: true,
       }),
     ],
