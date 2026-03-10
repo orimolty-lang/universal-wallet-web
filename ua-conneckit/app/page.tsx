@@ -1871,7 +1871,7 @@ const PerpsModal = ({
   const [loadingStatus, setLoadingStatus] = useState<string>('');
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const [showDebug, setShowDebug] = useState(false);
-  const [depositAmount, setDepositAmount] = useState<string>('10');
+  const [depositAmount, setDepositAmount] = useState<string>('');
   const [ownerEOA, setOwnerEOA] = useState<string>("");
   const [eoaUsdcBalance, setEoaUsdcBalance] = useState<number>(0);
   const [eoaEthBalance, setEoaEthBalance] = useState<number>(0);
@@ -2434,7 +2434,7 @@ const PerpsModal = ({
             <div className="flex items-center justify-between px-4 mb-4">
               <button
                 onClick={handleDepositToEOA}
-                disabled={isLoading}
+                disabled={isLoading || !depositAmount || Number(depositAmount) <= 0}
                 className="px-3 py-2 rounded-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white text-xs font-semibold"
               >
                 {isLoading ? 'Depositing...' : 'Fund EOA'}
