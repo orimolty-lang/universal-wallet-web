@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { X, TrendingUp, TrendingDown, Loader2, ExternalLink, Search } from "lucide-react";
 import type { UniversalAccount } from "@particle-network/universal-account-sdk";
 import { CHAIN_ID, SUPPORTED_TOKEN_TYPE } from "@particle-network/universal-account-sdk";
-import { Contract, JsonRpcProvider } from "ethers";
+import { Contract, Interface, JsonRpcProvider } from "ethers";
 import { useWallets, useAccount } from "@particle-network/connectkit";
 import { AssetType, ClobClient, OrderType, Side, SignatureType } from "@polymarket/clob-client";
 import { BuilderConfig } from "@polymarket/builder-signing-sdk";
@@ -600,14 +600,52 @@ export default function PolymarketModal({
     );
   };
 
+  const ensureSafeApprovalsOnchain = async (safeAddr: string) => {
+    if (!primaryWallet || !address) throw new Error("Wallet not connected");
+    const walletClient = primaryWallet.getWalletClient();
+    if (!walletClient) throw new Error("No wallet client");
+
+    const builderConfig = new BuilderConfig({ remoteBuilderConfig: { url: BUILDER_SIGN_URL } });
+    const polygonSigner = new PolygonSignerWrapper(walletClient, address);
+    const relay = new RelayClient(
+      RELAYER_URL,
+      137,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      polygonSigner as any,
+      builderConfig,
+      RelayerTxType.SAFE,
+    );
+
+    const provider = new JsonRpcProvider(POLYGON_RPC_URL);
+    const erc20 = new Contract(
+      USDC_E_ADDRESS,
+      ["function allowance(address owner, address spender) view returns (uint256)"],
+      provider,
+    );
+
+    const aCtf = BigInt((await erc20.allowance(safeAddr, CTF_ADDRESS)).toString());
+    const aEx = BigInt((await erc20.allowance(safeAddr, CTF_EXCHANGE)).toString());
+    const threshold = BigInt("1000000");
+    if (aCtf >= threshold && aEx >= threshold) return;
+
+    const iface = new Interface(["function approve(address spender, uint256 amount) returns (bool)"]);
+    const max = "115792089237316195423570985008687907853269984665640564039457584007913129639935";
+    const txs = [
+      { to: USDC_E_ADDRESS, data: iface.encodeFunctionData("approve", [CTF_ADDRESS, max]), value: "0" },
+      { to: USDC_E_ADDRESS, data: iface.encodeFunctionData("approve", [CTF_EXCHANGE, max]), value: "0" },
+    ];
+
+    const resp = await relay.execute(txs, "Approve USDC.e spenders for SAFE");
+    await resp.wait();
+  };
+
   const approveViaRelayer = async () => {
     const proxy = await initializeProxy();
     const clob = await getAuthedClobClient(proxy);
 
-    // Update collateral allowance (USDC.e)
+    // 1) CLOB-level allowance updates
     await clob.updateBalanceAllowance({ asset_type: AssetType.COLLATERAL });
 
-    // If market token is selected, also update conditional token allowance for sell path
     const tokenId = selectedMarket?.tokens?.[selectedOutcome]?.token_id;
     if (tokenId) {
       await clob.updateBalanceAllowance({
@@ -616,6 +654,8 @@ export default function PolymarketModal({
       });
     }
 
+    // 2) Onchain SAFE approvals as hard fallback
+    await ensureSafeApprovalsOnchain(proxy);
     return true;
   };
 
@@ -761,7 +801,9 @@ export default function PolymarketModal({
         throw new Error("Insufficient SAFE USDC.e balance for this order.");
       }
       if (Number(col.allowance || "0") < neededRaw) {
-        // Fallback to direct onchain allowance verification (CLOB endpoint can lag)
+        // Fallback to direct SAFE onchain approvals if CLOB endpoint lags
+        await ensureSafeApprovalsOnchain(prep.proxy);
+
         const provider = new JsonRpcProvider(POLYGON_RPC_URL);
         const erc20 = new Contract(
           USDC_E_ADDRESS,
