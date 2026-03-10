@@ -1176,6 +1176,42 @@ export default function PolymarketModal({
                   </div>
                 )}
 
+                {/* Full Debug Monitor (market screen) */}
+                <div className="mb-4 bg-black/40 rounded-lg p-3 border border-yellow-700/60">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-xs font-bold text-yellow-300">🧪 Live Debug Monitor</div>
+                    <button
+                      onClick={() => setShowDebug(!showDebug)}
+                      className="text-[10px] px-2 py-1 rounded bg-gray-800 text-gray-300 hover:text-white"
+                    >
+                      {showDebug ? 'Collapse' : 'Expand'}
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-gray-300 mb-2">
+                    <div>phase: <span className="text-white">{debugInfo.phase || 'n/a'}</span></div>
+                    <div>updatedAt: <span className="text-white">{debugInfo.updatedAt || 'n/a'}</span></div>
+                    <div>safe: <span className="text-white">{debugInfo.safeAddress || proxyWalletAddress || 'n/a'}</span></div>
+                    <div>signerType: <span className="text-white">{debugInfo.signerType || 'n/a'}</span></div>
+                    <div>collateralBal: <span className="text-white">{debugInfo.collateralBalance || 'n/a'}</span></div>
+                    <div>collateralAllow: <span className="text-white">{debugInfo.collateralAllowance || 'n/a'}</span></div>
+                    <div>conditionalAllow: <span className="text-white">{debugInfo.conditionalAllowance || 'n/a'}</span></div>
+                    <div>orderId: <span className="text-white">{debugInfo.orderId || 'n/a'}</span></div>
+                    <div>bestAsk: <span className="text-white">{debugInfo.bestAsk || 'n/a'}</span></div>
+                    <div>estPrice: <span className="text-white">{debugInfo.estPrice || 'n/a'}</span></div>
+                    <div>worstPrice: <span className="text-white">{debugInfo.worstPrice || 'n/a'}</span></div>
+                    <div>proxyStatus: <span className="text-white">{debugInfo.proxyStatus || 'n/a'}</span></div>
+                  </div>
+
+                  {debugInfo.polyError && <div className="text-red-400 text-xs mb-2">polyError: {debugInfo.polyError}</div>}
+
+                  {showDebug && (
+                    <div className="mt-2 p-2 bg-[#0a0a0a] rounded max-h-44 overflow-auto text-[10px] text-gray-300">
+                      <pre className="whitespace-pre-wrap break-words">{JSON.stringify(debugInfo, null, 2)}</pre>
+                    </div>
+                  )}
+                </div>
+
                 {/* Portfolio */}
                 <div className="mb-4 bg-[#1a1a2e] rounded-lg p-3 border border-gray-700">
                   <div className="text-xs text-gray-400">Available to trade (USDC.e)</div>
