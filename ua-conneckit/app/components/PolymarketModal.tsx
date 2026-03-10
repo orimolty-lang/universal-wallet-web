@@ -859,9 +859,9 @@ export default function PolymarketModal({
         }
       }
 
-      // Conditional token allowance (required for some matching/settlement paths)
+      // Conditional allowance is logged for visibility, but BUY flow should not hard-fail on it.
       setStatus("Checking conditional allowance...");
-      let cond = await clob.getBalanceAllowance({
+      const cond = await clob.getBalanceAllowance({
         asset_type: AssetType.CONDITIONAL,
         token_id: selectedToken.token_id,
       });
@@ -871,19 +871,6 @@ export default function PolymarketModal({
         conditionalAllowance: String(cond.allowance || "0"),
         updatedAt: new Date().toISOString(),
       }));
-      if (Number(cond.allowance || "0") <= 0) {
-        await clob.updateBalanceAllowance({
-          asset_type: AssetType.CONDITIONAL,
-          token_id: selectedToken.token_id,
-        });
-        cond = await clob.getBalanceAllowance({
-          asset_type: AssetType.CONDITIONAL,
-          token_id: selectedToken.token_id,
-        });
-      }
-      if (Number(cond.allowance || "0") <= 0) {
-        throw new Error("SAFE conditional allowance missing for this market token.");
-      }
 
       // Live liquidity gate: wait briefly for executable depth (better UX than instant fail/GTC fallback)
       let book: Record<string, unknown> = {};
