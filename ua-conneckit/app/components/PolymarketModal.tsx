@@ -971,7 +971,7 @@ export default function PolymarketModal({
 
       const orderObj = (orderResponse ?? {}) as Record<string, unknown>;
       const nested = (orderObj.order ?? {}) as Record<string, unknown>;
-      const orderId = String(
+      let orderId = String(
         orderObj.orderID ||
         orderObj.id ||
         orderObj.orderId ||
@@ -981,6 +981,19 @@ export default function PolymarketModal({
         "",
       );
       console.log("[Polymarket] Buy order response:", orderResponse);
+
+      // Fallback: some SDK responses omit order id fields; resolve from open orders for this token.
+      if (!orderId) {
+        try {
+          const open = await clob.getOpenOrders({ asset_id: selectedToken.token_id });
+          const arr = ((open as unknown as Record<string, unknown>)?.data as unknown[] | undefined) || [];
+          const first = (arr[0] ?? {}) as Record<string, unknown>;
+          orderId = String(first.order_id || first.id || "");
+        } catch {
+          // ignore; keep n/a
+        }
+      }
+
       setDebugInfo(prev => ({
         ...prev,
         orderId: orderId || "n/a",
