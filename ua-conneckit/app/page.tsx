@@ -1871,6 +1871,7 @@ const PerpsModal = ({
   const [loadingStatus, setLoadingStatus] = useState<string>('');
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const [showDebug, setShowDebug] = useState(false);
+  const [depositAmount, setDepositAmount] = useState<string>('10');
   const [ownerEOA, setOwnerEOA] = useState<string>("");
   const [eoaUsdcBalance, setEoaUsdcBalance] = useState<number>(0);
   const [eoaEthBalance, setEoaEthBalance] = useState<number>(0);
@@ -2070,11 +2071,9 @@ const PerpsModal = ({
     addDebug(`Deposit start -> owner EOA ${ownerEOA}`);
 
     try {
-      const amountStr = (collateral && Number(collateral) > 0)
-        ? collateral
-        : (typeof window !== 'undefined' ? (window.prompt('USDC amount to deposit to owner EOA', '10') || '') : '');
+      const amountStr = depositAmount.trim();
       const amount = parseFloat(amountStr);
-      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Invalid deposit amount');
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a valid USDC amount in Deposit.');
       const walletClient = primaryWallet.getWalletClient();
 
       const sendWithExpiryRetry = async (
@@ -2438,7 +2437,7 @@ const PerpsModal = ({
                 disabled={isLoading}
                 className="px-3 py-2 rounded-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white text-xs font-semibold"
               >
-                {isLoading ? 'Depositing...' : 'Deposit'}
+                {isLoading ? 'Depositing...' : 'Fund EOA'}
               </button>
               <h2 className="text-white text-lg font-bold flex items-center gap-2">
                 <span>🔥</span> Perps
@@ -2533,10 +2532,48 @@ const PerpsModal = ({
             </div>
 
             {/* Deposit Button */}
-            <div className="px-4 mt-2">
-              <button className="w-full bg-accent-dynamic text-black font-bold py-4 rounded-2xl">
-                Deposit
+            <div className="px-4 mt-2 space-y-2">
+              <div className="bg-gray-800/40 rounded-2xl p-3 border border-gray-700/60">
+                <div className="text-xs text-gray-400 mb-2">Deposit amount to owner EOA (USDC on Base)</div>
+                <input
+                  type="number"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  placeholder="10"
+                  min="0"
+                  step="0.01"
+                  className="w-full bg-gray-700 rounded-lg px-3 py-2 text-white outline-none"
+                />
+                <div className="text-[11px] text-gray-500 mt-2">
+                  EOA: {ownerEOA ? `${ownerEOA.slice(0, 8)}...${ownerEOA.slice(-6)}` : 'n/a'} • ${eoaUsdcBalance.toFixed(2)} USDC • {eoaEthBalance.toFixed(5)} ETH
+                </div>
+              </div>
+              <button
+                onClick={handleDepositToEOA}
+                disabled={isLoading || !depositAmount || Number(depositAmount) <= 0}
+                className="w-full bg-accent-dynamic text-black font-bold py-4 rounded-2xl disabled:bg-gray-700 disabled:text-gray-400"
+              >
+                {isLoading ? loadingStatus || 'Depositing...' : 'Deposit to EOA'}
               </button>
+            </div>
+
+            {/* Debug Panel - Main Perps View */}
+            <div className="px-4 mt-3">
+              <button
+                onClick={() => setShowDebug(!showDebug)}
+                className="text-xs text-gray-500 underline"
+              >
+                {showDebug ? 'Hide Debug' : 'Show Debug'} ({debugLog.length} logs)
+              </button>
+              {showDebug && debugLog.length > 0 && (
+                <div className="mt-2 bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs font-mono text-gray-300 max-h-40 overflow-y-auto">
+                  {debugLog.map((log, i) => (
+                    <div key={i} className="py-0.5 border-b border-gray-800 last:border-0">
+                      {log}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </>
         ) : (
