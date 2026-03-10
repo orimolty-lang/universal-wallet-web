@@ -168,6 +168,16 @@ export default function PolymarketModal({
     proxyStatus?: string;
     signerType?: string;
     walletAddress?: string;
+    phase?: string;
+    safeAddress?: string;
+    collateralBalance?: string;
+    collateralAllowance?: string;
+    conditionalAllowance?: string;
+    bestAsk?: string;
+    estPrice?: string;
+    worstPrice?: string;
+    orderId?: string;
+    updatedAt?: string;
   }>({});
   const [proxyWalletAddress, setProxyWalletAddress] = useState<string | null>(null);
   const [isProxyReady, setIsProxyReady] = useState(false);
@@ -383,7 +393,7 @@ export default function PolymarketModal({
       return proxyWalletAddress;
     }
 
-    setDebugInfo(prev => ({ ...prev, proxyStatus: "phase=safe_resolve", walletAddress: address }));
+    setDebugInfo(prev => ({ ...prev, phase: "safe_resolve", proxyStatus: "phase=safe_resolve", walletAddress: address, updatedAt: new Date().toISOString() }));
 
     try {
       const walletClient = primaryWallet.getWalletClient();
@@ -411,7 +421,7 @@ export default function PolymarketModal({
 
       setProxyWalletAddress(safeAddr);
       setIsProxyReady(true);
-      setDebugInfo(prev => ({ ...prev, proxyStatus: `phase=safe_resolve done ${safeAddr.slice(0, 10)}...` }));
+      setDebugInfo(prev => ({ ...prev, phase: "safe_resolve_done", safeAddress: safeAddr, proxyStatus: `phase=safe_resolve done ${safeAddr.slice(0, 10)}...`, updatedAt: new Date().toISOString() }));
       return safeAddr;
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e);
@@ -421,7 +431,7 @@ export default function PolymarketModal({
         const safeAddr = deriveSafeWallet(address);
         setProxyWalletAddress(safeAddr);
         setIsProxyReady(true);
-        setDebugInfo(prev => ({ ...prev, proxyStatus: `phase=safe_resolve existing ${safeAddr.slice(0, 10)}...` }));
+        setDebugInfo(prev => ({ ...prev, phase: "safe_resolve_existing", safeAddress: safeAddr, proxyStatus: `phase=safe_resolve existing ${safeAddr.slice(0, 10)}...`, updatedAt: new Date().toISOString() }));
         return safeAddr;
       }
 
@@ -729,10 +739,23 @@ export default function PolymarketModal({
 
       // Collateral (USDC.e) balance + allowance
       let col = await clob.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+      setDebugInfo(prev => ({
+        ...prev,
+        phase: "preflight_collateral",
+        collateralBalance: String(col.balance || "0"),
+        collateralAllowance: String(col.allowance || "0"),
+        updatedAt: new Date().toISOString(),
+      }));
       if (Number(col.allowance || "0") < neededRaw) {
         setStatus("Updating collateral allowance...");
         await clob.updateBalanceAllowance({ asset_type: AssetType.COLLATERAL });
         col = await clob.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+        setDebugInfo(prev => ({
+          ...prev,
+          collateralBalance: String(col.balance || "0"),
+          collateralAllowance: String(col.allowance || "0"),
+          updatedAt: new Date().toISOString(),
+        }));
       }
       if (Number(col.balance || "0") < neededRaw) {
         throw new Error("Insufficient SAFE USDC.e balance for this order.");
@@ -747,6 +770,12 @@ export default function PolymarketModal({
         asset_type: AssetType.CONDITIONAL,
         token_id: selectedToken.token_id,
       });
+      setDebugInfo(prev => ({
+        ...prev,
+        phase: "preflight_conditional",
+        conditionalAllowance: String(cond.allowance || "0"),
+        updatedAt: new Date().toISOString(),
+      }));
       if (Number(cond.allowance || "0") <= 0) {
         await clob.updateBalanceAllowance({
           asset_type: AssetType.CONDITIONAL,
@@ -798,7 +827,9 @@ export default function PolymarketModal({
         throw new Error("No immediate liquidity right now. Try again in a moment.");
       }
 
-      setDebugInfo(prev => ({ ...prev, proxyStatus: `Liquidity OK, estPrice=${estPrice.toFixed(4)}` }));
+      const bestAskObj = (asks[0] ?? {}) as Record<string, unknown>;
+      const bestAsk = Number(bestAskObj.price || bestAskObj.p || 0);
+      setDebugInfo(prev => ({ ...prev, phase: "liquidity_ok", bestAsk: bestAsk > 0 ? bestAsk.toFixed(4) : "n/a", estPrice: estPrice.toFixed(4), proxyStatus: `Liquidity OK, estPrice=${estPrice.toFixed(4)}`, updatedAt: new Date().toISOString() }));
       setStatus("Posting market order...");
 
       // Snapshot balances pre-order for fill verification
@@ -835,7 +866,7 @@ export default function PolymarketModal({
       // Immediate execution path per docs: FOK + generous worst-price limit.
       const worstPrice = Math.min(0.99, Math.max(0.01, estPrice * 1.2));
       const impliedShares = Number(amount) / Math.max(worstPrice, 0.01);
-      setDebugInfo(prev => ({ ...prev, proxyStatus: `Posting FOK worst=${worstPrice.toFixed(4)} impliedShares=${impliedShares.toFixed(4)}` }));
+      setDebugInfo(prev => ({ ...prev, phase: "submit_order", worstPrice: worstPrice.toFixed(4), proxyStatus: `Posting GTC worst=${worstPrice.toFixed(4)} impliedShares=${impliedShares.toFixed(4)}`, updatedAt: new Date().toISOString() }));
 
       // Let SDK resolve tick size / fee rate / market flags internally.
       // Marketable GTC: behaves like market order when liquidity exists,
@@ -857,6 +888,7 @@ export default function PolymarketModal({
       const orderObj = (orderResponse ?? {}) as Record<string, unknown>;
       const orderId = (orderObj.orderID || orderObj.id || orderObj.orderId || "") as string;
       console.log("[Polymarket] Buy order response:", orderResponse);
+      setDebugInfo(prev => ({ ...prev, orderId: orderId || "n/a", updatedAt: new Date().toISOString() }));
 
       const filled = await verifyFill(orderId);
       if (!filled) {
@@ -976,11 +1008,25 @@ export default function PolymarketModal({
                   <div className="font-bold text-blue-400 mt-2 mb-1">Polymarket Debug:</div>
                   <div>walletAddress: {debugInfo.walletAddress || address || 'n/a'}</div>
                   <div>signerType: {debugInfo.signerType || 'n/a'}</div>
+                  <div>phase: {debugInfo.phase || 'n/a'}</div>
                   <div>proxyStatus: {debugInfo.proxyStatus || 'not started'}</div>
                   <div>proxyWallet: {proxyWalletAddress || 'none'}</div>
+                  <div>safeAddress: {debugInfo.safeAddress || proxyWalletAddress || 'none'}</div>
                   <div>proxyReady: {isProxyReady ? 'yes' : 'no'}</div>
+                  <div>collateralBalance: {debugInfo.collateralBalance || 'n/a'}</div>
+                  <div>collateralAllowance: {debugInfo.collateralAllowance || 'n/a'}</div>
+                  <div>conditionalAllowance: {debugInfo.conditionalAllowance || 'n/a'}</div>
+                  <div>bestAsk: {debugInfo.bestAsk || 'n/a'}</div>
+                  <div>estPrice: {debugInfo.estPrice || 'n/a'}</div>
+                  <div>worstPrice: {debugInfo.worstPrice || 'n/a'}</div>
+                  <div>orderId: {debugInfo.orderId || 'n/a'}</div>
+                  <div>updatedAt: {debugInfo.updatedAt || 'n/a'}</div>
                   <div>directAPI: enabled</div>
                   {debugInfo.polyError && <div className="text-red-400">polyError: {debugInfo.polyError}</div>}
+                  <div className="mt-2 p-2 bg-black/40 rounded max-h-40 overflow-auto text-[10px] leading-tight">
+                    <div className="text-gray-400 mb-1">Live JSON:</div>
+                    <pre className="whitespace-pre-wrap break-words">{JSON.stringify(debugInfo, null, 2)}</pre>
+                  </div>
                   <button
                     onClick={resetPolymarketState}
                     className="mt-2 px-2 py-1 bg-red-600 hover:bg-red-700 rounded text-white text-xs"
