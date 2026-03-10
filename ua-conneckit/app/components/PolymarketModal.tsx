@@ -946,7 +946,9 @@ export default function PolymarketModal({
       };
 
       // Immediate execution path per docs: FOK + generous worst-price limit.
-      const worstPrice = Math.min(0.99, Math.max(0.01, estPrice * 1.2));
+      // For BUY, make GTC marketable by crossing best ask.
+      const crossAskPrice = bestAsk > 0 ? bestAsk * 1.02 : 0;
+      const worstPrice = Math.min(0.99, Math.max(0.01, estPrice * 1.2, crossAskPrice));
       const impliedShares = Number(amount) / Math.max(worstPrice, 0.01);
       setDebugInfo(prev => ({ ...prev, phase: "submit_order", worstPrice: worstPrice.toFixed(4), proxyStatus: `Posting GTC worst=${worstPrice.toFixed(4)} impliedShares=${impliedShares.toFixed(4)}`, updatedAt: new Date().toISOString() }));
 
@@ -968,9 +970,23 @@ export default function PolymarketModal({
       );
 
       const orderObj = (orderResponse ?? {}) as Record<string, unknown>;
-      const orderId = (orderObj.orderID || orderObj.id || orderObj.orderId || "") as string;
+      const nested = (orderObj.order ?? {}) as Record<string, unknown>;
+      const orderId = String(
+        orderObj.orderID ||
+        orderObj.id ||
+        orderObj.orderId ||
+        nested.orderID ||
+        nested.id ||
+        nested.orderId ||
+        "",
+      );
       console.log("[Polymarket] Buy order response:", orderResponse);
-      setDebugInfo(prev => ({ ...prev, orderId: orderId || "n/a", updatedAt: new Date().toISOString() }));
+      setDebugInfo(prev => ({
+        ...prev,
+        orderId: orderId || "n/a",
+        proxyStatus: orderId ? prev.proxyStatus : "GTC posted but orderId missing in response",
+        updatedAt: new Date().toISOString(),
+      }));
 
       const filled = await verifyFill(orderId);
       if (!filled) {
