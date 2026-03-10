@@ -783,15 +783,20 @@ export default function PolymarketModal({
       setDebugInfo(prev => ({ ...prev, proxyStatus: `Posting FOK worst=${worstPrice.toFixed(4)} impliedShares=${impliedShares.toFixed(4)}` }));
 
       // Let SDK resolve tick size / fee rate / market flags internally.
-      const orderResponse = await clob.createAndPostMarketOrder(
+      // Marketable GTC: behaves like market order when liquidity exists,
+      // and rests on book briefly if no immediate counterparty.
+      const gtcPrice = worstPrice;
+      const gtcSize = Number(amount) / Math.max(gtcPrice, 0.01);
+
+      const orderResponse = await clob.createAndPostOrder(
         {
           tokenID: selectedToken.token_id,
           side: Side.BUY,
-          amount: Number(amount), // BUY amount is USDC spend
-          price: worstPrice,
+          price: gtcPrice,
+          size: gtcSize,
         },
         undefined,
-        OrderType.FAK,
+        OrderType.GTC,
       );
 
       const orderObj = (orderResponse ?? {}) as Record<string, unknown>;
@@ -802,10 +807,13 @@ export default function PolymarketModal({
       if (!filled) {
         setDebugInfo(prev => ({
           ...prev,
-          proxyStatus: "Order accepted but no fill detected",
-          polyError: `No fill detected. orderId=${orderId || 'n/a'} est=${estPrice.toFixed(4)} worst=${worstPrice.toFixed(4)}`,
+          proxyStatus: `GTC placed (resting): ${orderId || 'n/a'}`,
+          polyError: undefined,
         }));
-        throw new Error("Order not filled immediately (FAK). Increase worst-price tolerance, reduce size, or place resting GTC.");
+        setStatus("Order placed on book. Waiting for match...");
+        onSuccess?.();
+        await refreshPortfolio(selectedMarket);
+        return;
       }
 
       setStatus("Order filled successfully!");
