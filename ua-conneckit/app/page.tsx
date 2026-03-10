@@ -1856,7 +1856,7 @@ const PerpsModal = ({
   universalAccount: UniversalAccount | null;
 }) => {
   const [primaryWallet] = useWallets();
-  const [view, setView] = useState<'markets' | 'trade'>('markets');
+  const [view, setView] = useState<'markets' | 'trade' | 'deposit'>('markets');
   const [selectedMarket, setSelectedMarket] = useState(PERPS_MARKETS[0]);
   const [selectedPair, setSelectedPair] = useState(AVANTIS_PAIRS[0]);
   const [isLong, setIsLong] = useState(true);
@@ -1872,6 +1872,8 @@ const PerpsModal = ({
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const [showDebug, setShowDebug] = useState(false);
   const [depositAmount, setDepositAmount] = useState<string>('');
+  const [includeGasTopUp, setIncludeGasTopUp] = useState(true);
+  const [gasTopUpAmount, setGasTopUpAmount] = useState('0.0007');
   const [ownerEOA, setOwnerEOA] = useState<string>("");
   const [eoaUsdcBalance, setEoaUsdcBalance] = useState<number>(0);
   const [eoaEthBalance, setEoaEthBalance] = useState<number>(0);
@@ -2128,31 +2130,32 @@ const PerpsModal = ({
         'Transfer USDC to owner EOA',
       );
 
-      // 3) ETH funding modal step (~$2 default)
-      let ethAmount = '0.0007'; // ~ $2-3 default depending ETH price
-      if (typeof window !== 'undefined') {
-        const wantsEth = window.confirm('Fund owner EOA with ~$2 ETH for gas?');
-        if (wantsEth) {
-          const input = window.prompt('ETH amount to fund (Base)', ethAmount);
-          if (input && Number(input) > 0) ethAmount = input;
-
-          await sendWithExpiryRetry(
-            () => universalAccount.createConvertTransaction({
-              expectToken: { type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethAmount },
-              chainId: CHAIN_ID.BASE_MAINNET,
-            }),
-            'Convert to Base ETH',
-          );
-
-          await sendWithExpiryRetry(
-            () => universalAccount.createUniversalTransaction({
-              chainId: CHAIN_ID.BASE_MAINNET,
-              expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethAmount }],
-              transactions: [{ to: ownerEOA as `0x${string}`, data: '0x', value: toBeHex(BigInt(Math.floor(Number(ethAmount) * 1e18))) }],
-            }),
-            'Transfer ETH to owner EOA',
-          );
+      // 3) Optional ETH top-up (explicitly controlled in the modal UI)
+      if (includeGasTopUp) {
+        const ethAmount = gasTopUpAmount.trim();
+        const ethAmountNum = parseFloat(ethAmount);
+        if (!Number.isFinite(ethAmountNum) || ethAmountNum <= 0) {
+          throw new Error('Enter a valid ETH gas top-up amount.');
         }
+
+        await sendWithExpiryRetry(
+          () => universalAccount.createConvertTransaction({
+            expectToken: { type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethAmount },
+            chainId: CHAIN_ID.BASE_MAINNET,
+          }),
+          'Convert to Base ETH',
+        );
+
+        await sendWithExpiryRetry(
+          () => universalAccount.createUniversalTransaction({
+            chainId: CHAIN_ID.BASE_MAINNET,
+            expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethAmount }],
+            transactions: [{ to: ownerEOA as `0x${string}`, data: '0x', value: toBeHex(BigInt(Math.floor(ethAmountNum * 1e18))) }],
+          }),
+          'Transfer ETH to owner EOA',
+        );
+      } else {
+        addDebug('ETH gas top-up skipped by user setting');
       }
 
       setLoadingStatus('Deposit complete');
@@ -2423,6 +2426,7 @@ const PerpsModal = ({
   };
 
   const canTrade = collateral && parseFloat(collateral) > 0 && parseFloat(collateral) <= usdcBalance;
+  const canDeposit = parseFloat(depositAmount) > 0 && (!includeGasTopUp || parseFloat(gasTopUpAmount) > 0);
 
   return (
     <BottomSheet isOpen={isOpen} onClose={() => { setView('markets'); onClose(); }}>
@@ -2433,11 +2437,10 @@ const PerpsModal = ({
             {/* Header */}
             <div className="flex items-center justify-between px-4 mb-4">
               <button
-                onClick={handleDepositToEOA}
-                disabled={isLoading || !depositAmount || Number(depositAmount) <= 0}
-                className="px-3 py-2 rounded-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white text-xs font-semibold"
+                onClick={() => setView('deposit')}
+                className="px-3 py-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold"
               >
-                {isLoading ? 'Depositing...' : 'Fund EOA'}
+                Deposit
               </button>
               <h2 className="text-white text-lg font-bold flex items-center gap-2">
                 <span>🔥</span> Perps
@@ -2532,28 +2535,12 @@ const PerpsModal = ({
             </div>
 
             {/* Deposit Button */}
-            <div className="px-4 mt-2 space-y-2">
-              <div className="bg-gray-800/40 rounded-2xl p-3 border border-gray-700/60">
-                <div className="text-xs text-gray-400 mb-2">Deposit amount to owner EOA (USDC on Base)</div>
-                <input
-                  type="number"
-                  value={depositAmount}
-                  onChange={(e) => setDepositAmount(e.target.value)}
-                  placeholder="10"
-                  min="0"
-                  step="0.01"
-                  className="w-full bg-gray-700 rounded-lg px-3 py-2 text-white outline-none"
-                />
-                <div className="text-[11px] text-gray-500 mt-2">
-                  EOA: {ownerEOA ? `${ownerEOA.slice(0, 8)}...${ownerEOA.slice(-6)}` : 'n/a'} • ${eoaUsdcBalance.toFixed(2)} USDC • {eoaEthBalance.toFixed(5)} ETH
-                </div>
-              </div>
+            <div className="px-4 mt-2">
               <button
-                onClick={handleDepositToEOA}
-                disabled={isLoading || !depositAmount || Number(depositAmount) <= 0}
-                className="w-full bg-accent-dynamic text-black font-bold py-4 rounded-2xl disabled:bg-gray-700 disabled:text-gray-400"
+                onClick={() => setView('deposit')}
+                className="w-full bg-accent-dynamic text-black font-bold py-4 rounded-2xl"
               >
-                {isLoading ? loadingStatus || 'Depositing...' : 'Deposit to EOA'}
+                Deposit
               </button>
             </div>
 
@@ -2576,6 +2563,126 @@ const PerpsModal = ({
               )}
             </div>
           </>
+        ) : view === 'deposit' ? (
+          /* ========== DEPOSIT VIEW (Receive-style layout) ========== */
+          <div className="px-5 pb-8">
+            <div className="flex items-center gap-3 mb-3">
+              <button
+                onClick={() => setView('markets')}
+                className="w-9 h-9 rounded-full bg-gray-800 flex items-center justify-center"
+              >
+                <span className="text-white">←</span>
+              </button>
+              <h2 className="text-white text-xl font-bold">Deposit</h2>
+            </div>
+
+            <p className="text-gray-400 text-sm mb-5">
+              Move funds from your Universal Account to the owner EOA used for Perps execution on Base.
+            </p>
+
+            {error && (
+              <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-3 mb-4 text-red-300 text-sm">
+                {error}
+              </div>
+            )}
+
+            <div className="space-y-2 mb-5">
+              <div className="bg-[#252525] rounded-xl px-3 py-3">
+                <div className="text-gray-400 text-xs uppercase tracking-wide mb-2">Perps Deposit Amount</div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={depositAmount}
+                    onChange={(e) => setDepositAmount(e.target.value)}
+                    placeholder="10.00"
+                    min="0"
+                    step="0.01"
+                    className="flex-1 bg-gray-800 rounded-lg px-3 py-2 text-white outline-none"
+                  />
+                  <span className="text-sm text-gray-300">USDC</span>
+                </div>
+                <div className="text-[11px] text-gray-500 mt-2">
+                  Sent to owner EOA on Base before opening positions.
+                </div>
+              </div>
+
+              <div className="bg-[#252525] rounded-xl px-3 py-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-white text-sm font-medium">Include ETH gas top-up</div>
+                    <div className="text-[11px] text-gray-500">Recommended so owner EOA can submit approve/open trade txs.</div>
+                  </div>
+                  <button
+                    onClick={() => setIncludeGasTopUp(!includeGasTopUp)}
+                    className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                      includeGasTopUp ? 'bg-accent-dynamic text-black' : 'bg-gray-700 text-gray-300'
+                    }`}
+                  >
+                    {includeGasTopUp ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+
+                {includeGasTopUp && (
+                  <div className="mt-3 flex items-center gap-2">
+                    <input
+                      type="number"
+                      value={gasTopUpAmount}
+                      onChange={(e) => setGasTopUpAmount(e.target.value)}
+                      placeholder="0.0007"
+                      min="0"
+                      step="0.0001"
+                      className="flex-1 bg-gray-800 rounded-lg px-3 py-2 text-white outline-none"
+                    />
+                    <span className="text-sm text-gray-300">ETH</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-[#252525] rounded-xl px-3 py-3">
+                <div className="text-gray-400 text-xs uppercase tracking-wide mb-2">Execution wallet (owner EOA)</div>
+                <div className="text-white text-sm font-mono break-all">{ownerEOA || 'Not connected'}</div>
+                <div className="text-[11px] text-gray-500 mt-2">
+                  Current balances: ${eoaUsdcBalance.toFixed(2)} USDC • {eoaEthBalance.toFixed(5)} ETH
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-[#252525] rounded-xl px-3 py-3 mb-5">
+              <div className="text-gray-400 text-xs uppercase tracking-wide mb-2">Deterministic Flow</div>
+              <ol className="text-xs text-gray-300 space-y-1 list-decimal list-inside">
+                <li>Convert UA balance to Base USDC</li>
+                <li>Transfer Base USDC to owner EOA</li>
+                {includeGasTopUp && <li>Convert UA balance to Base ETH</li>}
+                {includeGasTopUp && <li>Transfer Base ETH to owner EOA</li>}
+              </ol>
+            </div>
+
+            <button
+              onClick={handleDepositToEOA}
+              disabled={isLoading || !canDeposit}
+              className="w-full bg-accent-dynamic text-black font-bold py-4 rounded-2xl disabled:bg-gray-700 disabled:text-gray-400"
+            >
+              {isLoading ? loadingStatus || 'Depositing...' : 'Deposit to Perps Wallet'}
+            </button>
+
+            <div className="mt-4">
+              <button
+                onClick={() => setShowDebug(!showDebug)}
+                className="text-xs text-gray-500 underline"
+              >
+                {showDebug ? 'Hide Debug' : 'Show Debug'} ({debugLog.length} logs)
+              </button>
+              {showDebug && debugLog.length > 0 && (
+                <div className="mt-2 bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs font-mono text-gray-300 max-h-40 overflow-y-auto">
+                  {debugLog.map((log, i) => (
+                    <div key={i} className="py-0.5 border-b border-gray-800 last:border-0">
+                      {log}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         ) : (
           /* ========== TRADE VIEW ========== */
           <div className="px-4">
