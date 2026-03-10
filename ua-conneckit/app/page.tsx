@@ -2115,16 +2115,32 @@ const PerpsModal = ({
         'Transfer USDC to owner EOA',
       );
 
-      // 3) Ensure small ETH gas for EOA
-      const gasTopup = '0.0005';
-      await sendWithExpiryRetry(
-        () => universalAccount.createUniversalTransaction({
-          chainId: CHAIN_ID.BASE_MAINNET,
-          expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: gasTopup }],
-          transactions: [{ to: ownerEOA as `0x${string}`, data: '0x', value: toBeHex(BigInt(Math.floor(Number(gasTopup) * 1e18))) }],
-        }),
-        'Top up EOA ETH gas',
-      );
+      // 3) ETH funding modal step (~$2 default)
+      let ethAmount = '0.0007'; // ~ $2-3 default depending ETH price
+      if (typeof window !== 'undefined') {
+        const wantsEth = window.confirm('Fund owner EOA with ~$2 ETH for gas?');
+        if (wantsEth) {
+          const input = window.prompt('ETH amount to fund (Base)', ethAmount);
+          if (input && Number(input) > 0) ethAmount = input;
+
+          await sendWithExpiryRetry(
+            () => universalAccount.createConvertTransaction({
+              expectToken: { type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethAmount },
+              chainId: CHAIN_ID.BASE_MAINNET,
+            }),
+            'Convert to Base ETH',
+          );
+
+          await sendWithExpiryRetry(
+            () => universalAccount.createUniversalTransaction({
+              chainId: CHAIN_ID.BASE_MAINNET,
+              expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethAmount }],
+              transactions: [{ to: ownerEOA as `0x${string}`, data: '0x', value: toBeHex(BigInt(Math.floor(Number(ethAmount) * 1e18))) }],
+            }),
+            'Transfer ETH to owner EOA',
+          );
+        }
+      }
 
       setLoadingStatus('Deposit complete');
       addDebug('Deposit complete');
@@ -2403,9 +2419,13 @@ const PerpsModal = ({
           <>
             {/* Header */}
             <div className="flex items-center justify-between px-4 mb-4">
-              <div className="w-10 h-10 rounded-full bg-accent-dynamic-20 flex items-center justify-center">
-                <span className="text-xl">🎰</span>
-              </div>
+              <button
+                onClick={handleDepositToEOA}
+                disabled={isLoading}
+                className="px-3 py-2 rounded-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white text-xs font-semibold"
+              >
+                {isLoading ? 'Depositing...' : 'Deposit'}
+              </button>
               <h2 className="text-white text-lg font-bold flex items-center gap-2">
                 <span>🔥</span> Perps
               </h2>
@@ -2637,13 +2657,7 @@ const PerpsModal = ({
               <div className="text-[11px] text-gray-500">
                 EOA Balances: ${eoaUsdcBalance.toFixed(2)} USDC • {eoaEthBalance.toFixed(5)} ETH
               </div>
-              <button
-                onClick={handleDepositToEOA}
-                disabled={isLoading}
-                className="mt-2 w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white py-2 rounded-lg text-sm"
-              >
-                {isLoading ? 'Processing...' : 'Deposit from UA to Owner EOA'}
-              </button>
+
             </div>
 
             {/* Position Summary */}
