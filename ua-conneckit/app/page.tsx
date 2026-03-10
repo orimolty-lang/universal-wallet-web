@@ -1871,6 +1871,10 @@ const PerpsModal = ({
   const [loadingStatus, setLoadingStatus] = useState<string>('');
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const [showDebug, setShowDebug] = useState(false);
+  const [ownerEOA, setOwnerEOA] = useState<string>("");
+  const [eoaUsdcBalance, setEoaUsdcBalance] = useState<number>(0);
+  const [eoaEthBalance, setEoaEthBalance] = useState<number>(0);
+  const BASE_USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
   
   // Helper to add debug messages
   const addDebug = (msg: string) => {
@@ -1993,12 +1997,116 @@ const PerpsModal = ({
     }
   }, [isOpen, view]);
 
-  // Handle market selection
+  // Resolve owner EOA and balances (execution wallet)
+  useEffect(() => {
+    const loadOwner = async () => {
+      if (!isOpen || !primaryWallet) return;
+      try {
+        const walletClient = primaryWallet.getWalletClient();
+        const eoa = walletClient?.account?.address || "";
+        setOwnerEOA(eoa);
+        if (!eoa) return;
+
+        const [ethRes, usdcRes] = await Promise.all([
+          fetch('https://mainnet.base.org', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_getBalance', params: [eoa, 'latest'], id: 1 }),
+          }).then(r => r.json()),
+          fetch('https://mainnet.base.org', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'eth_call',
+              params: [{ to: BASE_USDC_ADDRESS, data: encodeFunctionData({
+                abi: [{ name: 'balanceOf', type: 'function', inputs: [{ name: 'account', type: 'address' }], outputs: [{ type: 'uint256' }] }],
+                functionName: 'balanceOf',
+                args: [eoa as `0x${string}`],
+              }) }, 'latest'],
+              id: 1,
+            }),
+          }).then(r => r.json()),
+        ]);
+
+        const eth = ethRes?.result ? Number(BigInt(ethRes.result)) / 1e18 : 0;
+        const usdc = usdcRes?.result ? Number(BigInt(usdcRes.result)) / 1e6 : 0;
+        setEoaEthBalance(eth);
+        setEoaUsdcBalance(usdc);
+      } catch {
+        // ignore
+      }
+    };
+    loadOwner();
+  }, [isOpen, primaryWallet]);
+
   const handleSelectMarket = (market: typeof PERPS_MARKETS[0]) => {
     setSelectedMarket(market);
     const pair = AVANTIS_PAIRS.find(p => p.name === `${market.symbol}/USD`);
     if (pair) setSelectedPair(pair);
     setView('trade');
+  };
+
+  const handleDepositToEOA = async () => {
+    if (!universalAccount || !primaryWallet || !ownerEOA || !collateral) {
+      setError('Enter collateral and connect wallet first');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setLoadingStatus('Depositing to owner EOA...');
+    try {
+      const amount = parseFloat(collateral);
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Invalid amount');
+      const walletClient = primaryWallet.getWalletClient();
+
+      // 1) Convert unified balance to USDC on Base
+      const convertTx = await universalAccount.createConvertTransaction({
+        expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: amount.toString() },
+        chainId: CHAIN_ID.BASE_MAINNET,
+      });
+      const convertSig = await walletClient.signMessage({
+        account: ownerEOA as `0x${string}`,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        message: { raw: (convertTx as any).rootHash as `0x${string}` },
+      });
+      await universalAccount.sendTransaction(convertTx, convertSig);
+
+      // 2) Transfer USDC to owner EOA
+      const transferUsdcTx = await universalAccount.createTransferTransaction({
+        token: { chainId: CHAIN_ID.BASE_MAINNET, address: BASE_USDC_ADDRESS },
+        amount: amount.toString(),
+        receiver: ownerEOA,
+      });
+      const transferUsdcSig = await walletClient.signMessage({
+        account: ownerEOA as `0x${string}`,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        message: { raw: (transferUsdcTx as any).rootHash as `0x${string}` },
+      });
+      await universalAccount.sendTransaction(transferUsdcTx, transferUsdcSig);
+
+      // 3) Ensure small ETH gas for EOA
+      const gasTopup = '0.0005';
+      const topupTx = await universalAccount.createUniversalTransaction({
+        chainId: CHAIN_ID.BASE_MAINNET,
+        expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: gasTopup }],
+        transactions: [{ to: ownerEOA as `0x${string}`, data: '0x', value: toBeHex(BigInt(Math.floor(Number(gasTopup) * 1e18))) }],
+      });
+      const topupSig = await walletClient.signMessage({
+        account: ownerEOA as `0x${string}`,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        message: { raw: (topupTx as any).rootHash as `0x${string}` },
+      });
+      await universalAccount.sendTransaction(topupTx, topupSig);
+
+      setLoadingStatus('Deposit complete');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Deposit failed');
+    } finally {
+      setIsLoading(false);
+      setTimeout(() => setLoadingStatus(''), 1200);
+    }
   };
 
   const handleOpenPosition = async () => {
@@ -2098,27 +2206,13 @@ const PerpsModal = ({
         slScaled: slScaled.toString(),
       });
 
-      // Get trader address - depends on mode:
-      // 7702 mode: EOA = UA (use ownerAddress or smartAccountAddress, they're the same)
-      // Smart Account mode: Use separate smartAccountAddress
-      let traderAddress: string;
-      try {
-        const options = await universalAccount.getSmartAccountOptions();
-        // In 7702 mode, smartAccountAddress equals ownerAddress
-        // In Smart Account mode, they're different
-        if (options?.smartAccountAddress) {
-          traderAddress = options.smartAccountAddress;
-        } else if (options?.ownerAddress) {
-          traderAddress = options.ownerAddress;
-          addDebug(`Using ownerAddress as trader (7702 mode)`);
-        } else {
-          throw new Error('No account address found');
-        }
-        addDebug(`Smart Account: ${traderAddress.slice(0, 10)}...${traderAddress.slice(-8)}`);
-      } catch (err) {
-        addDebug(`ERROR getting smart account: ${err}`);
-        throw new Error('Could not determine smart account address. Please reconnect your wallet.');
+      // Use owner EOA as Avantis trader/signer (not UA smart account)
+      const walletClient = primaryWallet.getWalletClient();
+      const traderAddress = ownerEOA || walletClient?.account?.address || '';
+      if (!traderAddress) {
+        throw new Error('Could not determine owner EOA address. Please reconnect wallet.');
       }
+      addDebug(`Owner EOA trader: ${traderAddress.slice(0, 10)}...${traderAddress.slice(-8)}`);
 
       // Step 1: Encode USDC approval to Avantis Trading contract (REQUIRED!)
       // Approve slightly more than needed to account for fees
@@ -2180,132 +2274,57 @@ const PerpsModal = ({
         approveAmount: approveAmount.toString(),
       });
       
-      let tx;
-      try {
-        // Log all parameters for debugging
-        console.log('[Perps] === TRADE PARAMETERS ===');
-        console.log('[Perps] Trader address:', traderAddress);
-        console.log('[Perps] Pair index:', selectedPair.index);
-        console.log('[Perps] Collateral (USDC):', collateralAmount);
-        console.log('[Perps] Leverage:', leverage);
-        console.log('[Perps] Position size USDC (6 dec):', positionSizeUSDC.toString());
-        console.log('[Perps] Open price (10 dec):', openPriceScaled.toString());
-        console.log('[Perps] Is Long:', isLong);
-        console.log('[Perps] TP:', tpScaled.toString());
-        console.log('[Perps] SL:', slScaled.toString());
-        console.log('[Perps] Execution fee:', executionFee.toString());
-        console.log('[Perps] === END PARAMETERS ===');
-        
-        // Full flow: approve + trade (both needed for simulation to pass)
-        console.log('[Perps] Full flow: approve + trade');
-        console.log('[Perps] Trader address being used:', traderAddress);
-        console.log('[Perps] Approve target:', AVANTIS_TRADING_ADDRESS);
-        console.log('[Perps] Approve amount:', approveAmount.toString());
-        
-        // Full flow: batched approve + trade
-        addDebug(`Trader: ${traderAddress}`);
-        addDebug(`Leverage: ${leverage}x`);
-        addDebug(`Using batched approve+trade with dynamic Pyth fee`);
-        
-        // Use the dynamically queried Pyth fee (with 20% buffer already applied)
-        // Format exactly as Particle docs show: toHex(parseEther(...))
-        const executionFeeEth = (Number(executionFee) / 1e18).toFixed(8);
-        addDebug(`Execution fee: ${executionFeeEth} ETH`);
-        
-        // Match official Particle example EXACTLY: toBeHex for value
-        // See: custom-transaction-evm-with-money.ts
-        const valueHex = toBeHex(executionFee);
-        addDebug(`Execution fee hex (toBeHex): ${valueHex}`);
-        addDebug(`Execution fee ETH: ${executionFeeEth}`);
-        
-        // Seamless flow: Request extra ETH buffer so UA funds the smart account
-        // Add 50% buffer to ensure enough ETH for execution + any gas variations
-        const ethWithBuffer = (Number(executionFeeEth) * 1.5).toFixed(8);
-        addDebug(`Requesting ETH with buffer: ${ethWithBuffer}`);
-        
-        tx = await universalAccount.createUniversalTransaction({
-          chainId: CHAIN_ID.BASE_MAINNET,
-          expectTokens: [
-            {
-              type: SUPPORTED_TOKEN_TYPE.ETH,
-              amount: ethWithBuffer, // Extra buffer
-            },
-            {
-              type: SUPPORTED_TOKEN_TYPE.USDC,
-              amount: collateralAmount.toString(),
-            },
-          ],
-          transactions: [
-            // 1. Approve USDC to Avantis
-            {
-              to: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' as `0x${string}`,
-              data: approveCalldata as `0x${string}`,
-              value: '0x0',
-            },
-            // 2. openTrade with execution fee
-            {
-              to: AVANTIS_TRADING_ADDRESS as `0x${string}`,
-              data: openTradeCalldata as `0x${string}`,
-              value: valueHex,
-            },
-          ],
-        });
-        addDebug('Transaction created successfully!');
-      } catch (createErr: unknown) {
-        const errMsg = createErr instanceof Error ? createErr.message : String(createErr);
-        addDebug(`CREATE TX FAILED: ${errMsg}`);
-        
-        // Check for specific errors
-        if (errMsg.toLowerCase().includes('insufficient') || errMsg.toLowerCase().includes('balance')) {
-          throw new Error('Insufficient balance. Make sure you have enough USDC and a small amount of ETH.');
-        } else if (errMsg.toLowerCase().includes('simulation') || errMsg.toLowerCase().includes('revert')) {
-          throw new Error(`Transaction simulation failed. This could be due to: invalid leverage, position too small, or smart account issue. Error: ${errMsg}`);
-        } else if (errMsg.toLowerCase().includes('trader')) {
-          throw new Error('Smart account address mismatch. Try disconnecting and reconnecting your wallet.');
+      // EOA execution path (same model as PerpsTrader): approve + openTrade directly from owner EOA
+      addDebug(`Trader(EOA): ${traderAddress}`);
+      addDebug(`Leverage: ${leverage}x`);
+
+      const waitReceipt = async (txHash: string) => {
+        for (let i = 0; i < 30; i++) {
+          const resp = await fetch('https://mainnet.base.org', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_getTransactionReceipt', params: [txHash], id: 1 }),
+          }).then(r => r.json());
+          if (resp?.result) return resp.result;
+          await new Promise(r => setTimeout(r, 2000));
         }
-        throw new Error(`Failed to create transaction: ${errMsg}`);
-      }
+        throw new Error('Transaction confirmation timeout');
+      };
 
-      console.log('[Perps] UA transaction created:', tx);
+      const valueHex = toBeHex(executionFee);
 
-      // Step 2: Sign with wallet (same flow as SwapModal)
+      setLoadingStatus('Approving USDC from owner EOA...');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if ((tx as any).rootHash) {
-        setLoadingStatus('Waiting for signature...');
-        
-        const walletClient = primaryWallet.getWalletClient();
-        
-        // Note: 7702 auth handling removed - we're using Smart Account mode
-        // If 7702 mode is needed, switch useEIP7702: true and use Particle Auth (not Connect)
-        
-        // Sign the root hash using personal_sign
-        const signature = await walletClient.request({
-          method: 'personal_sign',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          params: [(tx as any).rootHash as `0x${string}`, walletClient.account?.address as `0x${string}`],
-        });
+      const approveHash = await (walletClient as any).request({
+        method: 'eth_sendTransaction',
+        params: [{
+          from: traderAddress,
+          to: BASE_USDC_ADDRESS,
+          data: approveCalldata,
+          value: '0x0',
+        }],
+      }) as string;
+      await waitReceipt(approveHash);
 
-        // Step 3: Send transaction
-        setLoadingStatus('Sending transaction...');
-        const sendResult = await universalAccount.sendTransaction(tx, signature as string);
-        
-        if (sendResult?.transactionId) {
-          console.log('[Perps] Transaction sent:', sendResult.transactionId);
-          setTxResult({
-            txId: sendResult.transactionId,
-            status: 'pending',
-          });
-          setLoadingStatus('Position opening...');
-          
-          // Reset form
-          setCollateral('');
-          setTakeProfit('');
-          setStopLoss('');
-        }
-      } else {
-        setError('Transaction requires signature but rootHash not found');
-      }
-      
+      setLoadingStatus('Opening position from owner EOA...');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tradeHash = await (walletClient as any).request({
+        method: 'eth_sendTransaction',
+        params: [{
+          from: traderAddress,
+          to: AVANTIS_TRADING_ADDRESS,
+          data: openTradeCalldata,
+          value: valueHex,
+        }],
+      }) as string;
+
+      setTxResult({ txId: tradeHash, status: 'pending' });
+      setLoadingStatus('Position opening...');
+
+      // Reset form
+      setCollateral('');
+      setTakeProfit('');
+      setStopLoss('');
     } catch (err) {
       // Extract error details for debug
       let errorDetails = '';
@@ -2583,6 +2602,19 @@ const PerpsModal = ({
                   Position Size: ${positionSize.toLocaleString()}
                 </div>
               )}
+              <div className="text-[11px] text-gray-500 mt-2">
+                Owner EOA: {ownerEOA ? `${ownerEOA.slice(0, 8)}...${ownerEOA.slice(-6)}` : 'n/a'}
+              </div>
+              <div className="text-[11px] text-gray-500">
+                EOA Balances: ${eoaUsdcBalance.toFixed(2)} USDC • {eoaEthBalance.toFixed(5)} ETH
+              </div>
+              <button
+                onClick={handleDepositToEOA}
+                disabled={isLoading || !collateral || parseFloat(collateral || '0') <= 0}
+                className="mt-2 w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white py-2 rounded-lg text-sm"
+              >
+                {isLoading ? 'Processing...' : 'Deposit from UA to Owner EOA'}
+              </button>
             </div>
 
             {/* Position Summary */}
