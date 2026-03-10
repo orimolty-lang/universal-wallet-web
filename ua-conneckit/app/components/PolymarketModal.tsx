@@ -106,7 +106,7 @@ const BASE_USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const CTF_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045";
 // Unused for now but may need later for CTF operations:
 // const NEG_RISK_ADAPTER = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296";
-// const NEG_RISK_EXCHANGE = "0xC5d563A36AE78145C45a50134d48A1215220f80a";
+const NEG_RISK_EXCHANGE = "0xC5d563A36AE78145C45a50134d48A1215220f80a";
 const CTF_EXCHANGE = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E";
 
 interface Market {
@@ -617,25 +617,53 @@ export default function PolymarketModal({
     );
 
     const provider = new JsonRpcProvider(POLYGON_RPC_URL);
-    const erc20 = new Contract(
+    const usdc = new Contract(
       USDC_E_ADDRESS,
       ["function allowance(address owner, address spender) view returns (uint256)"],
       provider,
     );
+    const ctf = new Contract(
+      CTF_ADDRESS,
+      ["function isApprovedForAll(address account, address operator) view returns (bool)"],
+      provider,
+    );
 
-    const aCtf = BigInt((await erc20.allowance(safeAddr, CTF_ADDRESS)).toString());
-    const aEx = BigInt((await erc20.allowance(safeAddr, CTF_EXCHANGE)).toString());
+    const aCtf = BigInt((await usdc.allowance(safeAddr, CTF_ADDRESS)).toString());
+    const apprEx = Boolean(await ctf.isApprovedForAll(safeAddr, CTF_EXCHANGE));
+    const apprNeg = Boolean(await ctf.isApprovedForAll(safeAddr, NEG_RISK_EXCHANGE));
+
     const threshold = BigInt("1000000");
-    if (aCtf >= threshold && aEx >= threshold) return;
+    const txs: Array<{ to: string; data: string; value: string }> = [];
 
-    const iface = new Interface(["function approve(address spender, uint256 amount) returns (bool)"]);
+    const erc20Iface = new Interface(["function approve(address spender, uint256 amount) returns (bool)"]);
+    const erc1155Iface = new Interface(["function setApprovalForAll(address operator, bool approved)"]);
     const max = "115792089237316195423570985008687907853269984665640564039457584007913129639935";
-    const txs = [
-      { to: USDC_E_ADDRESS, data: iface.encodeFunctionData("approve", [CTF_ADDRESS, max]), value: "0" },
-      { to: USDC_E_ADDRESS, data: iface.encodeFunctionData("approve", [CTF_EXCHANGE, max]), value: "0" },
-    ];
 
-    const resp = await relay.execute(txs, "Approve USDC.e spenders for SAFE");
+    if (aCtf < threshold) {
+      txs.push({
+        to: USDC_E_ADDRESS,
+        data: erc20Iface.encodeFunctionData("approve", [CTF_ADDRESS, max]),
+        value: "0",
+      });
+    }
+    if (!apprEx) {
+      txs.push({
+        to: CTF_ADDRESS,
+        data: erc1155Iface.encodeFunctionData("setApprovalForAll", [CTF_EXCHANGE, true]),
+        value: "0",
+      });
+    }
+    if (!apprNeg) {
+      txs.push({
+        to: CTF_ADDRESS,
+        data: erc1155Iface.encodeFunctionData("setApprovalForAll", [NEG_RISK_EXCHANGE, true]),
+        value: "0",
+      });
+    }
+
+    if (txs.length === 0) return;
+
+    const resp = await relay.execute(txs, "Batch SAFE approvals (USDC+CTF)");
     await resp.wait();
   };
 
@@ -810,18 +838,24 @@ export default function PolymarketModal({
           ["function allowance(address owner, address spender) view returns (uint256)"],
           provider,
         );
+        const ctf = new Contract(
+          CTF_ADDRESS,
+          ["function isApprovedForAll(address account, address operator) view returns (bool)"],
+          provider,
+        );
         const aCtf = BigInt((await erc20.allowance(prep.proxy, CTF_ADDRESS)).toString());
-        const aEx = BigInt((await erc20.allowance(prep.proxy, CTF_EXCHANGE)).toString());
+        const apprEx = Boolean(await ctf.isApprovedForAll(prep.proxy, CTF_EXCHANGE));
+        const apprNeg = Boolean(await ctf.isApprovedForAll(prep.proxy, NEG_RISK_EXCHANGE));
         const needed = BigInt(neededRaw);
 
         setDebugInfo(prev => ({
           ...prev,
-          collateralAllowance: `${col.allowance || "0"} (clob) / ctf=${aCtf.toString()} / ex=${aEx.toString()}`,
+          collateralAllowance: `${col.allowance || "0"} (clob) / usdc->ctf=${aCtf.toString()} / ctf->ex=${apprEx} / ctf->neg=${apprNeg}`,
           updatedAt: new Date().toISOString(),
         }));
 
-        if (aCtf < needed && aEx < needed) {
-          throw new Error("SAFE collateral allowance still too low after update.");
+        if (aCtf < needed || !apprEx || !apprNeg) {
+          throw new Error("SAFE approvals still incomplete after update.");
         }
       }
 
