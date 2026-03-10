@@ -2000,10 +2000,21 @@ const PerpsModal = ({
   // Resolve owner EOA and balances (execution wallet)
   useEffect(() => {
     const loadOwner = async () => {
-      if (!isOpen || !primaryWallet) return;
+      if (!isOpen) return;
       try {
-        const walletClient = primaryWallet.getWalletClient();
-        const eoa = walletClient?.account?.address || "";
+        let eoa = "";
+
+        if (primaryWallet) {
+          const walletClient = primaryWallet.getWalletClient();
+          eoa = walletClient?.account?.address || "";
+        }
+
+        // Fallback: derive owner from UA options when wallet client account isn't populated
+        if (!eoa && universalAccount) {
+          const opts = await universalAccount.getSmartAccountOptions();
+          eoa = (opts?.ownerAddress as string) || "";
+        }
+
         setOwnerEOA(eoa);
         if (!eoa) return;
 
@@ -2038,7 +2049,7 @@ const PerpsModal = ({
       }
     };
     loadOwner();
-  }, [isOpen, primaryWallet]);
+  }, [isOpen, primaryWallet, universalAccount]);
 
   const handleSelectMarket = (market: typeof PERPS_MARKETS[0]) => {
     setSelectedMarket(market);
@@ -2048,8 +2059,8 @@ const PerpsModal = ({
   };
 
   const handleDepositToEOA = async () => {
-    if (!universalAccount || !primaryWallet || !ownerEOA || !collateral) {
-      setError('Enter collateral and connect wallet first');
+    if (!universalAccount || !primaryWallet || !ownerEOA) {
+      setError('Connect wallet first');
       return;
     }
 
@@ -2059,8 +2070,11 @@ const PerpsModal = ({
     addDebug(`Deposit start -> owner EOA ${ownerEOA}`);
 
     try {
-      const amount = parseFloat(collateral);
-      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Invalid amount');
+      const amountStr = (collateral && Number(collateral) > 0)
+        ? collateral
+        : (typeof window !== 'undefined' ? (window.prompt('USDC amount to deposit to owner EOA', '10') || '') : '');
+      const amount = parseFloat(amountStr);
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Invalid deposit amount');
       const walletClient = primaryWallet.getWalletClient();
 
       const sendWithExpiryRetry = async (
