@@ -761,7 +761,26 @@ export default function PolymarketModal({
         throw new Error("Insufficient SAFE USDC.e balance for this order.");
       }
       if (Number(col.allowance || "0") < neededRaw) {
-        throw new Error("SAFE collateral allowance still too low after update.");
+        // Fallback to direct onchain allowance verification (CLOB endpoint can lag)
+        const provider = new JsonRpcProvider(POLYGON_RPC_URL);
+        const erc20 = new Contract(
+          USDC_E_ADDRESS,
+          ["function allowance(address owner, address spender) view returns (uint256)"],
+          provider,
+        );
+        const aCtf = BigInt((await erc20.allowance(prep.proxy, CTF_ADDRESS)).toString());
+        const aEx = BigInt((await erc20.allowance(prep.proxy, CTF_EXCHANGE)).toString());
+        const needed = BigInt(neededRaw);
+
+        setDebugInfo(prev => ({
+          ...prev,
+          collateralAllowance: `${col.allowance || "0"} (clob) / ctf=${aCtf.toString()} / ex=${aEx.toString()}`,
+          updatedAt: new Date().toISOString(),
+        }));
+
+        if (aCtf < needed && aEx < needed) {
+          throw new Error("SAFE collateral allowance still too low after update.");
+        }
       }
 
       // Conditional token allowance (required for some matching/settlement paths)
