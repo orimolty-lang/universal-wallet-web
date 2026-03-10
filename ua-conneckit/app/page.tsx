@@ -2056,53 +2056,82 @@ const PerpsModal = ({
     setIsLoading(true);
     setError(null);
     setLoadingStatus('Depositing to owner EOA...');
+    addDebug(`Deposit start -> owner EOA ${ownerEOA}`);
+
     try {
       const amount = parseFloat(collateral);
       if (!Number.isFinite(amount) || amount <= 0) throw new Error('Invalid amount');
       const walletClient = primaryWallet.getWalletClient();
 
-      // 1) Convert unified balance to USDC on Base
-      const convertTx = await universalAccount.createConvertTransaction({
-        expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: amount.toString() },
-        chainId: CHAIN_ID.BASE_MAINNET,
-      });
-      const convertSig = await walletClient.signMessage({
-        account: ownerEOA as `0x${string}`,
+      const sendWithExpiryRetry = async (
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        message: { raw: (convertTx as any).rootHash as `0x${string}` },
-      });
-      await universalAccount.sendTransaction(convertTx, convertSig);
+        buildTx: () => Promise<any>,
+        label: string,
+      ) => {
+        let lastErr: unknown;
+        for (let attempt = 1; attempt <= 4; attempt++) {
+          try {
+            setLoadingStatus(`${label} (${attempt}/4)...`);
+            addDebug(`${label} attempt ${attempt}`);
+            const tx = await buildTx();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const rootHash = (tx as any).rootHash as `0x${string}`;
+            const sig = await walletClient.signMessage({
+              account: ownerEOA as `0x${string}`,
+              message: { raw: rootHash },
+            });
+            const res = await universalAccount.sendTransaction(tx, sig);
+            addDebug(`${label} sent: ${res?.transactionId || 'txid-missing'}`);
+            return res;
+          } catch (e) {
+            lastErr = e;
+            const msg = e instanceof Error ? e.message : String(e);
+            addDebug(`${label} failed: ${msg}`);
+            const expired = msg.toLowerCase().includes('expired');
+            if (!(expired && attempt < 4)) throw e;
+            addDebug(`${label} expired, rebuilding...`);
+            await new Promise(r => setTimeout(r, 400));
+          }
+        }
+        throw lastErr;
+      };
+
+      // 1) Convert unified balance to USDC on Base
+      await sendWithExpiryRetry(
+        () => universalAccount.createConvertTransaction({
+          expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: amount.toString() },
+          chainId: CHAIN_ID.BASE_MAINNET,
+        }),
+        'Convert to Base USDC',
+      );
 
       // 2) Transfer USDC to owner EOA
-      const transferUsdcTx = await universalAccount.createTransferTransaction({
-        token: { chainId: CHAIN_ID.BASE_MAINNET, address: BASE_USDC_ADDRESS },
-        amount: amount.toString(),
-        receiver: ownerEOA,
-      });
-      const transferUsdcSig = await walletClient.signMessage({
-        account: ownerEOA as `0x${string}`,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        message: { raw: (transferUsdcTx as any).rootHash as `0x${string}` },
-      });
-      await universalAccount.sendTransaction(transferUsdcTx, transferUsdcSig);
+      await sendWithExpiryRetry(
+        () => universalAccount.createTransferTransaction({
+          token: { chainId: CHAIN_ID.BASE_MAINNET, address: BASE_USDC_ADDRESS },
+          amount: amount.toString(),
+          receiver: ownerEOA,
+        }),
+        'Transfer USDC to owner EOA',
+      );
 
       // 3) Ensure small ETH gas for EOA
       const gasTopup = '0.0005';
-      const topupTx = await universalAccount.createUniversalTransaction({
-        chainId: CHAIN_ID.BASE_MAINNET,
-        expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: gasTopup }],
-        transactions: [{ to: ownerEOA as `0x${string}`, data: '0x', value: toBeHex(BigInt(Math.floor(Number(gasTopup) * 1e18))) }],
-      });
-      const topupSig = await walletClient.signMessage({
-        account: ownerEOA as `0x${string}`,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        message: { raw: (topupTx as any).rootHash as `0x${string}` },
-      });
-      await universalAccount.sendTransaction(topupTx, topupSig);
+      await sendWithExpiryRetry(
+        () => universalAccount.createUniversalTransaction({
+          chainId: CHAIN_ID.BASE_MAINNET,
+          expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: gasTopup }],
+          transactions: [{ to: ownerEOA as `0x${string}`, data: '0x', value: toBeHex(BigInt(Math.floor(Number(gasTopup) * 1e18))) }],
+        }),
+        'Top up EOA ETH gas',
+      );
 
       setLoadingStatus('Deposit complete');
+      addDebug('Deposit complete');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Deposit failed');
+      const msg = e instanceof Error ? e.message : 'Deposit failed';
+      addDebug(`Deposit error: ${msg}`);
+      setError(msg);
     } finally {
       setIsLoading(false);
       setTimeout(() => setLoadingStatus(''), 1200);
