@@ -2203,8 +2203,8 @@ const PerpsModal = ({
         : Number(usdcAsset.amount || 0);
     return Number.isFinite(totalAmount) ? totalAmount : 0;
   }, [assets]);
-  // Back-compat for existing trading UI labels/checks
-  const usdcBalance = unifiedUaBalance;
+  // Perps trades execute from owner EOA; collateral checks/MAX should use EOA USDC.
+  const usdcBalance = eoaUsdcBalance;
 
   // Calculate position details
   const positionSize = useMemo(() => {
@@ -4176,7 +4176,7 @@ const PerpsModal = ({
                   onClick={() => setCollateral(usdcBalance.toString())}
                   className="text-accent-dynamic text-xs"
                 >
-                  UA Balance: ${usdcBalance.toFixed(2)}
+                  EOA USDC: ${usdcBalance.toFixed(2)}
                 </button>
               </div>
               <div className="flex items-center gap-2">
