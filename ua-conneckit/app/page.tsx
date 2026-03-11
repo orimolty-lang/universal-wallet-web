@@ -1173,6 +1173,7 @@ const ConvertModal = ({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return asset.chainAggregation.filter((c: any) => c.amount > 0.0001).map((c: any) => ({
       chainId: c.token?.chainId,
+      address: c.token?.address,
       balance: c.amount,
       balanceUSD: c.amountInUSD,
     }));
@@ -1247,12 +1248,38 @@ const ConvertModal = ({
       if (isNaN(amtNum) || amtNum <= 0) {
         throw new Error('Invalid amount');
       }
+      if (selectedFromBalance?.balance && amtNum > selectedFromBalance.balance + 1e-10) {
+        throw new Error('Amount exceeds available source balance.');
+      }
 
-      // Get USD value of what we're converting
-      const pricePerUnit = selectedFromBalance?.balanceUSD && selectedFromBalance?.balance 
-        ? selectedFromBalance.balanceUSD / selectedFromBalance.balance 
-        : 1;
-      const usdValue = amtNum * pricePerUnit;
+      // Refresh primary assets right before conversion to avoid stale MAX quotes.
+      let freshAssets: IAssetsResponse | null = null;
+      try {
+        freshAssets = await universalAccount.getPrimaryAssets();
+      } catch {
+        // Fallback to in-memory balances if refresh fails.
+      }
+
+      // Get latest source asset metrics
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const freshFromAsset = freshAssets?.assets?.find((a: any) => a.tokenType === fromAsset) as any;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const freshFromChain = freshFromAsset?.chainAggregation?.find((c: any) => Number(c.token?.chainId) === Number(fromChain)) as any;
+      const sourcePrice = Number(freshFromAsset?.price || 0);
+      const sourceBalance = Number(freshFromChain?.amount ?? selectedFromBalance?.balance ?? 0);
+      const sourceBalanceUSD = Number(freshFromChain?.amountInUSD ?? selectedFromBalance?.balanceUSD ?? 0);
+
+      if (sourceBalance > 0 && amtNum > sourceBalance + 1e-10) {
+        throw new Error('Amount exceeds latest source balance.');
+      }
+
+      const usdValue =
+        sourcePrice > 0
+          ? amtNum * sourcePrice
+          : (sourceBalance > 0 ? (amtNum * (sourceBalanceUSD / sourceBalance)) : 0);
+      if (!Number.isFinite(usdValue) || usdValue <= 0) {
+        throw new Error('Could not compute conversion quote value. Please try again.');
+      }
 
       // Map to SUPPORTED_TOKEN_TYPE enum
       const tokenTypeMap: Record<string, SUPPORTED_TOKEN_TYPE> = {
@@ -1270,22 +1297,38 @@ const ConvertModal = ({
       }
 
       // Estimate output amount based on target asset
-      // In production, use getTokenPair for actual rates
+      // Use latest source/target prices from UA assets where possible.
       let outputAmount: number;
       
       if ([SUPPORTED_TOKEN_TYPE.USDC, SUPPORTED_TOKEN_TYPE.USDT].includes(targetTokenType)) {
         outputAmount = usdValue; // Stablecoins ~= USD
-      } else if (targetTokenType === SUPPORTED_TOKEN_TYPE.ETH) {
-        outputAmount = usdValue / 3500; // Rough ETH price
-      } else if (targetTokenType === SUPPORTED_TOKEN_TYPE.SOL) {
-        outputAmount = usdValue / 150; // Rough SOL price
-      } else if (targetTokenType === SUPPORTED_TOKEN_TYPE.BNB) {
-        outputAmount = usdValue / 600; // Rough BNB price
-      } else if (targetTokenType === SUPPORTED_TOKEN_TYPE.BTC) {
-        outputAmount = usdValue / 95000; // Rough BTC price
       } else {
-        outputAmount = usdValue; // Fallback
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const freshToAsset = freshAssets?.assets?.find((a: any) => a.tokenType === toAsset.toLowerCase()) as any;
+        const targetPrice = Number(freshToAsset?.price || 0);
+        if (targetPrice > 0) {
+          outputAmount = usdValue / targetPrice;
+        } else if (targetTokenType === SUPPORTED_TOKEN_TYPE.ETH) {
+          outputAmount = usdValue / 3500;
+        } else if (targetTokenType === SUPPORTED_TOKEN_TYPE.SOL) {
+          outputAmount = usdValue / 150;
+        } else if (targetTokenType === SUPPORTED_TOKEN_TYPE.BNB) {
+          outputAmount = usdValue / 600;
+        } else if (targetTokenType === SUPPORTED_TOKEN_TYPE.BTC) {
+          outputAmount = usdValue / 95000;
+        } else {
+          outputAmount = usdValue;
+        }
       }
+      if (!Number.isFinite(outputAmount) || outputAmount <= 0) {
+        throw new Error('Invalid output quote generated. Please retry.');
+      }
+
+      const sourceTokenType = tokenTypeMap[fromAsset.toUpperCase()];
+      // Constrain conversion sourcing to selected "from" primary token for closer MAX behavior.
+      const tradeConfig = sourceTokenType
+        ? { usePrimaryTokens: [sourceTokenType] }
+        : undefined;
 
       // Create convert transaction via UA SDK
       // chainId = destination chain, expectToken = what we want to receive
@@ -1296,7 +1339,7 @@ const ConvertModal = ({
           type: targetTokenType,
           amount: outputAmount.toFixed(8), // Amount in target token units
         },
-      });
+      }, tradeConfig);
 
       console.log('[Convert] Transaction created:', tx);
       
