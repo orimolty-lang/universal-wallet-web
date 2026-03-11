@@ -59,13 +59,14 @@ export const ParticleConnectkit = ({ children }: React.PropsWithChildren) => {
         ], // Optional, restricts the types of social logins supported
         fiatCoin: "USD", // Optional, also supports CNY, JPY, HKD, INR, and KRW
         promptSettingConfig: {
-          // Optional, changes the frequency in which the user is asked to set a master or payment password
+          // Optional, changes the frequency in which the user is asked to set a master or payment password.
+          // Set to 0 to reduce interactive prompts and enable blind-sign-friendly UA flows.
           // 0 = Never ask
           // 1 = Ask once
           // 2 = Ask always, upon every entry
           // 3 = Force the user to set this password
-          promptMasterPasswordSettingWhenLogin: 1,
-          promptPaymentPasswordSettingWhenSign: 1,
+          promptMasterPasswordSettingWhenLogin: 0,
+          promptPaymentPasswordSettingWhenSign: 0,
         },
       }),
       evmWalletConnectors({

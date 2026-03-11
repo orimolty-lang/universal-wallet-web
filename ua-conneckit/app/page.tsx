@@ -1871,6 +1871,8 @@ const PerpsModal = ({
   const [loadingStatus, setLoadingStatus] = useState<string>('');
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const [showDebug, setShowDebug] = useState(false);
+  const [depositMode, setDepositMode] = useState<'usdc_gas' | 'usdc_only' | 'gas_only'>('usdc_gas');
+  const [depositStage, setDepositStage] = useState<'idle' | 'usdc' | 'gas'>('idle');
   const [depositAmount, setDepositAmount] = useState<string>('');
   const [gasTopUpAmount, setGasTopUpAmount] = useState('0.0007');
   const [ownerEOA, setOwnerEOA] = useState<string>("");
@@ -2119,10 +2121,13 @@ const PerpsModal = ({
     try {
       const amount = parseFloat(depositAmount.trim());
       const ethTarget = parseFloat(gasTopUpAmount.trim());
-      const shouldFundUsdc = Number.isFinite(amount) && amount > 0;
-      const shouldFundEth = Number.isFinite(ethTarget) && ethTarget > 0;
-      if (!shouldFundUsdc && !shouldFundEth) {
-        throw new Error('Enter USDC deposit and/or ETH gas top-up amount.');
+      const shouldFundUsdc = depositMode !== 'gas_only';
+      const shouldFundEth = depositMode !== 'usdc_only';
+      if (shouldFundUsdc && (!Number.isFinite(amount) || amount <= 0)) {
+        throw new Error('Enter a valid USDC amount for this mode.');
+      }
+      if (shouldFundEth && (!Number.isFinite(ethTarget) || ethTarget <= 0)) {
+        throw new Error('Enter a valid ETH gas top-up amount for this mode.');
       }
       const walletClient = primaryWallet.getWalletClient();
 
@@ -2165,6 +2170,8 @@ const PerpsModal = ({
 
       // 1) USDC funding path (optional)
       if (shouldFundUsdc) {
+        setDepositStage('usdc');
+        setLoadingStatus('Preparing USDC funding...');
         const usdcShortfall = Math.max(0, amount - uaBaseUsdcAvailable);
         if (usdcShortfall > 0.000001) {
           addDebug(`Base USDC in UA: ${uaBaseUsdcAvailable.toFixed(4)}. Converting shortfall: ${usdcShortfall.toFixed(4)} USDC`);
@@ -2193,6 +2200,8 @@ const PerpsModal = ({
 
       // 2) ETH gas top-up path (optional and can run independently)
       if (shouldFundEth) {
+        setDepositStage('gas');
+        setLoadingStatus('Preparing ETH gas top-up...');
         await sendWithExpiryRetry(
           () => universalAccount.createConvertTransaction({
             expectToken: { type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethTarget.toString() },
@@ -2223,6 +2232,7 @@ const PerpsModal = ({
       addDebug(`Deposit error: ${msg}`);
       setError(msg);
     } finally {
+      setDepositStage('idle');
       setIsLoading(false);
       setTimeout(() => setLoadingStatus(''), 1200);
     }
@@ -2484,10 +2494,23 @@ const PerpsModal = ({
   };
 
   const canTrade = collateral && parseFloat(collateral) > 0 && parseFloat(collateral) <= usdcBalance;
-  const canDeposit = (parseFloat(depositAmount) > 0) || (parseFloat(gasTopUpAmount) > 0);
   const depositAmountNum = parseFloat(depositAmount) || 0;
   const gasTopUpNum = parseFloat(gasTopUpAmount) || 0;
+  const canDeposit =
+    depositMode === 'gas_only'
+      ? gasTopUpNum > 0
+      : depositMode === 'usdc_only'
+        ? depositAmountNum > 0
+        : depositAmountNum > 0 && gasTopUpNum > 0;
   const needsUsdcConvert = depositAmountNum > 0 && (depositAmountNum > uaBaseUsdcAvailable + 0.000001);
+  const depositCtaLabel =
+    depositMode === 'gas_only'
+      ? 'Top up gas'
+      : depositMode === 'usdc_only'
+        ? 'Deposit to Perps Wallet'
+        : depositStage === 'gas'
+          ? 'Top up gas'
+          : 'Deposit + Top up gas';
 
   return (
     <BottomSheet isOpen={isOpen} onClose={() => { setView('markets'); onClose(); }}>
@@ -2644,6 +2667,36 @@ const PerpsModal = ({
 
             <div className="space-y-2 mb-5">
               <div className="bg-[#252525] rounded-xl px-3 py-3">
+                <div className="text-gray-400 text-xs uppercase tracking-wide mb-2">Funding Mode</div>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => setDepositMode('usdc_gas')}
+                    className={`py-2 rounded-lg text-xs font-semibold ${
+                      depositMode === 'usdc_gas' ? 'bg-accent-dynamic text-black' : 'bg-gray-800 text-gray-300'
+                    }`}
+                  >
+                    USDC + Gas
+                  </button>
+                  <button
+                    onClick={() => setDepositMode('usdc_only')}
+                    className={`py-2 rounded-lg text-xs font-semibold ${
+                      depositMode === 'usdc_only' ? 'bg-accent-dynamic text-black' : 'bg-gray-800 text-gray-300'
+                    }`}
+                  >
+                    USDC Only
+                  </button>
+                  <button
+                    onClick={() => setDepositMode('gas_only')}
+                    className={`py-2 rounded-lg text-xs font-semibold ${
+                      depositMode === 'gas_only' ? 'bg-accent-dynamic text-black' : 'bg-gray-800 text-gray-300'
+                    }`}
+                  >
+                    Gas Only
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-[#252525] rounded-xl px-3 py-3">
                 <div className="text-gray-400 text-xs uppercase tracking-wide mb-2">Perps Deposit Amount</div>
                 <div className="flex items-center gap-2">
                   <input
@@ -2653,7 +2706,8 @@ const PerpsModal = ({
                     placeholder="10.00"
                     min="0"
                     step="0.01"
-                    className="flex-1 bg-gray-800 rounded-lg px-3 py-2 text-white outline-none"
+                    disabled={depositMode === 'gas_only'}
+                    className="flex-1 bg-gray-800 rounded-lg px-3 py-2 text-white outline-none disabled:opacity-50"
                   />
                   <span className="text-sm text-gray-300">USDC</span>
                 </div>
@@ -2679,7 +2733,8 @@ const PerpsModal = ({
                     placeholder="0.0007"
                     min="0"
                     step="0.0001"
-                    className="flex-1 bg-gray-800 rounded-lg px-3 py-2 text-white outline-none"
+                    disabled={depositMode === 'usdc_only'}
+                    className="flex-1 bg-gray-800 rounded-lg px-3 py-2 text-white outline-none disabled:opacity-50"
                   />
                   <span className="text-sm text-gray-300">ETH</span>
                 </div>
@@ -2697,15 +2752,15 @@ const PerpsModal = ({
             <div className="bg-[#252525] rounded-xl px-3 py-3 mb-5">
               <div className="text-gray-400 text-xs uppercase tracking-wide mb-2">Deterministic Flow</div>
               <ol className="text-xs text-gray-300 space-y-1 list-decimal list-inside">
-                {depositAmountNum > 0 && (needsUsdcConvert ? (
+                {depositMode !== 'gas_only' && (needsUsdcConvert ? (
                   <li>Convert missing UA balance to Base USDC</li>
                 ) : (
                   <li>Skip USDC convert (already available in UA)</li>
                 ))}
-                {depositAmountNum > 0 && <li>Transfer Base USDC to owner EOA</li>}
-                {gasTopUpNum > 0 && <li>Convert UA balance to Base ETH</li>}
-                {gasTopUpNum > 0 && <li>Transfer Base ETH to owner EOA</li>}
-                {depositAmountNum <= 0 && gasTopUpNum <= 0 && <li>Enter USDC and/or ETH amount to fund owner EOA</li>}
+                {depositMode !== 'gas_only' && <li>Transfer Base USDC to owner EOA</li>}
+                {depositMode !== 'usdc_only' && <li>Convert UA balance to Base ETH</li>}
+                {depositMode !== 'usdc_only' && <li>Transfer Base ETH to owner EOA</li>}
+                {!canDeposit && <li>Enter the required amount(s) for selected mode</li>}
               </ol>
             </div>
 
@@ -2714,7 +2769,7 @@ const PerpsModal = ({
               disabled={isLoading || !canDeposit}
               className="w-full bg-accent-dynamic text-black font-bold py-4 rounded-2xl disabled:bg-gray-700 disabled:text-gray-400"
             >
-              {isLoading ? loadingStatus || 'Depositing...' : 'Deposit to Perps Wallet'}
+              {isLoading ? loadingStatus || depositCtaLabel : depositCtaLabel}
             </button>
 
             <div className="mt-4">
