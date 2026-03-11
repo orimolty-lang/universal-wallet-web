@@ -2384,6 +2384,58 @@ const PerpsModal = ({
       if (!traderAddress) {
         throw new Error('Could not determine owner EOA address. Please reconnect wallet.');
       }
+      const walletProvider = walletClient as unknown as { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
+      const parseChainId = (hexChainId: unknown) => {
+        if (typeof hexChainId !== 'string') return NaN;
+        try {
+          return Number(BigInt(hexChainId));
+        } catch {
+          return NaN;
+        }
+      };
+      const ensureWalletOnBase = async () => {
+        const currentChainRaw = await walletProvider.request({ method: 'eth_chainId' });
+        let currentChain = parseChainId(currentChainRaw);
+        if (currentChain === 8453) {
+          addDebug('Wallet chain verified: Base (8453)');
+          return;
+        }
+
+        addDebug(`Wallet chain ${Number.isFinite(currentChain) ? currentChain : 'unknown'} detected. Requesting switch to Base...`);
+        try {
+          await walletProvider.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: '0x2105' }],
+          });
+        } catch (switchErr) {
+          const err = switchErr as { code?: number; message?: string };
+          const msg = (err?.message || '').toLowerCase();
+          const unknownChain = err?.code === 4902 || msg.includes('unrecognized chain') || msg.includes('unknown chain');
+          if (!unknownChain) throw switchErr;
+
+          addDebug('Base chain not found in wallet. Attempting wallet_addEthereumChain...');
+          await walletProvider.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: '0x2105',
+              chainName: 'Base',
+              nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+              rpcUrls: ['https://mainnet.base.org'],
+              blockExplorerUrls: ['https://basescan.org'],
+            }],
+          });
+          await walletProvider.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: '0x2105' }],
+          });
+        }
+
+        currentChain = parseChainId(await walletProvider.request({ method: 'eth_chainId' }));
+        if (currentChain !== 8453) {
+          throw new Error(`Wallet must be on Base for Perps. Current chain: ${Number.isFinite(currentChain) ? currentChain : 'unknown'}`);
+        }
+        addDebug('Wallet switched to Base (8453)');
+      };
       addDebug(`Owner EOA trader: ${traderAddress.slice(0, 10)}...${traderAddress.slice(-8)}`);
 
       // Step 1: Encode USDC approval to Avantis Trading contract (REQUIRED!)
@@ -2463,16 +2515,14 @@ const PerpsModal = ({
         throw new Error('Transaction confirmation timeout');
       };
 
-      const valueHex = toBeHex(executionFee);
+      const valueHex = `0x${executionFee.toString(16)}`;
       const formatEth = (wei: bigint) => (Number(wei) / 1e18).toFixed(6);
       const formatGwei = (wei: bigint) => (Number(wei) / 1e9).toFixed(3);
       const asErrMsg = (e: unknown) => e instanceof Error ? e.message : String(e);
-      const walletProvider = walletClient as unknown as { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
       const approveTxParams = {
         from: traderAddress,
         to: BASE_USDC_ADDRESS,
         data: approveCalldata,
-        value: '0x0',
       };
       const tradeTxParams = {
         from: traderAddress,
@@ -2534,6 +2584,9 @@ const PerpsModal = ({
           `Insufficient ETH for approve + open trade. Need ~${formatEth(minNeededWei)} ETH, have ${formatEth(ownerEthWei)} ETH. Top up at least ~${formatEth(missingWei)} ETH and retry.`
         );
       }
+
+      setLoadingStatus('Ensuring Base network...');
+      await ensureWalletOnBase();
 
       // Extra diagnostics using the same wallet provider that will send the transaction.
       setLoadingStatus('Collecting wallet send context...');
