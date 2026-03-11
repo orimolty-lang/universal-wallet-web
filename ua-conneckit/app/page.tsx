@@ -2464,6 +2464,63 @@ const PerpsModal = ({
       };
 
       const valueHex = toBeHex(executionFee);
+      const formatEth = (wei: bigint) => (Number(wei) / 1e18).toFixed(6);
+
+      // Preflight check for native ETH needed by:
+      // 1) USDC approve gas, 2) openTrade gas, 3) openTrade execution fee value
+      setLoadingStatus('Checking owner EOA gas...');
+      const rpcCall = async (method: string, params: unknown[]) => {
+        const resp = await fetch('https://mainnet.base.org', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', method, params, id: 1 }),
+        }).then(r => r.json());
+        return resp?.result as string | undefined;
+      };
+
+      const [ethBalanceHex, gasPriceHex] = await Promise.all([
+        rpcCall('eth_getBalance', [traderAddress, 'latest']),
+        rpcCall('eth_gasPrice', []),
+      ]);
+      const ownerEthWei = ethBalanceHex ? BigInt(ethBalanceHex) : BigInt(0);
+      const gasPriceWei = gasPriceHex ? BigInt(gasPriceHex) : BigInt(1_500_000_000); // 1.5 gwei fallback
+
+      // Conservative fallbacks if estimateGas fails.
+      let approveGas = BigInt(80_000);
+      let tradeGas = BigInt(450_000);
+      try {
+        const approveGasHex = await rpcCall('eth_estimateGas', [{
+          from: traderAddress,
+          to: BASE_USDC_ADDRESS,
+          data: approveCalldata,
+          value: '0x0',
+        }]);
+        if (approveGasHex) approveGas = BigInt(approveGasHex);
+      } catch {
+        addDebug('approve gas estimation failed, using fallback 80k');
+      }
+      try {
+        const tradeGasHex = await rpcCall('eth_estimateGas', [{
+          from: traderAddress,
+          to: AVANTIS_TRADING_ADDRESS,
+          data: openTradeCalldata,
+          value: valueHex,
+        }]);
+        if (tradeGasHex) tradeGas = BigInt(tradeGasHex);
+      } catch {
+        addDebug('openTrade gas estimation failed, using fallback 450k');
+      }
+
+      const gasCostWei = ((approveGas + tradeGas) * gasPriceWei * BigInt(120)) / BigInt(100); // +20% buffer
+      const minNeededWei = executionFee + gasCostWei;
+      addDebug(`EOA ETH: ${formatEth(ownerEthWei)}, Required ETH: ${formatEth(minNeededWei)} (fee ${formatEth(executionFee)} + gas ${formatEth(gasCostWei)})`);
+
+      if (ownerEthWei < minNeededWei) {
+        const missingWei = minNeededWei - ownerEthWei;
+        throw new Error(
+          `Insufficient ETH for approve + open trade. Need ~${formatEth(minNeededWei)} ETH, have ${formatEth(ownerEthWei)} ETH. Top up at least ~${formatEth(missingWei)} ETH and retry.`
+        );
+      }
 
       setLoadingStatus('Approving USDC from owner EOA...');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
