@@ -2830,6 +2830,11 @@ const PerpsModal = ({
         functionName: 'approve',
         args: [AVANTIS_TRADING_ADDRESS as `0x${string}`, AVANTIS_APPROVAL_CAP_USDC],
       });
+      const approveZeroCalldata = encodeFunctionData({
+        abi: ERC20_APPROVE_ABI,
+        functionName: 'approve',
+        args: [AVANTIS_TRADING_ADDRESS as `0x${string}`, BigInt(0)],
+      });
       
       console.log('[Perps] USDC approval calldata:', approveCalldata);
 
@@ -3024,19 +3029,39 @@ const PerpsModal = ({
       addDebug(`Current allowance to trading: ${allowanceBeforeWei.toString()} (cap ${AVANTIS_APPROVAL_CAP_USDC.toString()})`);
 
       const approvalNeeded = allowanceBeforeWei < requiredAllowanceWei;
-      if (approvalNeeded) {
+      const sendApproveAndWait = async (approvalData: `0x${string}`, logMessage: string) => {
         setLoadingStatus('Approving USDC from owner EOA...');
-        addDebug('Allowance below required amount, sending 10,000 USDC cap approval...');
-        const approveHash = await walletProvider.request({
+        addDebug(logMessage);
+        const hash = await walletProvider.request({
           method: 'eth_sendTransaction',
-          params: [approveTxParams],
+          params: [{ ...approveTxParams, data: approvalData }],
         }) as string;
-        addDebug(`Approve tx hash: ${approveHash}`);
-        await waitReceipt(approveHash);
+        addDebug(`Approve tx hash: ${hash}`);
+        const receipt = await waitReceipt(hash) as { status?: string };
+        addDebug(`Approve receipt status: ${receipt?.status || 'unknown'}`);
+        return receipt?.status === '0x1';
+      };
 
-        const allowanceAfterHex = await walletCall('eth_call', [{ to: BASE_USDC_ADDRESS, data: allowanceCalldata }, 'latest']);
-        const allowanceAfterWei = typeof allowanceAfterHex === 'string' ? BigInt(allowanceAfterHex) : BigInt(0);
+      if (approvalNeeded) {
+        await sendApproveAndWait(approveCalldata, 'Allowance below required amount, sending 10,000 USDC cap approval...');
+        let allowanceAfterHex = await walletCall('eth_call', [{ to: BASE_USDC_ADDRESS, data: allowanceCalldata }, 'latest']);
+        let allowanceAfterWei = typeof allowanceAfterHex === 'string' ? BigInt(allowanceAfterHex) : BigInt(0);
         addDebug(`Allowance after approve: ${allowanceAfterWei.toString()}`);
+
+        // Some tokens require approve(0) before changing a non-zero allowance.
+        if (allowanceAfterWei < requiredAllowanceWei) {
+          addDebug('Allowance still insufficient; attempting reset-to-zero then re-approve.');
+          await sendApproveAndWait(approveZeroCalldata, 'Resetting allowance to 0...');
+          const allowanceAfterResetHex = await walletCall('eth_call', [{ to: BASE_USDC_ADDRESS, data: allowanceCalldata }, 'latest']);
+          const allowanceAfterResetWei = typeof allowanceAfterResetHex === 'string' ? BigInt(allowanceAfterResetHex) : BigInt(0);
+          addDebug(`Allowance after reset: ${allowanceAfterResetWei.toString()}`);
+
+          await sendApproveAndWait(approveCalldata, 'Re-applying 10,000 USDC cap approval...');
+          allowanceAfterHex = await walletCall('eth_call', [{ to: BASE_USDC_ADDRESS, data: allowanceCalldata }, 'latest']);
+          allowanceAfterWei = typeof allowanceAfterHex === 'string' ? BigInt(allowanceAfterHex) : BigInt(0);
+          addDebug(`Allowance after re-approve: ${allowanceAfterWei.toString()}`);
+        }
+
         if (allowanceAfterWei < requiredAllowanceWei) {
           throw new Error(
             `USDC allowance still below required amount after approve. required=${requiredAllowanceWei.toString()}, current=${allowanceAfterWei.toString()}`
@@ -3287,7 +3312,12 @@ const PerpsModal = ({
             <div className="flex items-center justify-between px-4 mb-3">
               <div className="w-10 h-10" />
               <h2 className="text-white text-lg font-bold flex items-center gap-2">
-                <span>🔥</span> Perps
+                <img
+                  src="https://www.avantisfi.com/images/avantis-logo.svg"
+                  alt="Avantis"
+                  className="w-5 h-5"
+                />
+                Perps
               </h2>
               <button className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center">
                 <span className="text-gray-400">⏱</span>
@@ -3489,16 +3519,6 @@ const PerpsModal = ({
             <div className="px-4 mt-4">
               <button className="w-full text-center text-accent-dynamic py-2">
                 View All
-              </button>
-            </div>
-
-            {/* Deposit Button */}
-            <div className="px-4 mt-2">
-              <button
-                onClick={() => setView('deposit')}
-                className="w-full bg-accent-dynamic text-black font-bold py-4 rounded-full text-2xl"
-              >
-                Deposit
               </button>
             </div>
 
