@@ -2824,17 +2824,17 @@ const PerpsModal = ({
       };
       addDebug(`Owner EOA trader: ${traderAddress.slice(0, 10)}...${traderAddress.slice(-8)}`);
 
-      // Step 1: Prepare capped USDC approval calldata (used only if allowance is insufficient).
-      const approveCalldata = encodeFunctionData({
+      const approvalSpenders = [
+        { label: 'trading', address: AVANTIS_TRADING_ADDRESS as `0x${string}` },
+        { label: 'trading storage', address: AVANTIS_TRADING_STORAGE_ADDRESS as `0x${string}` },
+      ];
+      const buildApproveCalldata = (spender: `0x${string}`, amount: bigint) => encodeFunctionData({
         abi: ERC20_APPROVE_ABI,
         functionName: 'approve',
-        args: [AVANTIS_TRADING_ADDRESS as `0x${string}`, AVANTIS_APPROVAL_CAP_USDC],
+        args: [spender, amount],
       });
-      const approveZeroCalldata = encodeFunctionData({
-        abi: ERC20_APPROVE_ABI,
-        functionName: 'approve',
-        args: [AVANTIS_TRADING_ADDRESS as `0x${string}`, BigInt(0)],
-      });
+      // Default approve payload used for gas estimation only.
+      const approveCalldata = buildApproveCalldata(approvalSpenders[0].address, AVANTIS_APPROVAL_CAP_USDC);
       
       console.log('[Perps] USDC approval calldata:', approveCalldata);
 
@@ -3011,11 +3011,6 @@ const PerpsModal = ({
         addDebug(`WARNING: wallet chainId ${walletChainId} is not Base (8453).`);
       }
 
-      const allowanceCalldata = encodeFunctionData({
-        abi: ERC20_ALLOWANCE_ABI,
-        functionName: 'allowance',
-        args: [traderAddress as `0x${string}`, AVANTIS_TRADING_ADDRESS as `0x${string}`],
-      });
       const requiredAllowanceWei = positionSizeUSDC;
       addDebug(`Allowance required (USDC 6d): ${requiredAllowanceWei.toString()}`);
       if (requiredAllowanceWei > AVANTIS_APPROVAL_CAP_USDC) {
@@ -3024,11 +3019,6 @@ const PerpsModal = ({
         );
       }
 
-      const allowanceBeforeHex = await walletCall('eth_call', [{ to: BASE_USDC_ADDRESS, data: allowanceCalldata }, 'latest']);
-      const allowanceBeforeWei = typeof allowanceBeforeHex === 'string' ? BigInt(allowanceBeforeHex) : BigInt(0);
-      addDebug(`Current allowance to trading: ${allowanceBeforeWei.toString()} (cap ${AVANTIS_APPROVAL_CAP_USDC.toString()})`);
-
-      const approvalNeeded = allowanceBeforeWei < requiredAllowanceWei;
       const sendApproveAndWait = async (approvalData: `0x${string}`, logMessage: string) => {
         setLoadingStatus('Approving USDC from owner EOA...');
         addDebug(logMessage);
@@ -3041,34 +3031,48 @@ const PerpsModal = ({
         addDebug(`Approve receipt status: ${receipt?.status || 'unknown'}`);
         return receipt?.status === '0x1';
       };
-
-      if (approvalNeeded) {
-        await sendApproveAndWait(approveCalldata, 'Allowance below required amount, sending 10,000 USDC cap approval...');
-        let allowanceAfterHex = await walletCall('eth_call', [{ to: BASE_USDC_ADDRESS, data: allowanceCalldata }, 'latest']);
-        let allowanceAfterWei = typeof allowanceAfterHex === 'string' ? BigInt(allowanceAfterHex) : BigInt(0);
-        addDebug(`Allowance after approve: ${allowanceAfterWei.toString()}`);
-
-        // Some tokens require approve(0) before changing a non-zero allowance.
-        if (allowanceAfterWei < requiredAllowanceWei) {
-          addDebug('Allowance still insufficient; attempting reset-to-zero then re-approve.');
-          await sendApproveAndWait(approveZeroCalldata, 'Resetting allowance to 0...');
-          const allowanceAfterResetHex = await walletCall('eth_call', [{ to: BASE_USDC_ADDRESS, data: allowanceCalldata }, 'latest']);
-          const allowanceAfterResetWei = typeof allowanceAfterResetHex === 'string' ? BigInt(allowanceAfterResetHex) : BigInt(0);
-          addDebug(`Allowance after reset: ${allowanceAfterResetWei.toString()}`);
-
-          await sendApproveAndWait(approveCalldata, 'Re-applying 10,000 USDC cap approval...');
-          allowanceAfterHex = await walletCall('eth_call', [{ to: BASE_USDC_ADDRESS, data: allowanceCalldata }, 'latest']);
-          allowanceAfterWei = typeof allowanceAfterHex === 'string' ? BigInt(allowanceAfterHex) : BigInt(0);
-          addDebug(`Allowance after re-approve: ${allowanceAfterWei.toString()}`);
+      const readAllowanceForSpender = async (spender: `0x${string}`, label: string) => {
+        const allowanceCalldata = encodeFunctionData({
+          abi: ERC20_ALLOWANCE_ABI,
+          functionName: 'allowance',
+          args: [traderAddress as `0x${string}`, spender],
+        });
+        const allowanceHex = await walletCall('eth_call', [{ to: BASE_USDC_ADDRESS, data: allowanceCalldata }, 'latest']);
+        const allowanceWei = typeof allowanceHex === 'string' ? BigInt(allowanceHex) : BigInt(0);
+        addDebug(`Current allowance to ${label}: ${allowanceWei.toString()} (cap ${AVANTIS_APPROVAL_CAP_USDC.toString()})`);
+        return allowanceWei;
+      };
+      const ensureAllowanceForSpender = async (spender: `0x${string}`, label: string) => {
+        let allowanceWei = await readAllowanceForSpender(spender, label);
+        if (allowanceWei >= requiredAllowanceWei) {
+          addDebug(`Sufficient existing USDC allowance for ${label}; skipping approve step.`);
+          return;
         }
 
-        if (allowanceAfterWei < requiredAllowanceWei) {
+        await sendApproveAndWait(
+          buildApproveCalldata(spender, AVANTIS_APPROVAL_CAP_USDC),
+          `Allowance below required for ${label}, sending 10,000 USDC cap approval...`,
+        );
+        allowanceWei = await readAllowanceForSpender(spender, label);
+
+        // Some wallets/tokens require approve(0) before changing a non-zero allowance.
+        if (allowanceWei < requiredAllowanceWei) {
+          addDebug(`Allowance for ${label} still insufficient; attempting reset-to-zero then re-approve.`);
+          await sendApproveAndWait(buildApproveCalldata(spender, BigInt(0)), `Resetting ${label} allowance to 0...`);
+          addDebug(`Allowance after ${label} reset: ${(await readAllowanceForSpender(spender, label)).toString()}`);
+          await sendApproveAndWait(buildApproveCalldata(spender, AVANTIS_APPROVAL_CAP_USDC), `Re-applying 10,000 USDC cap approval for ${label}...`);
+          allowanceWei = await readAllowanceForSpender(spender, label);
+        }
+
+        if (allowanceWei < requiredAllowanceWei) {
           throw new Error(
-            `USDC allowance still below required amount after approve. required=${requiredAllowanceWei.toString()}, current=${allowanceAfterWei.toString()}`
+            `USDC allowance still below required amount for ${label}. required=${requiredAllowanceWei.toString()}, current=${allowanceWei.toString()}`
           );
         }
-      } else {
-        addDebug('Sufficient existing USDC allowance detected; skipping approve step.');
+      };
+
+      for (const spender of approvalSpenders) {
+        await ensureAllowanceForSpender(spender.address, spender.label);
       }
 
       setLoadingStatus('Opening position from owner EOA...');
@@ -3311,11 +3315,11 @@ const PerpsModal = ({
             {/* Header */}
             <div className="flex items-center justify-between px-4 mb-3">
               <div className="w-10 h-10" />
-              <h2 className="text-white text-lg font-bold flex items-center gap-2">
+              <h2 className="text-white text-2xl font-bold flex items-center gap-2">
                 <img
                   src="https://www.avantisfi.com/images/avantis-logo.svg"
                   alt="Avantis"
-                  className="w-5 h-5"
+                  className="w-7 h-7"
                 />
                 Perps
               </h2>
