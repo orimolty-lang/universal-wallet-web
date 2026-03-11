@@ -1872,7 +1872,6 @@ const PerpsModal = ({
   const [debugLog, setDebugLog] = useState<string[]>([]);
   const [showDebug, setShowDebug] = useState(false);
   const [depositAmount, setDepositAmount] = useState<string>('');
-  const [includeGasTopUp, setIncludeGasTopUp] = useState(true);
   const [gasTopUpAmount, setGasTopUpAmount] = useState('0.0007');
   const [ownerEOA, setOwnerEOA] = useState<string>("");
   const [eoaUsdcBalance, setEoaUsdcBalance] = useState<number>(0);
@@ -2118,12 +2117,14 @@ const PerpsModal = ({
     addDebug(`Deposit start -> owner EOA ${ownerEOA}`);
 
     try {
-      const amountStr = depositAmount.trim();
-      const amount = parseFloat(amountStr);
-      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a valid USDC amount in Deposit.');
+      const amount = parseFloat(depositAmount.trim());
+      const ethTarget = parseFloat(gasTopUpAmount.trim());
+      const shouldFundUsdc = Number.isFinite(amount) && amount > 0;
+      const shouldFundEth = Number.isFinite(ethTarget) && ethTarget > 0;
+      if (!shouldFundUsdc && !shouldFundEth) {
+        throw new Error('Enter USDC deposit and/or ETH gas top-up amount.');
+      }
       const walletClient = primaryWallet.getWalletClient();
-      const EPS_USDC = 0.000001;
-      const EPS_ETH = 0.000000001;
 
       const sendWithExpiryRetry = async (
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2162,78 +2163,59 @@ const PerpsModal = ({
         throw lastErr;
       };
 
-      // Always continue from current owner EOA balances so retries are idempotent.
-      let ownerBalances = await fetchOwnerBalances(ownerEOA);
-      setEoaUsdcBalance(ownerBalances.usdc);
-      setEoaEthBalance(ownerBalances.eth);
-
-      // 1) Ensure owner EOA has at least requested USDC amount on Base.
-      const usdcMissingOnEoa = Math.max(0, amount - ownerBalances.usdc);
-      if (usdcMissingOnEoa > EPS_USDC) {
-        // Convert only what's still missing on EOA and not already available as Base USDC in UA.
-        const usdcConvertNeeded = Math.max(0, usdcMissingOnEoa - uaBaseUsdcAvailable);
-        if (usdcConvertNeeded > EPS_USDC) {
-          addDebug(`EOA missing ${usdcMissingOnEoa.toFixed(4)} USDC. UA Base USDC ${uaBaseUsdcAvailable.toFixed(4)} -> converting ${usdcConvertNeeded.toFixed(4)} USDC`);
+      // 1) USDC funding path (optional)
+      if (shouldFundUsdc) {
+        const usdcShortfall = Math.max(0, amount - uaBaseUsdcAvailable);
+        if (usdcShortfall > 0.000001) {
+          addDebug(`Base USDC in UA: ${uaBaseUsdcAvailable.toFixed(4)}. Converting shortfall: ${usdcShortfall.toFixed(4)} USDC`);
           await sendWithExpiryRetry(
             () => universalAccount.createConvertTransaction({
-              expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: usdcConvertNeeded.toString() },
+              expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: usdcShortfall.toString() },
               chainId: CHAIN_ID.BASE_MAINNET,
             }),
             'Convert missing USDC to Base',
           );
         } else {
-          addDebug(`UA Base USDC already covers EOA shortfall (${usdcMissingOnEoa.toFixed(4)}). Skipping USDC convert step`);
+          addDebug(`Sufficient Base USDC already in UA (${uaBaseUsdcAvailable.toFixed(4)}). Skipping USDC convert step`);
         }
 
         await sendWithExpiryRetry(
           () => universalAccount.createTransferTransaction({
             token: { chainId: CHAIN_ID.BASE_MAINNET, address: BASE_USDC_ADDRESS },
-            amount: usdcMissingOnEoa.toString(),
+            amount: amount.toString(),
             receiver: ownerEOA,
           }),
-          'Transfer missing USDC to owner EOA',
+          'Transfer USDC to owner EOA',
         );
       } else {
-        addDebug(`Owner EOA already has sufficient USDC (${ownerBalances.usdc.toFixed(4)}). Skipping USDC convert + transfer`);
+        addDebug('USDC deposit amount not set. Skipping USDC funding step');
       }
 
-      // Refresh owner balances before ETH decision.
-      ownerBalances = await fetchOwnerBalances(ownerEOA);
-      setEoaUsdcBalance(ownerBalances.usdc);
-      setEoaEthBalance(ownerBalances.eth);
+      // 2) ETH gas top-up path (optional and can run independently)
+      if (shouldFundEth) {
+        await sendWithExpiryRetry(
+          () => universalAccount.createConvertTransaction({
+            expectToken: { type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethTarget.toString() },
+            chainId: CHAIN_ID.BASE_MAINNET,
+          }),
+          'Convert to Base ETH',
+        );
 
-      // 3) Optional ETH top-up (explicitly controlled in the modal UI)
-      if (includeGasTopUp) {
-        const ethTarget = parseFloat(gasTopUpAmount.trim());
-        if (!Number.isFinite(ethTarget) || ethTarget <= 0) {
-          throw new Error('Enter a valid ETH gas top-up amount.');
-        }
-        const ethMissingOnEoa = Math.max(0, ethTarget - ownerBalances.eth);
-        if (ethMissingOnEoa > EPS_ETH) {
-          addDebug(`EOA missing ${ethMissingOnEoa.toFixed(6)} ETH for gas top-up`);
-          await sendWithExpiryRetry(
-            () => universalAccount.createConvertTransaction({
-              expectToken: { type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethMissingOnEoa.toString() },
-              chainId: CHAIN_ID.BASE_MAINNET,
-            }),
-            'Convert missing ETH to Base',
-          );
-
-          await sendWithExpiryRetry(
-            () => universalAccount.createUniversalTransaction({
-              chainId: CHAIN_ID.BASE_MAINNET,
-              expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethMissingOnEoa.toString() }],
-              transactions: [{ to: ownerEOA as `0x${string}`, data: '0x', value: toBeHex(BigInt(Math.floor(ethMissingOnEoa * 1e18))) }],
-            }),
-            'Transfer missing ETH to owner EOA',
-          );
-        } else {
-          addDebug(`Owner EOA already has sufficient ETH (${ownerBalances.eth.toFixed(6)}). Skipping ETH top-up`);
-        }
+        await sendWithExpiryRetry(
+          () => universalAccount.createUniversalTransaction({
+            chainId: CHAIN_ID.BASE_MAINNET,
+            expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethTarget.toString() }],
+            transactions: [{ to: ownerEOA as `0x${string}`, data: '0x', value: toBeHex(BigInt(Math.floor(ethTarget * 1e18))) }],
+          }),
+          'Transfer ETH to owner EOA',
+        );
       } else {
-        addDebug('ETH gas top-up skipped by user setting');
+        addDebug('ETH gas top-up amount not set. Skipping ETH funding step');
       }
 
+      const updated = await fetchOwnerBalances(ownerEOA);
+      setEoaUsdcBalance(updated.usdc);
+      setEoaEthBalance(updated.eth);
       setLoadingStatus('Deposit complete');
       addDebug('Deposit complete');
     } catch (e) {
@@ -2502,9 +2484,10 @@ const PerpsModal = ({
   };
 
   const canTrade = collateral && parseFloat(collateral) > 0 && parseFloat(collateral) <= usdcBalance;
-  const canDeposit = parseFloat(depositAmount) > 0 && (!includeGasTopUp || parseFloat(gasTopUpAmount) > 0);
+  const canDeposit = (parseFloat(depositAmount) > 0) || (parseFloat(gasTopUpAmount) > 0);
   const depositAmountNum = parseFloat(depositAmount) || 0;
-  const needsUsdcConvert = depositAmountNum > uaBaseUsdcAvailable + 0.000001;
+  const gasTopUpNum = parseFloat(gasTopUpAmount) || 0;
+  const needsUsdcConvert = depositAmountNum > 0 && (depositAmountNum > uaBaseUsdcAvailable + 0.000001);
 
   return (
     <BottomSheet isOpen={isOpen} onClose={() => { setView('markets'); onClose(); }}>
@@ -2683,35 +2666,23 @@ const PerpsModal = ({
               </div>
 
               <div className="bg-[#252525] rounded-xl px-3 py-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-white text-sm font-medium">Include ETH gas top-up</div>
-                    <div className="text-[11px] text-gray-500">Recommended so owner EOA can submit approve/open trade txs.</div>
-                  </div>
-                  <button
-                    onClick={() => setIncludeGasTopUp(!includeGasTopUp)}
-                    className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                      includeGasTopUp ? 'bg-accent-dynamic text-black' : 'bg-gray-700 text-gray-300'
-                    }`}
-                  >
-                    {includeGasTopUp ? 'ON' : 'OFF'}
-                  </button>
+                <div>
+                  <div className="text-white text-sm font-medium">ETH Gas Top-up (optional)</div>
+                  <div className="text-[11px] text-gray-500">Works together with USDC deposit, or independently on its own.</div>
                 </div>
 
-                {includeGasTopUp && (
-                  <div className="mt-3 flex items-center gap-2">
-                    <input
-                      type="number"
-                      value={gasTopUpAmount}
-                      onChange={(e) => setGasTopUpAmount(e.target.value)}
-                      placeholder="0.0007"
-                      min="0"
-                      step="0.0001"
-                      className="flex-1 bg-gray-800 rounded-lg px-3 py-2 text-white outline-none"
-                    />
-                    <span className="text-sm text-gray-300">ETH</span>
-                  </div>
-                )}
+                <div className="mt-3 flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={gasTopUpAmount}
+                    onChange={(e) => setGasTopUpAmount(e.target.value)}
+                    placeholder="0.0007"
+                    min="0"
+                    step="0.0001"
+                    className="flex-1 bg-gray-800 rounded-lg px-3 py-2 text-white outline-none"
+                  />
+                  <span className="text-sm text-gray-300">ETH</span>
+                </div>
               </div>
 
               <div className="bg-[#252525] rounded-xl px-3 py-3">
@@ -2726,14 +2697,15 @@ const PerpsModal = ({
             <div className="bg-[#252525] rounded-xl px-3 py-3 mb-5">
               <div className="text-gray-400 text-xs uppercase tracking-wide mb-2">Deterministic Flow</div>
               <ol className="text-xs text-gray-300 space-y-1 list-decimal list-inside">
-                {needsUsdcConvert ? (
+                {depositAmountNum > 0 && (needsUsdcConvert ? (
                   <li>Convert missing UA balance to Base USDC</li>
                 ) : (
                   <li>Skip USDC convert (already available in UA)</li>
-                )}
-                <li>Transfer Base USDC to owner EOA</li>
-                {includeGasTopUp && <li>Convert UA balance to Base ETH</li>}
-                {includeGasTopUp && <li>Transfer Base ETH to owner EOA</li>}
+                ))}
+                {depositAmountNum > 0 && <li>Transfer Base USDC to owner EOA</li>}
+                {gasTopUpNum > 0 && <li>Convert UA balance to Base ETH</li>}
+                {gasTopUpNum > 0 && <li>Transfer Base ETH to owner EOA</li>}
+                {depositAmountNum <= 0 && gasTopUpNum <= 0 && <li>Enter USDC and/or ETH amount to fund owner EOA</li>}
               </ol>
             </div>
 
