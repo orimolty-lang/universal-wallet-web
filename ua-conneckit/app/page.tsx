@@ -2040,6 +2040,34 @@ const PerpsModal = ({
     }
   }, [isOpen, view]);
 
+  const fetchOwnerBalances = useCallback(async (eoa: string) => {
+    const [ethRes, usdcRes] = await Promise.all([
+      fetch('https://mainnet.base.org', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_getBalance', params: [eoa, 'latest'], id: 1 }),
+      }).then(r => r.json()),
+      fetch('https://mainnet.base.org', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'eth_call',
+          params: [{ to: BASE_USDC_ADDRESS, data: encodeFunctionData({
+            abi: [{ name: 'balanceOf', type: 'function', inputs: [{ name: 'account', type: 'address' }], outputs: [{ type: 'uint256' }] }],
+            functionName: 'balanceOf',
+            args: [eoa as `0x${string}`],
+          }) }, 'latest'],
+          id: 1,
+        }),
+      }).then(r => r.json()),
+    ]);
+
+    const eth = ethRes?.result ? Number(BigInt(ethRes.result)) / 1e18 : 0;
+    const usdc = usdcRes?.result ? Number(BigInt(usdcRes.result)) / 1e6 : 0;
+    return { eth, usdc };
+  }, [BASE_USDC_ADDRESS]);
+
   // Resolve owner EOA and balances (execution wallet)
   useEffect(() => {
     const loadOwner = async () => {
@@ -2061,30 +2089,7 @@ const PerpsModal = ({
         setOwnerEOA(eoa);
         if (!eoa) return;
 
-        const [ethRes, usdcRes] = await Promise.all([
-          fetch('https://mainnet.base.org', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_getBalance', params: [eoa, 'latest'], id: 1 }),
-          }).then(r => r.json()),
-          fetch('https://mainnet.base.org', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              jsonrpc: '2.0',
-              method: 'eth_call',
-              params: [{ to: BASE_USDC_ADDRESS, data: encodeFunctionData({
-                abi: [{ name: 'balanceOf', type: 'function', inputs: [{ name: 'account', type: 'address' }], outputs: [{ type: 'uint256' }] }],
-                functionName: 'balanceOf',
-                args: [eoa as `0x${string}`],
-              }) }, 'latest'],
-              id: 1,
-            }),
-          }).then(r => r.json()),
-        ]);
-
-        const eth = ethRes?.result ? Number(BigInt(ethRes.result)) / 1e18 : 0;
-        const usdc = usdcRes?.result ? Number(BigInt(usdcRes.result)) / 1e6 : 0;
+        const { eth, usdc } = await fetchOwnerBalances(eoa);
         setEoaEthBalance(eth);
         setEoaUsdcBalance(usdc);
       } catch {
@@ -2092,7 +2097,7 @@ const PerpsModal = ({
       }
     };
     loadOwner();
-  }, [isOpen, primaryWallet, universalAccount]);
+  }, [isOpen, primaryWallet, universalAccount, fetchOwnerBalances]);
 
   const handleSelectMarket = (market: typeof PERPS_MARKETS[0]) => {
     setSelectedMarket(market);
@@ -2117,6 +2122,8 @@ const PerpsModal = ({
       const amount = parseFloat(amountStr);
       if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a valid USDC amount in Deposit.');
       const walletClient = primaryWallet.getWalletClient();
+      const EPS_USDC = 0.000001;
+      const EPS_ETH = 0.000000001;
 
       const sendWithExpiryRetry = async (
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2155,55 +2162,74 @@ const PerpsModal = ({
         throw lastErr;
       };
 
-      // 1) Convert only missing USDC if current UA USDC is insufficient
-      const usdcShortfall = Math.max(0, amount - uaBaseUsdcAvailable);
-      if (usdcShortfall > 0.000001) {
-        addDebug(`Base USDC available in UA: ${uaBaseUsdcAvailable.toFixed(4)}. Converting shortfall: ${usdcShortfall.toFixed(4)} USDC`);
-        await sendWithExpiryRetry(
-          () => universalAccount.createConvertTransaction({
-            expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: usdcShortfall.toString() },
-            chainId: CHAIN_ID.BASE_MAINNET,
-          }),
-          'Convert missing USDC to Base',
-        );
-      } else {
-        addDebug(`Sufficient Base USDC already in UA (${uaBaseUsdcAvailable.toFixed(4)}). Skipping convert step`);
-      }
+      // Always continue from current owner EOA balances so retries are idempotent.
+      let ownerBalances = await fetchOwnerBalances(ownerEOA);
+      setEoaUsdcBalance(ownerBalances.usdc);
+      setEoaEthBalance(ownerBalances.eth);
 
-      // 2) Transfer USDC to owner EOA
-      await sendWithExpiryRetry(
-        () => universalAccount.createTransferTransaction({
-          token: { chainId: CHAIN_ID.BASE_MAINNET, address: BASE_USDC_ADDRESS },
-          amount: amount.toString(),
-          receiver: ownerEOA,
-        }),
-        'Transfer USDC to owner EOA',
-      );
-
-      // 3) Optional ETH top-up (explicitly controlled in the modal UI)
-      if (includeGasTopUp) {
-        const ethAmount = gasTopUpAmount.trim();
-        const ethAmountNum = parseFloat(ethAmount);
-        if (!Number.isFinite(ethAmountNum) || ethAmountNum <= 0) {
-          throw new Error('Enter a valid ETH gas top-up amount.');
+      // 1) Ensure owner EOA has at least requested USDC amount on Base.
+      const usdcMissingOnEoa = Math.max(0, amount - ownerBalances.usdc);
+      if (usdcMissingOnEoa > EPS_USDC) {
+        // Convert only what's still missing on EOA and not already available as Base USDC in UA.
+        const usdcConvertNeeded = Math.max(0, usdcMissingOnEoa - uaBaseUsdcAvailable);
+        if (usdcConvertNeeded > EPS_USDC) {
+          addDebug(`EOA missing ${usdcMissingOnEoa.toFixed(4)} USDC. UA Base USDC ${uaBaseUsdcAvailable.toFixed(4)} -> converting ${usdcConvertNeeded.toFixed(4)} USDC`);
+          await sendWithExpiryRetry(
+            () => universalAccount.createConvertTransaction({
+              expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: usdcConvertNeeded.toString() },
+              chainId: CHAIN_ID.BASE_MAINNET,
+            }),
+            'Convert missing USDC to Base',
+          );
+        } else {
+          addDebug(`UA Base USDC already covers EOA shortfall (${usdcMissingOnEoa.toFixed(4)}). Skipping USDC convert step`);
         }
 
         await sendWithExpiryRetry(
-          () => universalAccount.createConvertTransaction({
-            expectToken: { type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethAmount },
-            chainId: CHAIN_ID.BASE_MAINNET,
+          () => universalAccount.createTransferTransaction({
+            token: { chainId: CHAIN_ID.BASE_MAINNET, address: BASE_USDC_ADDRESS },
+            amount: usdcMissingOnEoa.toString(),
+            receiver: ownerEOA,
           }),
-          'Convert to Base ETH',
+          'Transfer missing USDC to owner EOA',
         );
+      } else {
+        addDebug(`Owner EOA already has sufficient USDC (${ownerBalances.usdc.toFixed(4)}). Skipping USDC convert + transfer`);
+      }
 
-        await sendWithExpiryRetry(
-          () => universalAccount.createUniversalTransaction({
-            chainId: CHAIN_ID.BASE_MAINNET,
-            expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethAmount }],
-            transactions: [{ to: ownerEOA as `0x${string}`, data: '0x', value: toBeHex(BigInt(Math.floor(ethAmountNum * 1e18))) }],
-          }),
-          'Transfer ETH to owner EOA',
-        );
+      // Refresh owner balances before ETH decision.
+      ownerBalances = await fetchOwnerBalances(ownerEOA);
+      setEoaUsdcBalance(ownerBalances.usdc);
+      setEoaEthBalance(ownerBalances.eth);
+
+      // 3) Optional ETH top-up (explicitly controlled in the modal UI)
+      if (includeGasTopUp) {
+        const ethTarget = parseFloat(gasTopUpAmount.trim());
+        if (!Number.isFinite(ethTarget) || ethTarget <= 0) {
+          throw new Error('Enter a valid ETH gas top-up amount.');
+        }
+        const ethMissingOnEoa = Math.max(0, ethTarget - ownerBalances.eth);
+        if (ethMissingOnEoa > EPS_ETH) {
+          addDebug(`EOA missing ${ethMissingOnEoa.toFixed(6)} ETH for gas top-up`);
+          await sendWithExpiryRetry(
+            () => universalAccount.createConvertTransaction({
+              expectToken: { type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethMissingOnEoa.toString() },
+              chainId: CHAIN_ID.BASE_MAINNET,
+            }),
+            'Convert missing ETH to Base',
+          );
+
+          await sendWithExpiryRetry(
+            () => universalAccount.createUniversalTransaction({
+              chainId: CHAIN_ID.BASE_MAINNET,
+              expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethMissingOnEoa.toString() }],
+              transactions: [{ to: ownerEOA as `0x${string}`, data: '0x', value: toBeHex(BigInt(Math.floor(ethMissingOnEoa * 1e18))) }],
+            }),
+            'Transfer missing ETH to owner EOA',
+          );
+        } else {
+          addDebug(`Owner EOA already has sufficient ETH (${ownerBalances.eth.toFixed(6)}). Skipping ETH top-up`);
+        }
       } else {
         addDebug('ETH gas top-up skipped by user setting');
       }
