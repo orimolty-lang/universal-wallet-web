@@ -2826,28 +2826,49 @@ const PerpsModal = ({
       if (shouldFundEth) {
         setDepositStage('gas');
         setLoadingStatus('Preparing ETH gas top-up...');
-        const ethShortfall = Math.max(0, ethTarget - uaBaseEthAvailable);
-        if (ethShortfall > 0.00000001) {
-          addDebug(`Base ETH in UA: ${uaBaseEthAvailable.toFixed(6)}. Converting shortfall: ${ethShortfall.toFixed(6)} ETH`);
+        const transferEthToOwner = async () => {
           await sendWithExpiryRetry(
-            () => universalAccount.createConvertTransaction({
-              expectToken: { type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethShortfall.toString() },
+            () => universalAccount.createUniversalTransaction({
               chainId: CHAIN_ID.BASE_MAINNET,
+              expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethTarget.toString() }],
+              transactions: [{ to: ownerEOA as `0x${string}`, data: '0x', value: toBeHex(BigInt(Math.floor(ethTarget * 1e18))) }],
             }),
-            'Convert to Base ETH',
+            'Transfer ETH to owner EOA',
           );
-        } else {
-          addDebug(`Sufficient Base ETH already in UA (${uaBaseEthAvailable.toFixed(6)}). Skipping ETH convert step`);
-        }
+        };
 
-        await sendWithExpiryRetry(
-          () => universalAccount.createUniversalTransaction({
-            chainId: CHAIN_ID.BASE_MAINNET,
-            expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethTarget.toString() }],
-            transactions: [{ to: ownerEOA as `0x${string}`, data: '0x', value: toBeHex(BigInt(Math.floor(ethTarget * 1e18))) }],
-          }),
-          'Transfer ETH to owner EOA',
-        );
+        // Try transfer first: if UA already has Base ETH, no convert should be needed.
+        try {
+          addDebug(`Attempting direct ETH transfer from UA (target ${ethTarget.toFixed(6)} ETH)...`);
+          await transferEthToOwner();
+        } catch (transferErr) {
+          const transferMsg = transferErr instanceof Error ? transferErr.message : String(transferErr);
+          addDebug(`Direct ETH transfer failed: ${transferMsg}`);
+
+          // Fallback: convert ETH and retry transfer once.
+          const ethShortfall = Math.max(0, ethTarget - uaBaseEthAvailable);
+          const convertAmount = ethShortfall > 0.00000001 ? ethShortfall : ethTarget;
+          addDebug(`Trying ETH convert fallback (${convertAmount.toFixed(6)} ETH) then retrying transfer...`);
+          try {
+            await sendWithExpiryRetry(
+              () => universalAccount.createConvertTransaction({
+                expectToken: { type: SUPPORTED_TOKEN_TYPE.ETH, amount: convertAmount.toString() },
+                chainId: CHAIN_ID.BASE_MAINNET,
+              }),
+              'Convert to Base ETH',
+            );
+          } catch (convertErr) {
+            const convertMsg = convertErr instanceof Error ? convertErr.message : String(convertErr);
+            if (convertMsg.toLowerCase().includes('no tx generated')) {
+              // Common when ETH is already sufficient in UA routes.
+              addDebug('ETH convert returned no tx. Retrying transfer anyway...');
+            } else {
+              throw convertErr;
+            }
+          }
+
+          await transferEthToOwner();
+        }
       } else {
         addDebug('ETH gas top-up amount not set. Skipping ETH funding step');
       }
