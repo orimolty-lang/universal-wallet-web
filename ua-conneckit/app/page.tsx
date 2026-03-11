@@ -1821,13 +1821,13 @@ const PYTH_ABI = [
 // ALL Avantis Perps Markets (from SDK docs)
 const PERPS_MARKETS = [
   // Crypto (Group 0 & 1)
-  { index: 0, symbol: 'BTC', name: 'Bitcoin', maxLeverage: 500, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/bitcoin/info/logo.png', color: '#F7931A', group: 'crypto' },
-  { index: 1, symbol: 'ETH', name: 'Ethereum', maxLeverage: 500, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png', color: '#627EEA', group: 'crypto' },
-  { index: 2, symbol: 'SOL', name: 'Solana', maxLeverage: 100, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png', color: '#9945FF', group: 'crypto' },
-  { index: 3, symbol: 'LINK', name: 'Chainlink', maxLeverage: 75, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x514910771AF9Ca656af840dff83E8264EcF986CA/logo.png', color: '#375BD2', group: 'crypto' },
-  { index: 4, symbol: 'DOGE', name: 'Dogecoin', maxLeverage: 75, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/doge/info/logo.png', color: '#C2A633', group: 'crypto' },
-  { index: 5, symbol: 'XRP', name: 'Ripple', maxLeverage: 75, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/xrp/info/logo.png', color: '#23292F', group: 'crypto' },
-  { index: 6, symbol: 'BNB', name: 'BNB', maxLeverage: 75, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/binance/info/logo.png', color: '#F3BA2F', group: 'crypto' },
+  { index: 0, symbol: 'BTC', name: 'Bitcoin', maxLeverage: 100, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/bitcoin/info/logo.png', color: '#F7931A', group: 'crypto' },
+  { index: 1, symbol: 'ETH', name: 'Ethereum', maxLeverage: 100, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png', color: '#627EEA', group: 'crypto' },
+  { index: 2, symbol: 'SOL', name: 'Solana', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png', color: '#9945FF', group: 'crypto' },
+  { index: 3, symbol: 'LINK', name: 'Chainlink', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x514910771AF9Ca656af840dff83E8264EcF986CA/logo.png', color: '#375BD2', group: 'crypto' },
+  { index: 4, symbol: 'DOGE', name: 'Dogecoin', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/doge/info/logo.png', color: '#C2A633', group: 'crypto' },
+  { index: 5, symbol: 'XRP', name: 'Ripple', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/xrp/info/logo.png', color: '#23292F', group: 'crypto' },
+  { index: 6, symbol: 'BNB', name: 'BNB', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/binance/info/logo.png', color: '#F3BA2F', group: 'crypto' },
   { index: 7, symbol: 'ADA', name: 'Cardano', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/cardano/info/logo.png', color: '#0033AD', group: 'crypto' },
   { index: 8, symbol: 'AVAX', name: 'Avalanche', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/avalanchec/info/logo.png', color: '#E84142', group: 'crypto' },
   { index: 9, symbol: 'MATIC', name: 'Polygon', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png', color: '#8247E5', group: 'crypto' },
@@ -1845,8 +1845,8 @@ const PERPS_MARKETS = [
   { index: 31, symbol: 'GBP', name: 'British Pound', maxLeverage: 500, logo: 'https://flagcdn.com/w80/gb.png', color: '#012169', group: 'forex' },
   { index: 32, symbol: 'JPY', name: 'Japanese Yen', maxLeverage: 500, logo: 'https://flagcdn.com/w80/jp.png', color: '#BC002D', group: 'forex' },
   // Commodities (Group 3)
-  { index: 20, symbol: 'XAU', name: 'Gold', maxLeverage: 250, logo: 'https://s2.coinmarketcap.com/static/img/coins/64x64/5176.png', color: '#FFD700', group: 'commodities' },
-  { index: 21, symbol: 'XAG', name: 'Silver', maxLeverage: 100, logo: 'https://s2.coinmarketcap.com/static/img/coins/64x64/5180.png', color: '#C0C0C0', group: 'commodities' },
+  { index: 20, symbol: 'XAU', name: 'Gold', maxLeverage: 50, logo: 'https://s2.coinmarketcap.com/static/img/coins/64x64/5176.png', color: '#FFD700', group: 'commodities' },
+  { index: 21, symbol: 'XAG', name: 'Silver', maxLeverage: 50, logo: 'https://s2.coinmarketcap.com/static/img/coins/64x64/5180.png', color: '#C0C0C0', group: 'commodities' },
 ];
 
 // Legacy format for compatibility
@@ -2146,7 +2146,10 @@ const PerpsModal = ({
   const handleSelectMarket = (market: typeof PERPS_MARKETS[0]) => {
     setSelectedMarket(market);
     const pair = AVANTIS_PAIRS.find(p => p.name === `${market.symbol}/USD`);
-    if (pair) setSelectedPair(pair);
+    if (pair) {
+      setSelectedPair(pair);
+      setLeverage((prev) => Math.min(prev, pair.maxLeverage));
+    }
     setView('trade');
   };
 
@@ -2302,6 +2305,11 @@ const PerpsModal = ({
       const collateralAmount = parseFloat(collateral);
       const tpPrice = takeProfit ? parseFloat(takeProfit) : 0;
       const slPrice = stopLoss ? parseFloat(stopLoss) : 0;
+      if (leverage > selectedPair.maxLeverage) {
+        setError(`Max leverage for ${selectedPair.name} is ${selectedPair.maxLeverage}x.`);
+        setIsLoading(false);
+        return;
+      }
       
       // Minimum position size validation ($100 for most pairs)
       const positionValue = collateralAmount * leverage;
@@ -3087,14 +3095,14 @@ const PerpsModal = ({
               <input
                 type="range"
                 min="2"
-                max={selectedMarket.maxLeverage}
+                max={selectedPair.maxLeverage}
                 value={leverage}
                 onChange={(e) => setLeverage(Number(e.target.value))}
                 className="w-full accent-dynamic h-2"
               />
               <div className="flex justify-between text-xs text-gray-500 mt-1">
                 <span>2x</span>
-                <span>{selectedMarket.maxLeverage}x</span>
+                <span>{selectedPair.maxLeverage}x</span>
               </div>
             </div>
 
