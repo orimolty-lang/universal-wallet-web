@@ -250,6 +250,7 @@ interface OpenPerpsPosition {
   markPrice: number;
   pnlUsd: number;
   pnlPercent: number;
+  liquidationPrice: number;
   tpPrice: number;
   slPrice: number;
   timestamp: number;
@@ -2050,6 +2051,14 @@ const PerpsModal = ({
   const [openPositions, setOpenPositions] = useState<OpenPerpsPosition[]>([]);
   const [positionsLoading, setPositionsLoading] = useState(false);
   const [positionEdits, setPositionEdits] = useState<Record<string, { tp: string; sl: string }>>({});
+  const [perpsActivity, setPerpsActivity] = useState<Array<{
+    id: string;
+    action: string;
+    pairName: string;
+    txHash: string;
+    status: 'pending' | 'confirmed' | 'failed';
+    timestamp: number;
+  }>>([]);
   const BASE_USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
   const marketPricesRef = useRef<Record<string, { price: number; change24h: number }>>({});
   
@@ -2083,6 +2092,25 @@ const PerpsModal = ({
   useEffect(() => {
     marketPricesRef.current = marketPrices;
   }, [marketPrices]);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('perps_activity_v1');
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setPerpsActivity(parsed.slice(0, 25));
+      }
+    } catch {
+      // ignore storage parsing issues
+    }
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem('perps_activity_v1', JSON.stringify(perpsActivity.slice(0, 25)));
+    } catch {
+      // ignore storage quota issues
+    }
+  }, [perpsActivity]);
 
   // Unified UA balance shown in Perps flows
   const unifiedUaBalance = useMemo(() => {
@@ -2388,6 +2416,33 @@ const PerpsModal = ({
     }).then(r => r.json());
     return resp?.result as string | undefined;
   }, []);
+  const waitForBaseReceipt = useCallback(async (txHash: string) => {
+    for (let i = 0; i < 40; i++) {
+      const receipt = await baseRpcCall('eth_getTransactionReceipt', [txHash]);
+      if (receipt) return receipt;
+      await new Promise(r => setTimeout(r, 2000));
+    }
+    throw new Error('Transaction confirmation timeout');
+  }, [baseRpcCall]);
+  const upsertPerpsActivity = useCallback((entry: {
+    id: string;
+    action: string;
+    pairName: string;
+    txHash: string;
+    status: 'pending' | 'confirmed' | 'failed';
+    timestamp: number;
+  }) => {
+    setPerpsActivity((prev) => {
+      const idx = prev.findIndex((x) => x.id === entry.id);
+      const next = [...prev];
+      if (idx >= 0) {
+        next[idx] = { ...next[idx], ...entry };
+      } else {
+        next.unshift(entry);
+      }
+      return next.slice(0, 25);
+    });
+  }, []);
 
   const fetchExecutionFeeWei = useCallback(async (updateCount = 1) => {
     try {
@@ -2464,16 +2519,24 @@ const PerpsModal = ({
             timestamp: bigint;
           };
           if (!trade || trade.trader.toLowerCase() === '0x0000000000000000000000000000000000000000') continue;
-          const collateralUsd = Number(trade.positionSizeUSDC) / 1e6;
-          if (!Number.isFinite(collateralUsd) || collateralUsd <= 0) continue;
           const leverageNum = Number(trade.leverage) / 1e10;
-          const sizeUsd = collateralUsd * leverageNum;
+          const initialCollateralUsd = Number(trade.initialPosToken) / 1e6;
+          const rawPositionUsd = Number(trade.positionSizeUSDC) / 1e6;
+          const collateralUsd = initialCollateralUsd > 0
+            ? initialCollateralUsd
+            : leverageNum > 0
+              ? rawPositionUsd / leverageNum
+              : rawPositionUsd;
+          if (!Number.isFinite(collateralUsd) || collateralUsd <= 0) continue;
+          const sizeUsd = rawPositionUsd > 0 ? rawPositionUsd : collateralUsd * leverageNum;
           const entryPrice = Number(trade.openPrice) / 1e10;
           const markPrice = marketPricesRef.current[market.symbol]?.price || entryPrice;
           const pnlUsd = trade.buy
             ? ((markPrice - entryPrice) / Math.max(entryPrice, 1e-9)) * sizeUsd
             : ((entryPrice - markPrice) / Math.max(entryPrice, 1e-9)) * sizeUsd;
           const pnlPercent = collateralUsd > 0 ? (pnlUsd / collateralUsd) * 100 : 0;
+          const liqDistance = (entryPrice / Math.max(leverageNum, 1e-9)) * 0.9;
+          const liquidationPrice = trade.buy ? entryPrice - liqDistance : entryPrice + liqDistance;
           positions.push({
             id: `${pairIndex}-${i}`,
             pairName,
@@ -2488,6 +2551,7 @@ const PerpsModal = ({
             markPrice,
             pnlUsd,
             pnlPercent,
+            liquidationPrice,
             tpPrice: Number(trade.tp) > 0 ? Number(trade.tp) / 1e10 : 0,
             slPrice: Number(trade.sl) > 0 ? Number(trade.sl) / 1e10 : 0,
             timestamp: Number(trade.timestamp),
@@ -3082,12 +3146,42 @@ const PerpsModal = ({
         params: [tradeTxParams],
       }) as string;
       addDebug(`OpenTrade tx hash: ${tradeHash}`);
+      upsertPerpsActivity({
+        id: `open-${tradeHash}`,
+        action: 'Open',
+        pairName: selectedPair.name,
+        txHash: tradeHash,
+        status: 'pending',
+        timestamp: Date.now(),
+      });
 
       setTxResult({ txId: tradeHash, status: 'pending' });
       setLoadingStatus('Position opening...');
-      setTimeout(() => {
-        fetchOpenPositions();
-      }, 6000);
+      const tradeReceipt = await waitReceipt(tradeHash) as { status?: string };
+      addDebug(`OpenTrade receipt status: ${tradeReceipt?.status || 'unknown'}`);
+      if (tradeReceipt?.status !== '0x1') {
+        upsertPerpsActivity({
+          id: `open-${tradeHash}`,
+          action: 'Open',
+          pairName: selectedPair.name,
+          txHash: tradeHash,
+          status: 'failed',
+          timestamp: Date.now(),
+        });
+        throw new Error(`OpenTrade transaction failed onchain. status=${tradeReceipt?.status || 'unknown'}`);
+      }
+      upsertPerpsActivity({
+        id: `open-${tradeHash}`,
+        action: 'Open',
+        pairName: selectedPair.name,
+        txHash: tradeHash,
+        status: 'confirmed',
+        timestamp: Date.now(),
+      });
+      setTxResult({ txId: tradeHash, status: 'complete' });
+      setLoadingStatus('Position opened');
+      await fetchOpenPositions();
+      setTimeout(() => setTxResult(null), 2500);
 
       // Reset form
       setCollateral('');
@@ -3176,9 +3270,40 @@ const PerpsModal = ({
         }],
       }) as string;
       addDebug(`Close position tx: ${txHash}`);
+      upsertPerpsActivity({
+        id: `close-${txHash}`,
+        action: 'Close',
+        pairName: position.pairName,
+        txHash,
+        status: 'pending',
+        timestamp: Date.now(),
+      });
       setTxResult({ txId: txHash, status: 'pending' });
       setLoadingStatus('Closing position...');
+      const closeReceipt = await waitForBaseReceipt(txHash) as unknown as { status?: string };
+      addDebug(`Close receipt status: ${closeReceipt?.status || 'unknown'}`);
+      if (closeReceipt?.status !== '0x1') {
+        upsertPerpsActivity({
+          id: `close-${txHash}`,
+          action: 'Close',
+          pairName: position.pairName,
+          txHash,
+          status: 'failed',
+          timestamp: Date.now(),
+        });
+        throw new Error(`Close transaction failed onchain. status=${closeReceipt?.status || 'unknown'}`);
+      }
+      upsertPerpsActivity({
+        id: `close-${txHash}`,
+        action: 'Close',
+        pairName: position.pairName,
+        txHash,
+        status: 'confirmed',
+        timestamp: Date.now(),
+      });
+      setTxResult({ txId: txHash, status: 'complete' });
       await fetchOpenPositions();
+      setTimeout(() => setTxResult(null), 2500);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(`Close failed: ${msg}`);
@@ -3244,8 +3369,39 @@ const PerpsModal = ({
         }],
       }) as string;
       addDebug(`Update TP/SL tx: ${txHash}`);
+      upsertPerpsActivity({
+        id: `update-${txHash}`,
+        action: 'Update TP/SL',
+        pairName: position.pairName,
+        txHash,
+        status: 'pending',
+        timestamp: Date.now(),
+      });
       setTxResult({ txId: txHash, status: 'pending' });
+      const updateReceipt = await waitForBaseReceipt(txHash) as unknown as { status?: string };
+      addDebug(`Update TP/SL receipt status: ${updateReceipt?.status || 'unknown'}`);
+      if (updateReceipt?.status !== '0x1') {
+        upsertPerpsActivity({
+          id: `update-${txHash}`,
+          action: 'Update TP/SL',
+          pairName: position.pairName,
+          txHash,
+          status: 'failed',
+          timestamp: Date.now(),
+        });
+        throw new Error(`Update TP/SL transaction failed onchain. status=${updateReceipt?.status || 'unknown'}`);
+      }
+      upsertPerpsActivity({
+        id: `update-${txHash}`,
+        action: 'Update TP/SL',
+        pairName: position.pairName,
+        txHash,
+        status: 'confirmed',
+        timestamp: Date.now(),
+      });
+      setTxResult({ txId: txHash, status: 'complete' });
       await fetchOpenPositions();
+      setTimeout(() => setTxResult(null), 2500);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(`TP/SL update failed: ${msg}`);
@@ -3386,6 +3542,8 @@ const PerpsModal = ({
                         <div className="text-gray-400">Collateral <span className="text-white">${p.collateralUsd.toFixed(2)}</span></div>
                         <div className="text-gray-400">Entry <span className="text-white">${p.entryPrice.toFixed(2)}</span></div>
                         <div className="text-gray-400">Mark <span className="text-white">${p.markPrice.toFixed(2)}</span></div>
+                        <div className="text-gray-400">Liq <span className={p.isLong ? 'text-red-300' : 'text-green-300'}>${p.liquidationPrice.toFixed(2)}</span></div>
+                        <div className="text-gray-400">PnL <span className={p.pnlUsd >= 0 ? 'text-green-400' : 'text-red-400'}>{p.pnlUsd >= 0 ? '+' : ''}${p.pnlUsd.toFixed(2)}</span></div>
                       </div>
                       <div className="grid grid-cols-2 gap-2 mb-2">
                         <input
@@ -3418,6 +3576,32 @@ const PerpsModal = ({
                         >
                           Close
                         </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Recent Activity */}
+            <div className="px-4 mb-4">
+              <div className="text-gray-500 font-semibold mb-2">Recent Activity</div>
+              {perpsActivity.length === 0 ? (
+                <div className="text-xs text-gray-500 bg-[#151515] border border-gray-800 rounded-xl px-3 py-2">
+                  No recent perps activity yet.
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {perpsActivity.slice(0, 6).map((a) => (
+                    <div key={a.id} className="bg-[#151515] border border-gray-800 rounded-xl px-3 py-2 flex items-center justify-between">
+                      <div>
+                        <div className="text-xs text-white">{a.action} • {a.pairName}</div>
+                        <div className="text-[10px] text-gray-500">{new Date(a.timestamp).toLocaleString()}</div>
+                      </div>
+                      <div className={`text-[11px] font-semibold ${
+                        a.status === 'confirmed' ? 'text-green-400' : a.status === 'failed' ? 'text-red-400' : 'text-yellow-300'
+                      }`}>
+                        {a.status}
                       </div>
                     </div>
                   ))}
