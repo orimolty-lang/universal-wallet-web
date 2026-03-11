@@ -2203,43 +2203,6 @@ const PerpsModal = ({
         : Number(usdcAsset.amount || 0);
     return Number.isFinite(totalAmount) ? totalAmount : 0;
   }, [assets]);
-  const uaBaseEthAvailable = useMemo(() => {
-    const assetList = (assets?.assets || []) as Array<{
-      tokenType?: string;
-      symbol?: string;
-      amount?: number | string;
-      chainAggregation?: Array<{
-        amount?: number | string;
-        token?: { chainId?: number | string };
-      }>;
-    }>;
-
-    const ethAsset = assetList.find((a) => {
-      const tokenType = a.tokenType?.toUpperCase();
-      const symbol = a.symbol?.toUpperCase();
-      return tokenType === 'ETH' || symbol === 'ETH';
-    });
-    if (!ethAsset) return 0;
-
-    const baseEntry = ethAsset.chainAggregation?.find(
-      (c) => Number(c.token?.chainId) === CHAIN_ID.BASE_MAINNET
-    );
-    if (baseEntry) {
-      const baseAmount =
-        typeof baseEntry.amount === 'string'
-          ? parseFloat(baseEntry.amount)
-          : Number(baseEntry.amount || 0);
-      return Number.isFinite(baseAmount) ? baseAmount : 0;
-    }
-
-    // Fallback when chain breakdown isn't available from SDK response.
-    const totalAmount =
-      typeof ethAsset.amount === 'string'
-        ? parseFloat(ethAsset.amount)
-        : Number(ethAsset.amount || 0);
-    return Number.isFinite(totalAmount) ? totalAmount : 0;
-  }, [assets]);
-
   // Back-compat for existing trading UI labels/checks
   const usdcBalance = unifiedUaBalance;
 
@@ -2754,6 +2717,42 @@ const PerpsModal = ({
         throw new Error('Enter a valid ETH gas top-up amount for this mode.');
       }
       const walletClient = primaryWallet.getWalletClient();
+      const latestAssets = assets;
+      const getBaseTokenAvailable = (tokenSymbol: 'USDC' | 'ETH') => {
+        const assetList = (((latestAssets as unknown) as { assets?: unknown[] })?.assets || []) as Array<{
+          tokenType?: string;
+          symbol?: string;
+          amount?: number | string;
+          chainAggregation?: Array<{
+            amount?: number | string;
+            token?: { chainId?: number | string };
+          }>;
+        }>;
+        const match = assetList.find((a) => {
+          const tokenType = a.tokenType?.toUpperCase();
+          const symbol = a.symbol?.toUpperCase();
+          return tokenType === tokenSymbol || symbol === tokenSymbol;
+        });
+        if (!match) return 0;
+        const baseEntry = match.chainAggregation?.find(
+          (c) => Number(c.token?.chainId) === CHAIN_ID.BASE_MAINNET
+        );
+        if (baseEntry) {
+          const baseAmount =
+            typeof baseEntry.amount === 'string'
+              ? parseFloat(baseEntry.amount)
+              : Number(baseEntry.amount || 0);
+          return Number.isFinite(baseAmount) ? baseAmount : 0;
+        }
+        const totalAmount =
+          typeof match.amount === 'string'
+            ? parseFloat(match.amount)
+            : Number(match.amount || 0);
+        return Number.isFinite(totalAmount) ? totalAmount : 0;
+      };
+      const currentBaseUsdcAvailable = getBaseTokenAvailable('USDC');
+      const currentBaseEthAvailable = getBaseTokenAvailable('ETH');
+      addDebug(`UA Base balances -> USDC: ${currentBaseUsdcAvailable.toFixed(4)}, ETH: ${currentBaseEthAvailable.toFixed(6)}`);
 
       const sendWithExpiryRetry = async (
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2796,9 +2795,9 @@ const PerpsModal = ({
       if (shouldFundUsdc) {
         setDepositStage('usdc');
         setLoadingStatus('Preparing USDC funding...');
-        const usdcShortfall = Math.max(0, amount - uaBaseUsdcAvailable);
+        const usdcShortfall = Math.max(0, amount - currentBaseUsdcAvailable);
         if (usdcShortfall > 0.000001) {
-          addDebug(`Base USDC in UA: ${uaBaseUsdcAvailable.toFixed(4)}. Converting shortfall: ${usdcShortfall.toFixed(4)} USDC`);
+          addDebug(`Base USDC in UA: ${currentBaseUsdcAvailable.toFixed(4)}. Converting shortfall: ${usdcShortfall.toFixed(4)} USDC`);
           await sendWithExpiryRetry(
             () => universalAccount.createConvertTransaction({
               expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: usdcShortfall.toString() },
@@ -2807,7 +2806,7 @@ const PerpsModal = ({
             'Convert missing USDC to Base',
           );
         } else {
-          addDebug(`Sufficient Base USDC already in UA (${uaBaseUsdcAvailable.toFixed(4)}). Skipping USDC convert step`);
+          addDebug(`Sufficient Base USDC already in UA (${currentBaseUsdcAvailable.toFixed(4)}). Skipping USDC convert step`);
         }
 
         await sendWithExpiryRetry(
@@ -2826,49 +2825,28 @@ const PerpsModal = ({
       if (shouldFundEth) {
         setDepositStage('gas');
         setLoadingStatus('Preparing ETH gas top-up...');
-        const transferEthToOwner = async () => {
+        const ethShortfall = Math.max(0, ethTarget - currentBaseEthAvailable);
+        if (ethShortfall > 0.00000001) {
+          addDebug(`Base ETH in UA: ${currentBaseEthAvailable.toFixed(6)}. Converting shortfall: ${ethShortfall.toFixed(6)} ETH`);
           await sendWithExpiryRetry(
-            () => universalAccount.createUniversalTransaction({
+            () => universalAccount.createConvertTransaction({
+              expectToken: { type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethShortfall.toString() },
               chainId: CHAIN_ID.BASE_MAINNET,
-              expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethTarget.toString() }],
-              transactions: [{ to: ownerEOA as `0x${string}`, data: '0x', value: toBeHex(BigInt(Math.floor(ethTarget * 1e18))) }],
             }),
-            'Transfer ETH to owner EOA',
+            'Convert to Base ETH',
           );
-        };
-
-        // Try transfer first: if UA already has Base ETH, no convert should be needed.
-        try {
-          addDebug(`Attempting direct ETH transfer from UA (target ${ethTarget.toFixed(6)} ETH)...`);
-          await transferEthToOwner();
-        } catch (transferErr) {
-          const transferMsg = transferErr instanceof Error ? transferErr.message : String(transferErr);
-          addDebug(`Direct ETH transfer failed: ${transferMsg}`);
-
-          // Fallback: convert ETH and retry transfer once.
-          const ethShortfall = Math.max(0, ethTarget - uaBaseEthAvailable);
-          const convertAmount = ethShortfall > 0.00000001 ? ethShortfall : ethTarget;
-          addDebug(`Trying ETH convert fallback (${convertAmount.toFixed(6)} ETH) then retrying transfer...`);
-          try {
-            await sendWithExpiryRetry(
-              () => universalAccount.createConvertTransaction({
-                expectToken: { type: SUPPORTED_TOKEN_TYPE.ETH, amount: convertAmount.toString() },
-                chainId: CHAIN_ID.BASE_MAINNET,
-              }),
-              'Convert to Base ETH',
-            );
-          } catch (convertErr) {
-            const convertMsg = convertErr instanceof Error ? convertErr.message : String(convertErr);
-            if (convertMsg.toLowerCase().includes('no tx generated')) {
-              // Common when ETH is already sufficient in UA routes.
-              addDebug('ETH convert returned no tx. Retrying transfer anyway...');
-            } else {
-              throw convertErr;
-            }
-          }
-
-          await transferEthToOwner();
+        } else {
+          addDebug(`Sufficient Base ETH already in UA (${currentBaseEthAvailable.toFixed(6)}). Skipping ETH convert step`);
         }
+
+        await sendWithExpiryRetry(
+          () => universalAccount.createUniversalTransaction({
+            chainId: CHAIN_ID.BASE_MAINNET,
+            expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethTarget.toString() }],
+            transactions: [{ to: ownerEOA as `0x${string}`, data: '0x', value: toBeHex(BigInt(Math.floor(ethTarget * 1e18))) }],
+          }),
+          'Transfer ETH to owner EOA',
+        );
       } else {
         addDebug('ETH gas top-up amount not set. Skipping ETH funding step');
       }
