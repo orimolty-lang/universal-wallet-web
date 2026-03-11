@@ -2465,6 +2465,21 @@ const PerpsModal = ({
 
       const valueHex = toBeHex(executionFee);
       const formatEth = (wei: bigint) => (Number(wei) / 1e18).toFixed(6);
+      const formatGwei = (wei: bigint) => (Number(wei) / 1e9).toFixed(3);
+      const asErrMsg = (e: unknown) => e instanceof Error ? e.message : String(e);
+      const walletProvider = walletClient as unknown as { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
+      const approveTxParams = {
+        from: traderAddress,
+        to: BASE_USDC_ADDRESS,
+        data: approveCalldata,
+        value: '0x0',
+      };
+      const tradeTxParams = {
+        from: traderAddress,
+        to: AVANTIS_TRADING_ADDRESS,
+        data: openTradeCalldata,
+        value: valueHex,
+      };
 
       // Preflight check for native ETH needed by:
       // 1) USDC approve gas, 2) openTrade gas, 3) openTrade execution fee value
@@ -2476,6 +2491,14 @@ const PerpsModal = ({
           body: JSON.stringify({ jsonrpc: '2.0', method, params, id: 1 }),
         }).then(r => r.json());
         return resp?.result as string | undefined;
+      };
+      const walletCall = async (method: string, params: unknown[]) => {
+        try {
+          return await walletProvider.request({ method, params });
+        } catch (err) {
+          addDebug(`wallet ${method} failed: ${asErrMsg(err)}`);
+          return undefined;
+        }
       };
 
       const [ethBalanceHex, gasPriceHex] = await Promise.all([
@@ -2489,23 +2512,13 @@ const PerpsModal = ({
       let approveGas = BigInt(80_000);
       let tradeGas = BigInt(450_000);
       try {
-        const approveGasHex = await rpcCall('eth_estimateGas', [{
-          from: traderAddress,
-          to: BASE_USDC_ADDRESS,
-          data: approveCalldata,
-          value: '0x0',
-        }]);
+        const approveGasHex = await rpcCall('eth_estimateGas', [approveTxParams]);
         if (approveGasHex) approveGas = BigInt(approveGasHex);
       } catch {
         addDebug('approve gas estimation failed, using fallback 80k');
       }
       try {
-        const tradeGasHex = await rpcCall('eth_estimateGas', [{
-          from: traderAddress,
-          to: AVANTIS_TRADING_ADDRESS,
-          data: openTradeCalldata,
-          value: valueHex,
-        }]);
+        const tradeGasHex = await rpcCall('eth_estimateGas', [tradeTxParams]);
         if (tradeGasHex) tradeGas = BigInt(tradeGasHex);
       } catch {
         addDebug('openTrade gas estimation failed, using fallback 450k');
@@ -2522,30 +2535,53 @@ const PerpsModal = ({
         );
       }
 
+      // Extra diagnostics using the same wallet provider that will send the transaction.
+      setLoadingStatus('Collecting wallet send context...');
+      const [walletChainIdHex, walletAccountsRaw, walletBalanceHex, walletGasPriceHex, walletApproveGasHex, walletTradeGasHex] =
+        await Promise.all([
+          walletCall('eth_chainId', []),
+          walletCall('eth_accounts', []),
+          walletCall('eth_getBalance', [traderAddress, 'latest']),
+          walletCall('eth_gasPrice', []),
+          walletCall('eth_estimateGas', [approveTxParams]),
+          walletCall('eth_estimateGas', [tradeTxParams]),
+        ]);
+
+      const walletChainId = typeof walletChainIdHex === 'string' ? Number(BigInt(walletChainIdHex)) : NaN;
+      const walletAccounts = Array.isArray(walletAccountsRaw) ? walletAccountsRaw.map(a => String(a)) : [];
+      const walletPrimary = walletAccounts[0] || '';
+      const fromMatchesWalletPrimary = !!walletPrimary && walletPrimary.toLowerCase() === traderAddress.toLowerCase();
+      const walletBalanceWei = typeof walletBalanceHex === 'string' ? BigInt(walletBalanceHex) : BigInt(0);
+      const walletGasPriceWei = typeof walletGasPriceHex === 'string' ? BigInt(walletGasPriceHex) : gasPriceWei;
+      const walletApproveGas = typeof walletApproveGasHex === 'string' ? BigInt(walletApproveGasHex) : approveGas;
+      const walletTradeGas = typeof walletTradeGasHex === 'string' ? BigInt(walletTradeGasHex) : tradeGas;
+      const walletGasCostWei = ((walletApproveGas + walletTradeGas) * walletGasPriceWei * BigInt(120)) / BigInt(100);
+      const walletMinNeededWei = executionFee + walletGasCostWei;
+
+      addDebug(`Wallet context: chainId=${Number.isFinite(walletChainId) ? walletChainId : 'unknown'}, trader=${traderAddress}, walletPrimary=${walletPrimary || 'none'}`);
+      addDebug(`Wallet account match: ${fromMatchesWalletPrimary ? 'yes' : 'no'}`);
+      addDebug(`Wallet ETH: ${formatEth(walletBalanceWei)} | Wallet required ETH: ${formatEth(walletMinNeededWei)} (fee ${formatEth(executionFee)} + gas ${formatEth(walletGasCostWei)})`);
+      addDebug(`Wallet gasPrice: ${formatGwei(walletGasPriceWei)} gwei | approveGas: ${walletApproveGas.toString()} | tradeGas: ${walletTradeGas.toString()}`);
+      if (Number.isFinite(walletChainId) && walletChainId !== 8453) {
+        addDebug(`WARNING: wallet chainId ${walletChainId} is not Base (8453).`);
+      }
+
       setLoadingStatus('Approving USDC from owner EOA...');
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const approveHash = await (walletClient as any).request({
+      addDebug('Sending approve transaction...');
+      const approveHash = await walletProvider.request({
         method: 'eth_sendTransaction',
-        params: [{
-          from: traderAddress,
-          to: BASE_USDC_ADDRESS,
-          data: approveCalldata,
-          value: '0x0',
-        }],
+        params: [approveTxParams],
       }) as string;
+      addDebug(`Approve tx hash: ${approveHash}`);
       await waitReceipt(approveHash);
 
       setLoadingStatus('Opening position from owner EOA...');
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const tradeHash = await (walletClient as any).request({
+      addDebug(`Sending openTrade transaction (value ${formatEth(executionFee)} ETH)...`);
+      const tradeHash = await walletProvider.request({
         method: 'eth_sendTransaction',
-        params: [{
-          from: traderAddress,
-          to: AVANTIS_TRADING_ADDRESS,
-          data: openTradeCalldata,
-          value: valueHex,
-        }],
+        params: [tradeTxParams],
       }) as string;
+      addDebug(`OpenTrade tx hash: ${tradeHash}`);
 
       setTxResult({ txId: tradeHash, status: 'pending' });
       setLoadingStatus('Position opening...');
