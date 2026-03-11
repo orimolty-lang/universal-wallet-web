@@ -2420,17 +2420,24 @@ const PerpsModal = ({
     const loadOwner = async () => {
       if (!isOpen) return;
       try {
-        let eoa = "";
+        let eoa = '';
+        let walletAccount = '';
+        let ownerFromUa = '';
 
         if (primaryWallet) {
           const walletClient = primaryWallet.getWalletClient();
-          eoa = walletClient?.account?.address || "";
+          walletAccount = walletClient?.account?.address || '';
         }
 
-        // Fallback: derive owner from UA options when wallet client account isn't populated
-        if (!eoa && universalAccount) {
+        if (universalAccount) {
           const opts = await universalAccount.getSmartAccountOptions();
-          eoa = (opts?.ownerAddress as string) || "";
+          ownerFromUa = (opts?.ownerAddress as string) || '';
+        }
+
+        // Prefer the underlying owner EOA when available, since Perps executes from EOA.
+        eoa = ownerFromUa || walletAccount;
+        if (ownerFromUa && walletAccount && ownerFromUa.toLowerCase() !== walletAccount.toLowerCase()) {
+          addDebug(`Owner address override: wallet=${walletAccount.slice(0, 8)}... -> ownerEOA=${ownerFromUa.slice(0, 8)}...`);
         }
 
         setOwnerEOA(eoa);
@@ -4173,7 +4180,7 @@ const PerpsModal = ({
               <div className="flex justify-between items-center mb-2">
                 <span className="text-gray-400 text-sm">Collateral (USDC)</span>
                 <button 
-                  onClick={() => setCollateral(usdcBalance.toString())}
+                  onClick={() => setCollateral(eoaUsdcBalance.toString())}
                   className="text-accent-dynamic text-xs"
                 >
                   EOA USDC: ${usdcBalance.toFixed(2)}
@@ -4188,7 +4195,7 @@ const PerpsModal = ({
                   className="flex-1 bg-gray-700 rounded-lg px-3 py-3 text-white outline-none text-xl"
                 />
                 <button 
-                  onClick={() => setCollateral(usdcBalance.toString())}
+                  onClick={() => setCollateral(eoaUsdcBalance.toString())}
                   className="bg-gray-700 px-4 py-3 rounded-lg text-accent-dynamic text-sm"
                 >
                   MAX
