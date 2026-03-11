@@ -2562,7 +2562,7 @@ const PerpsModal = ({
           /* ========== MARKETS VIEW (Rainbow-style) ========== */
           <>
             {/* Header */}
-            <div className="flex items-center justify-between px-4 mb-4">
+            <div className="flex items-center justify-between px-4 mb-3">
               <div className="w-10 h-10" />
               <h2 className="text-white text-lg font-bold flex items-center gap-2">
                 <span>🔥</span> Perps
@@ -2572,10 +2572,34 @@ const PerpsModal = ({
               </button>
             </div>
 
-            {/* No Open Positions */}
-            <div className="px-4 mb-6">
-              <div className="text-center py-4">
-                <p className="text-white font-medium mb-1">No Open Positions</p>
+            {/* Available Balance Card */}
+            <div className="px-4 mb-5">
+              <div className="rounded-2xl border border-[#1f5048] bg-gradient-to-r from-[#112c2a] via-[#122f2a] to-[#112c2a] px-3 py-3 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-full bg-blue-500/20 border border-blue-400/40 flex items-center justify-center text-blue-300 text-xl">
+                    💲
+                  </div>
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wide text-gray-300 font-semibold">Available Balance</div>
+                    <div className="text-2xl font-bold text-[#1fd6c0]">${eoaUsdcBalance.toFixed(2)}</div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setView('deposit')}
+                  className="px-6 py-2.5 rounded-full bg-accent-dynamic text-black font-bold text-lg"
+                >
+                  Deposit
+                </button>
+              </div>
+            </div>
+
+            {/* Open Positions */}
+            <div className="px-4 mb-5">
+              <div className="text-gray-500 font-semibold mb-1">Open Positions</div>
+              <div className="text-gray-300 text-5xl font-bold mb-6">$0.00</div>
+              <div className="text-center py-2">
+                <div className="text-[#1fd6c0] text-4xl mb-2">∞</div>
+                <p className="text-white/90 font-semibold text-3xl mb-1">No Open Positions</p>
                 <button className="text-gray-500 text-sm flex items-center gap-1 mx-auto">
                   Learn more about Perps <span>›</span>
                 </button>
@@ -2584,17 +2608,17 @@ const PerpsModal = ({
 
             {/* Markets Header */}
             <div className="flex items-center justify-between px-4 mb-3">
-              <button className="text-white font-medium flex items-center gap-1">
+              <button className="text-white text-3xl font-semibold flex items-center gap-1">
                 Markets <span className="text-gray-500">›</span>
               </button>
               <div className="flex items-center gap-2">
-                <button className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center">
+                <button className="w-8 h-8 rounded-full bg-gray-800/90 border border-gray-700 flex items-center justify-center">
                   <span className="text-gray-400 text-sm">🔍</span>
                 </button>
                 <select 
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as 'volume' | 'price' | 'change')}
-                  className="bg-transparent text-gray-400 text-sm outline-none"
+                  className="bg-gray-900/80 border border-gray-700 rounded-full px-3 py-1 text-gray-300 text-sm outline-none"
                 >
                   <option value="volume">By Volume</option>
                   <option value="price">By Price</option>
@@ -2660,7 +2684,7 @@ const PerpsModal = ({
             <div className="px-4 mt-2">
               <button
                 onClick={() => setView('deposit')}
-                className="w-full bg-accent-dynamic text-black font-bold py-4 rounded-2xl"
+                className="w-full bg-accent-dynamic text-black font-bold py-4 rounded-full text-2xl"
               >
                 Deposit
               </button>
