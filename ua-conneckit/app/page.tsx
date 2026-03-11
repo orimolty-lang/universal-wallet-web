@@ -227,6 +227,7 @@ interface ProfileSettings {
 }
 
 interface PairLeverageLimits {
+  pairIndex?: number;
   standardMin: number;
   standardMax: number;
   zfpMin: number;
@@ -1766,11 +1767,26 @@ const ERC20_APPROVE_ABI = [
   },
 ] as const;
 
+const ERC20_ALLOWANCE_ABI = [
+  {
+    name: 'allowance',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'spender', type: 'address' },
+    ],
+    outputs: [{ name: 'amount', type: 'uint256' }],
+  },
+] as const;
+
 // Avantis Trading contract on Base mainnet (verified on Basescan)
 const AVANTIS_TRADING_ADDRESS = '0x44914408af82bC9983bbb330e3578E1105e11d4e';
 // USDC on Base
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const BASE_USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+// Cap allowance to 10,000 USDC (6 decimals), never unlimited.
+const AVANTIS_APPROVAL_CAP_USDC = BigInt(10_000 * 1_000_000);
 
 // Multicall3 on Base (standard address across all chains)
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1947,14 +1963,16 @@ const PerpsModal = ({
   };
   const [txResult, setTxResult] = useState<{ txId: string; status: string } | null>(null);
   const [sortBy, setSortBy] = useState<'volume' | 'price' | 'change'>('volume');
+  const selectedPairConfig = pairLeverageLimits[selectedPair.name];
+  const executionPairIndex = selectedPairConfig?.pairIndex ?? selectedPair.index;
   const activeLeverageLimits = useMemo(() => {
-    const limits = pairLeverageLimits[selectedPair.name];
+    const limits = selectedPairConfig;
     const standardMin = limits ? Math.max(2, Math.floor(limits.standardMin)) : 2;
     const standardMax = limits ? Math.max(standardMin, Math.floor(limits.standardMax)) : selectedPair.maxLeverage;
     const zfpMin = limits ? Math.max(2, Math.floor(limits.zfpMin)) : standardMin;
     const zfpMax = limits ? Math.max(zfpMin, Math.floor(limits.zfpMax)) : standardMax;
     return { standardMin, standardMax, zfpMin, zfpMax };
-  }, [pairLeverageLimits, selectedPair]);
+  }, [selectedPairConfig, selectedPair]);
   const zfpAvailable = activeLeverageLimits.zfpMax > 0;
   const leverageMin = isZeroFeeMode ? activeLeverageLimits.zfpMin : activeLeverageLimits.standardMin;
   const leverageMax = isZeroFeeMode ? activeLeverageLimits.zfpMax : activeLeverageLimits.standardMax;
@@ -2124,7 +2142,7 @@ const PerpsModal = ({
         if (!pairInfos || typeof pairInfos !== 'object') return;
 
         const limitsMap: Record<string, PairLeverageLimits> = {};
-        for (const infoRaw of Object.values(pairInfos)) {
+        for (const [pairIndexKey, infoRaw] of Object.entries(pairInfos)) {
           const info = infoRaw as {
             feed?: { attributes?: { symbol?: string } };
             leverages?: {
@@ -2137,6 +2155,7 @@ const PerpsModal = ({
           const symbol = info.feed?.attributes?.symbol;
           const leverages = info.leverages;
           if (!symbol || !leverages) continue;
+          const parsedPairIndex = Number(pairIndexKey);
 
           const pairName = parsePairNameFromSocketSymbol(symbol);
           const standardMin = Number(leverages.minLeverage ?? 2);
@@ -2146,6 +2165,7 @@ const PerpsModal = ({
           if (!Number.isFinite(standardMax) || standardMax <= 0) continue;
 
           limitsMap[pairName] = {
+            pairIndex: Number.isFinite(parsedPairIndex) ? parsedPairIndex : undefined,
             standardMin: Number.isFinite(standardMin) && standardMin > 0 ? standardMin : 2,
             standardMax,
             zfpMin: Number.isFinite(zfpMin) && zfpMin > 0 ? zfpMin : standardMin,
@@ -2423,10 +2443,13 @@ const PerpsModal = ({
       addDebug(`Collateral: $${collateralAmount}, Leverage: ${leverage}x, Position: $${positionValue}`);
       addDebug(`Pair: ${selectedPair.name}, Direction: ${isLong ? 'LONG' : 'SHORT'}`);
       addDebug(`Mode: ${isZeroFeeMode ? 'Zero Fee Perps (MARKET_ZERO_FEE)' : 'Standard Perps (MARKET)'}`);
+      if (executionPairIndex !== selectedPair.index) {
+        addDebug(`Pair index remap: UI ${selectedPair.index} -> Socket ${executionPairIndex}`);
+      }
       
       console.log('[Perps] Opening position:', {
         pair: selectedPair.name,
-        pairIndex: selectedPair.index,
+        pairIndex: executionPairIndex,
         isLong,
         leverage,
         collateral: collateralAmount,
@@ -2548,19 +2571,17 @@ const PerpsModal = ({
       };
       addDebug(`Owner EOA trader: ${traderAddress.slice(0, 10)}...${traderAddress.slice(-8)}`);
 
-      // Step 1: Encode USDC approval to Avantis Trading contract (REQUIRED!)
-      // Approve slightly more than needed to account for fees
-      const approveAmount = BigInt(Math.floor(collateralAmount * 1.1 * 1e6)); // +10% buffer
+      // Step 1: Prepare capped USDC approval calldata (used only if allowance is insufficient).
       const approveCalldata = encodeFunctionData({
         abi: ERC20_APPROVE_ABI,
         functionName: 'approve',
-        args: [AVANTIS_TRADING_ADDRESS as `0x${string}`, approveAmount],
+        args: [AVANTIS_TRADING_ADDRESS as `0x${string}`, AVANTIS_APPROVAL_CAP_USDC],
       });
       
       console.log('[Perps] USDC approval calldata:', approveCalldata);
 
       // Step 2: Encode the openTrade call (inner calldata)
-      const timestamp = BigInt(Math.floor(Date.now() / 1000)); // Unix timestamp in seconds
+      const timestamp = BigInt(0); // SDK-compatible for new orders
       const orderTypeValue = isZeroFeeMode ? 3 : 0; // 0=MARKET, 3=MARKET_ZERO_FEE
       const innerOpenTradeCalldata = encodeFunctionData({
         abi: AVANTIS_TRADING_ABI,
@@ -2568,7 +2589,7 @@ const PerpsModal = ({
         args: [
           {
             trader: traderAddress as `0x${string}`,
-            pairIndex: BigInt(selectedPair.index),
+            pairIndex: BigInt(executionPairIndex),
             index: BigInt(0), // Contract finds first empty index
             initialPosToken: BigInt(0), // Not used for USDC collateral
             positionSizeUSDC: positionSizeUSDC,
@@ -2601,13 +2622,13 @@ const PerpsModal = ({
         executionFee: executionFee.toString(),
         executionFeeHex: '0x' + executionFee.toString(16),
         traderAddress,
-        pairIndex: selectedPair.index,
+        pairIndex: executionPairIndex,
         leverage,
         isLong,
         orderTypeValue,
         positionSizeUSDC: positionSizeUSDC.toString(),
         openPrice: openPriceScaled.toString(),
-        approveAmount: approveAmount.toString(),
+        approveCapUSDC: AVANTIS_APPROVAL_CAP_USDC.toString(),
       });
       
       // EOA execution path (same model as PerpsTrader): approve + openTrade directly from owner EOA
@@ -2732,14 +2753,45 @@ const PerpsModal = ({
         addDebug(`WARNING: wallet chainId ${walletChainId} is not Base (8453).`);
       }
 
-      setLoadingStatus('Approving USDC from owner EOA...');
-      addDebug('Sending approve transaction...');
-      const approveHash = await walletProvider.request({
-        method: 'eth_sendTransaction',
-        params: [approveTxParams],
-      }) as string;
-      addDebug(`Approve tx hash: ${approveHash}`);
-      await waitReceipt(approveHash);
+      const allowanceCalldata = encodeFunctionData({
+        abi: ERC20_ALLOWANCE_ABI,
+        functionName: 'allowance',
+        args: [traderAddress as `0x${string}`, AVANTIS_TRADING_ADDRESS as `0x${string}`],
+      });
+      const requiredAllowanceWei = positionSizeUSDC;
+      addDebug(`Allowance required (USDC 6d): ${requiredAllowanceWei.toString()}`);
+      if (requiredAllowanceWei > AVANTIS_APPROVAL_CAP_USDC) {
+        throw new Error(
+          `Trade requires allowance ${requiredAllowanceWei.toString()} but approval cap is ${AVANTIS_APPROVAL_CAP_USDC.toString()} (10,000 USDC).`
+        );
+      }
+
+      const allowanceBeforeHex = await walletCall('eth_call', [{ to: BASE_USDC_ADDRESS, data: allowanceCalldata }, 'latest']);
+      const allowanceBeforeWei = typeof allowanceBeforeHex === 'string' ? BigInt(allowanceBeforeHex) : BigInt(0);
+      addDebug(`Current allowance to trading: ${allowanceBeforeWei.toString()} (cap ${AVANTIS_APPROVAL_CAP_USDC.toString()})`);
+
+      const approvalNeeded = allowanceBeforeWei < requiredAllowanceWei;
+      if (approvalNeeded) {
+        setLoadingStatus('Approving USDC from owner EOA...');
+        addDebug('Allowance below required amount, sending 10,000 USDC cap approval...');
+        const approveHash = await walletProvider.request({
+          method: 'eth_sendTransaction',
+          params: [approveTxParams],
+        }) as string;
+        addDebug(`Approve tx hash: ${approveHash}`);
+        await waitReceipt(approveHash);
+
+        const allowanceAfterHex = await walletCall('eth_call', [{ to: BASE_USDC_ADDRESS, data: allowanceCalldata }, 'latest']);
+        const allowanceAfterWei = typeof allowanceAfterHex === 'string' ? BigInt(allowanceAfterHex) : BigInt(0);
+        addDebug(`Allowance after approve: ${allowanceAfterWei.toString()}`);
+        if (allowanceAfterWei < requiredAllowanceWei) {
+          throw new Error(
+            `USDC allowance still below required amount after approve. required=${requiredAllowanceWei.toString()}, current=${allowanceAfterWei.toString()}`
+          );
+        }
+      } else {
+        addDebug('Sufficient existing USDC allowance detected; skipping approve step.');
+      }
 
       setLoadingStatus('Opening position from owner EOA...');
       addDebug(`Sending openTrade transaction (value ${formatEth(executionFee)} ETH)...`);
