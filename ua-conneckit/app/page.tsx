@@ -21,7 +21,7 @@ import AssetBreakdownDialog from "./components/AssetBreakdownDialog";
 import TokenDetailModal from "./components/TokenDetailModal";
 import SwapModal from "./components/SwapModal";
 import PolymarketModal from "./components/PolymarketModal";
-import { encodeFunctionData } from "viem";
+import { decodeFunctionResult, encodeFunctionData } from "viem";
 import { toBeHex } from "ethers";
 import { useUniversalAccountWS } from "./hooks/useUniversalAccountWS";
 
@@ -232,6 +232,27 @@ interface PairLeverageLimits {
   standardMax: number;
   zfpMin: number;
   zfpMax: number;
+  pairOI?: number;
+  pairMaxOI?: number;
+}
+
+interface OpenPerpsPosition {
+  id: string;
+  pairName: string;
+  symbol: string;
+  pairIndex: number;
+  positionIndex: number;
+  isLong: boolean;
+  collateralUsd: number;
+  sizeUsd: number;
+  leverage: number;
+  entryPrice: number;
+  markPrice: number;
+  pnlUsd: number;
+  pnlPercent: number;
+  tpPrice: number;
+  slPrice: number;
+  timestamp: number;
 }
 
 // Common emojis for profile selection
@@ -1739,6 +1760,30 @@ const AVANTIS_TRADING_ABI = [
     ],
     outputs: [{ name: 'orderId', type: 'uint256' }],
   },
+  {
+    name: 'closeTradeMarket',
+    type: 'function',
+    stateMutability: 'payable',
+    inputs: [
+      { name: '_pairIndex', type: 'uint256' },
+      { name: '_index', type: 'uint256' },
+      { name: '_amount', type: 'uint256' },
+    ],
+    outputs: [{ name: 'orderId', type: 'uint256' }],
+  },
+  {
+    name: 'updateTpAndSl',
+    type: 'function',
+    stateMutability: 'payable',
+    inputs: [
+      { name: '_pairIndex', type: 'uint256' },
+      { name: '_index', type: 'uint256' },
+      { name: '_newSl', type: 'uint256' },
+      { name: '_newTP', type: 'uint256' },
+      { name: 'priceUpdateData', type: 'bytes[]' },
+    ],
+    outputs: [],
+  },
   // delegatedAction allows smart wallets to execute trades
   // This is how Base App smart wallet works with Avantis
   {
@@ -1750,6 +1795,48 @@ const AVANTIS_TRADING_ABI = [
       { name: 'call_data', type: 'bytes' },
     ],
     outputs: [{ name: '', type: 'bytes' }],
+  },
+] as const;
+
+const AVANTIS_TRADING_STORAGE_ABI = [
+  {
+    name: 'openTradesCount',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: '_trader', type: 'address' },
+      { name: '_pairIndex', type: 'uint256' },
+    ],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    name: 'openTrades',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: '_trader', type: 'address' },
+      { name: '_pairIndex', type: 'uint256' },
+      { name: '_index', type: 'uint256' },
+    ],
+    outputs: [
+      {
+        name: '',
+        type: 'tuple',
+        components: [
+          { name: 'trader', type: 'address' },
+          { name: 'pairIndex', type: 'uint256' },
+          { name: 'index', type: 'uint256' },
+          { name: 'initialPosToken', type: 'uint256' },
+          { name: 'positionSizeUSDC', type: 'uint256' },
+          { name: 'openPrice', type: 'uint256' },
+          { name: 'buy', type: 'bool' },
+          { name: 'leverage', type: 'uint256' },
+          { name: 'tp', type: 'uint256' },
+          { name: 'sl', type: 'uint256' },
+          { name: 'timestamp', type: 'uint256' },
+        ],
+      },
+    ],
   },
 ] as const;
 
@@ -1782,6 +1869,7 @@ const ERC20_ALLOWANCE_ABI = [
 
 // Avantis Trading contract on Base mainnet (verified on Basescan)
 const AVANTIS_TRADING_ADDRESS = '0x44914408af82bC9983bbb330e3578E1105e11d4e';
+const AVANTIS_TRADING_STORAGE_ADDRESS = '0x8a311D7048c35985aa31C131B9A13e03a5f7422d';
 // USDC on Base
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const BASE_USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
@@ -1884,7 +1972,9 @@ const AVANTIS_SOCKET_API_URL = 'https://socket-api-pub.avantisfi.com/socket-api/
 const parsePairNameFromSocketSymbol = (symbol: string): string => {
   // Socket symbols are usually "Crypto.ETH/USD", "FX.EUR/USD", etc.
   const dotIndex = symbol.indexOf('.');
-  return dotIndex >= 0 ? symbol.slice(dotIndex + 1).toUpperCase() : symbol.toUpperCase();
+  const normalized = dotIndex >= 0 ? symbol.slice(dotIndex + 1).toUpperCase() : symbol.toUpperCase();
+  if (normalized === 'USD/JPY') return 'JPY/USD';
+  return normalized;
 };
 
 // Pyth Price Feed IDs for ALL Avantis pairs
@@ -1954,7 +2044,14 @@ const PerpsModal = ({
   const [eoaEthBalance, setEoaEthBalance] = useState<number>(0);
   const [isZeroFeeMode, setIsZeroFeeMode] = useState(false);
   const [pairLeverageLimits, setPairLeverageLimits] = useState<Record<string, PairLeverageLimits>>({});
+  const [marketSearch, setMarketSearch] = useState('');
+  const [marketGroupFilter, setMarketGroupFilter] = useState<'all' | 'crypto' | 'forex' | 'commodities'>('all');
+  const [showTpSlInputs, setShowTpSlInputs] = useState(false);
+  const [openPositions, setOpenPositions] = useState<OpenPerpsPosition[]>([]);
+  const [positionsLoading, setPositionsLoading] = useState(false);
+  const [positionEdits, setPositionEdits] = useState<Record<string, { tp: string; sl: string }>>({});
   const BASE_USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+  const marketPricesRef = useRef<Record<string, { price: number; change24h: number }>>({});
   
   // Helper to add debug messages
   const addDebug = (msg: string) => {
@@ -1976,6 +2073,16 @@ const PerpsModal = ({
   const zfpAvailable = activeLeverageLimits.zfpMax > 0;
   const leverageMin = isZeroFeeMode ? activeLeverageLimits.zfpMin : activeLeverageLimits.standardMin;
   const leverageMax = isZeroFeeMode ? activeLeverageLimits.zfpMax : activeLeverageLimits.standardMax;
+  const formatCompactUsd = (value: number) => {
+    const abs = Math.abs(value);
+    if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
+    if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
+    if (abs >= 1_000) return `${(value / 1_000).toFixed(2)}K`;
+    return value.toFixed(2);
+  };
+  useEffect(() => {
+    marketPricesRef.current = marketPrices;
+  }, [marketPrices]);
 
   // Unified UA balance shown in Perps flows
   const unifiedUaBalance = useMemo(() => {
@@ -2151,6 +2258,8 @@ const PerpsModal = ({
               pnlMinLeverage?: number;
               pnlMaxLeverage?: number;
             };
+            pairOI?: number;
+            pairMaxOI?: number;
           };
           const symbol = info.feed?.attributes?.symbol;
           const leverages = info.leverages;
@@ -2170,6 +2279,8 @@ const PerpsModal = ({
             standardMax,
             zfpMin: Number.isFinite(zfpMin) && zfpMin > 0 ? zfpMin : standardMin,
             zfpMax: Number.isFinite(zfpMax) && zfpMax > 0 ? zfpMax : standardMax,
+            pairOI: Number.isFinite(Number(info.pairOI)) ? Number(info.pairOI) : 0,
+            pairMaxOI: Number.isFinite(Number(info.pairMaxOI)) ? Number(info.pairMaxOI) : 0,
           };
         }
 
@@ -2268,6 +2379,148 @@ const PerpsModal = ({
     }
     setView('trade');
   };
+
+  const baseRpcCall = useCallback(async (method: string, params: unknown[]) => {
+    const resp = await fetch('https://mainnet.base.org', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', method, params, id: 1 }),
+    }).then(r => r.json());
+    return resp?.result as string | undefined;
+  }, []);
+
+  const fetchExecutionFeeWei = useCallback(async (updateCount = 1) => {
+    try {
+      const pythCalldata = encodeFunctionData({
+        abi: PYTH_ABI,
+        functionName: 'getUpdateFee',
+        args: [BigInt(Math.max(1, updateCount))],
+      });
+      const feeHex = await baseRpcCall('eth_call', [{ to: PYTH_CONTRACT_ADDRESS, data: pythCalldata }, 'latest']);
+      if (!feeHex) return BigInt(5e14);
+      const raw = BigInt(feeHex);
+      return (raw * BigInt(120)) / BigInt(100); // +20% buffer
+    } catch {
+      return BigInt(5e14);
+    }
+  }, [baseRpcCall]);
+
+  const fetchPythUpdateData = useCallback(async (pairName: string) => {
+    const feedId = PYTH_FEED_IDS[pairName];
+    if (!feedId) return [] as string[];
+    try {
+      const response = await fetch(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${feedId}`);
+      const json = await response.json();
+      const updates = Array.isArray(json?.binary?.data) ? json.binary.data : [];
+      return updates.filter((x: unknown) => typeof x === 'string') as string[];
+    } catch {
+      return [] as string[];
+    }
+  }, []);
+
+  const fetchOpenPositions = useCallback(async () => {
+    if (!ownerEOA) {
+      setOpenPositions([]);
+      return;
+    }
+    setPositionsLoading(true);
+    try {
+      const positions: OpenPerpsPosition[] = [];
+      for (const market of PERPS_MARKETS) {
+        const pairName = `${market.symbol}/USD`;
+        const pairIndex = pairLeverageLimits[pairName]?.pairIndex;
+        if (pairIndex === undefined) continue;
+
+        const countCallData = encodeFunctionData({
+          abi: AVANTIS_TRADING_STORAGE_ABI,
+          functionName: 'openTradesCount',
+          args: [ownerEOA as `0x${string}`, BigInt(pairIndex)],
+        });
+        const countHex = await baseRpcCall('eth_call', [{ to: AVANTIS_TRADING_STORAGE_ADDRESS, data: countCallData }, 'latest']);
+        const openCount = countHex ? Number(BigInt(countHex)) : 0;
+        if (!Number.isFinite(openCount) || openCount <= 0) continue;
+
+        for (let i = 0; i < Math.min(openCount, 20); i++) {
+          const tradeCallData = encodeFunctionData({
+            abi: AVANTIS_TRADING_STORAGE_ABI,
+            functionName: 'openTrades',
+            args: [ownerEOA as `0x${string}`, BigInt(pairIndex), BigInt(i)],
+          });
+          const tradeHex = await baseRpcCall('eth_call', [{ to: AVANTIS_TRADING_STORAGE_ADDRESS, data: tradeCallData }, 'latest']);
+          if (!tradeHex) continue;
+          const trade = decodeFunctionResult({
+            abi: AVANTIS_TRADING_STORAGE_ABI,
+            functionName: 'openTrades',
+            data: tradeHex as `0x${string}`,
+          }) as {
+            trader: `0x${string}`;
+            initialPosToken: bigint;
+            positionSizeUSDC: bigint;
+            openPrice: bigint;
+            buy: boolean;
+            leverage: bigint;
+            tp: bigint;
+            sl: bigint;
+            timestamp: bigint;
+          };
+          if (!trade || trade.trader.toLowerCase() === '0x0000000000000000000000000000000000000000') continue;
+          const collateralUsd = Number(trade.positionSizeUSDC) / 1e6;
+          if (!Number.isFinite(collateralUsd) || collateralUsd <= 0) continue;
+          const leverageNum = Number(trade.leverage) / 1e10;
+          const sizeUsd = collateralUsd * leverageNum;
+          const entryPrice = Number(trade.openPrice) / 1e10;
+          const markPrice = marketPricesRef.current[market.symbol]?.price || entryPrice;
+          const pnlUsd = trade.buy
+            ? ((markPrice - entryPrice) / Math.max(entryPrice, 1e-9)) * sizeUsd
+            : ((entryPrice - markPrice) / Math.max(entryPrice, 1e-9)) * sizeUsd;
+          const pnlPercent = collateralUsd > 0 ? (pnlUsd / collateralUsd) * 100 : 0;
+          positions.push({
+            id: `${pairIndex}-${i}`,
+            pairName,
+            symbol: market.symbol,
+            pairIndex,
+            positionIndex: i,
+            isLong: trade.buy,
+            collateralUsd,
+            sizeUsd,
+            leverage: leverageNum,
+            entryPrice,
+            markPrice,
+            pnlUsd,
+            pnlPercent,
+            tpPrice: Number(trade.tp) > 0 ? Number(trade.tp) / 1e10 : 0,
+            slPrice: Number(trade.sl) > 0 ? Number(trade.sl) / 1e10 : 0,
+            timestamp: Number(trade.timestamp),
+          });
+        }
+      }
+      positions.sort((a, b) => b.timestamp - a.timestamp);
+      setOpenPositions(positions);
+      setPositionEdits((prev) => {
+        const next = { ...prev };
+        for (const p of positions) {
+          if (!next[p.id]) {
+            next[p.id] = {
+              tp: p.tpPrice > 0 ? p.tpPrice.toString() : '',
+              sl: p.slPrice > 0 ? p.slPrice.toString() : '',
+            };
+          }
+        }
+        return next;
+      });
+    } catch (e) {
+      addDebug(`Positions fetch failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setPositionsLoading(false);
+    }
+  }, [ownerEOA, pairLeverageLimits, baseRpcCall]);
+
+  useEffect(() => {
+    if (!isOpen || !ownerEOA) return;
+    fetchOpenPositions();
+    const t = setInterval(fetchOpenPositions, 20000);
+    return () => clearInterval(t);
+  }, [isOpen, ownerEOA, fetchOpenPositions]);
 
   const handleDepositToEOA = async () => {
     if (!universalAccount || !primaryWallet || !ownerEOA) {
@@ -2803,6 +3056,9 @@ const PerpsModal = ({
 
       setTxResult({ txId: tradeHash, status: 'pending' });
       setLoadingStatus('Position opening...');
+      setTimeout(() => {
+        fetchOpenPositions();
+      }, 6000);
 
       // Reset form
       setCollateral('');
@@ -2849,6 +3105,128 @@ const PerpsModal = ({
     }
   };
 
+  const handleClosePosition = async (position: OpenPerpsPosition) => {
+    if (!primaryWallet || !ownerEOA) {
+      setError('Connect wallet first');
+      return;
+    }
+    setIsLoading(true);
+    setError(null);
+    setLoadingStatus('Preparing close...');
+    try {
+      const walletClient = primaryWallet.getWalletClient();
+      const walletProvider = walletClient as unknown as { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
+      const parseChainId = (hexChainId: unknown) => {
+        if (typeof hexChainId !== 'string') return NaN;
+        try {
+          return Number(BigInt(hexChainId));
+        } catch {
+          return NaN;
+        }
+      };
+      const ensureWalletOnBase = async () => {
+        const currentChain = parseChainId(await walletProvider.request({ method: 'eth_chainId' }));
+        if (currentChain === 8453) return;
+        await walletProvider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x2105' }] });
+      };
+      await ensureWalletOnBase();
+
+      const executionFee = await fetchExecutionFeeWei(1);
+      const closeCalldata = encodeFunctionData({
+        abi: AVANTIS_TRADING_ABI,
+        functionName: 'closeTradeMarket',
+        args: [BigInt(position.pairIndex), BigInt(position.positionIndex), BigInt(0)],
+      });
+      const txHash = await walletProvider.request({
+        method: 'eth_sendTransaction',
+        params: [{
+          from: ownerEOA,
+          to: AVANTIS_TRADING_ADDRESS,
+          data: closeCalldata,
+          value: `0x${executionFee.toString(16)}`,
+        }],
+      }) as string;
+      addDebug(`Close position tx: ${txHash}`);
+      setTxResult({ txId: txHash, status: 'pending' });
+      setLoadingStatus('Closing position...');
+      await fetchOpenPositions();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`Close failed: ${msg}`);
+      addDebug(`Close failed: ${msg}`);
+    } finally {
+      setIsLoading(false);
+      setLoadingStatus('');
+    }
+  };
+
+  const handleUpdatePositionTpSl = async (position: OpenPerpsPosition) => {
+    if (!primaryWallet || !ownerEOA) {
+      setError('Connect wallet first');
+      return;
+    }
+    const edits = positionEdits[position.id] || { tp: '', sl: '' };
+    const tpNum = edits.tp.trim() ? Number(edits.tp) : 0;
+    const slNum = edits.sl.trim() ? Number(edits.sl) : 0;
+    if ((edits.tp.trim() && (!Number.isFinite(tpNum) || tpNum <= 0)) || (edits.sl.trim() && (!Number.isFinite(slNum) || slNum <= 0))) {
+      setError('Enter valid TP/SL price values');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setLoadingStatus('Updating TP/SL...');
+    try {
+      const walletClient = primaryWallet.getWalletClient();
+      const walletProvider = walletClient as unknown as { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
+      const parseChainId = (hexChainId: unknown) => {
+        if (typeof hexChainId !== 'string') return NaN;
+        try {
+          return Number(BigInt(hexChainId));
+        } catch {
+          return NaN;
+        }
+      };
+      const currentChain = parseChainId(await walletProvider.request({ method: 'eth_chainId' }));
+      if (currentChain !== 8453) {
+        await walletProvider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x2105' }] });
+      }
+      const updateData = await fetchPythUpdateData(position.pairName);
+      const executionFee = await fetchExecutionFeeWei(updateData.length || 1);
+      const updateCalldata = encodeFunctionData({
+        abi: AVANTIS_TRADING_ABI,
+        functionName: 'updateTpAndSl',
+        args: [
+          BigInt(position.pairIndex),
+          BigInt(position.positionIndex),
+          BigInt(Math.floor(Math.max(0, slNum) * 1e10)),
+          BigInt(Math.floor(Math.max(0, tpNum) * 1e10)),
+          updateData as `0x${string}`[],
+        ],
+      });
+
+      const txHash = await walletProvider.request({
+        method: 'eth_sendTransaction',
+        params: [{
+          from: ownerEOA,
+          to: AVANTIS_TRADING_ADDRESS,
+          data: updateCalldata,
+          value: `0x${executionFee.toString(16)}`,
+        }],
+      }) as string;
+      addDebug(`Update TP/SL tx: ${txHash}`);
+      setTxResult({ txId: txHash, status: 'pending' });
+      await fetchOpenPositions();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`TP/SL update failed: ${msg}`);
+      addDebug(`TP/SL update failed: ${msg}`);
+    } finally {
+      setIsLoading(false);
+      setLoadingStatus('');
+    }
+  };
+
   const isLeverageValid =
     leverage >= leverageMin &&
     leverage <= leverageMax &&
@@ -2875,6 +3253,29 @@ const PerpsModal = ({
         : depositStage === 'gas'
           ? 'Top up gas'
           : 'Deposit + Top up gas';
+  const filteredSortedMarkets = useMemo(() => {
+    const searchLower = marketSearch.trim().toLowerCase();
+    const filtered = PERPS_MARKETS.filter((m) => {
+      const groupOk = marketGroupFilter === 'all' || m.group === marketGroupFilter;
+      if (!groupOk) return false;
+      if (!searchLower) return true;
+      return m.symbol.toLowerCase().includes(searchLower) || m.name.toLowerCase().includes(searchLower);
+    });
+    filtered.sort((a, b) => {
+      const pa = marketPrices[a.symbol]?.price || 0;
+      const pb = marketPrices[b.symbol]?.price || 0;
+      const ca = marketPrices[a.symbol]?.change24h || 0;
+      const cb = marketPrices[b.symbol]?.change24h || 0;
+      const va = pairLeverageLimits[`${a.symbol}/USD`]?.pairOI || 0;
+      const vb = pairLeverageLimits[`${b.symbol}/USD`]?.pairOI || 0;
+      if (sortBy === 'price') return pb - pa;
+      if (sortBy === 'change') return cb - ca;
+      return vb - va;
+    });
+    return filtered;
+  }, [marketSearch, marketGroupFilter, marketPrices, pairLeverageLimits, sortBy]);
+  const totalOpenPositionUsd = openPositions.reduce((sum, p) => sum + p.sizeUsd, 0);
+  const totalOpenPnlUsd = openPositions.reduce((sum, p) => sum + p.pnlUsd, 0);
 
   return (
     <BottomSheet isOpen={isOpen} onClose={() => { setView('markets'); onClose(); }}>
@@ -2895,19 +3296,23 @@ const PerpsModal = ({
 
             {/* Available Balance Card */}
             <div className="px-4 mb-5">
-              <div className="rounded-2xl border border-[#1f5048] bg-gradient-to-r from-[#112c2a] via-[#122f2a] to-[#112c2a] px-3 py-3 flex items-center justify-between">
+              <div className="rounded-2xl border border-gray-700 bg-[#171717] px-3 py-3 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-full bg-blue-500/20 border border-blue-400/40 flex items-center justify-center text-blue-300 text-xl">
-                    💲
+                  <div className="w-11 h-11 rounded-full bg-[#1f1f1f] border border-gray-600 flex items-center justify-center overflow-hidden">
+                    <img
+                      src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png"
+                      alt="USDC"
+                      className="w-6 h-6 rounded-full"
+                    />
                   </div>
                   <div>
                     <div className="text-[11px] uppercase tracking-wide text-gray-300 font-semibold">Available Balance</div>
-                    <div className="text-2xl font-bold text-[#1fd6c0]">${eoaUsdcBalance.toFixed(2)}</div>
+                    <div className="text-2xl font-bold text-white">${eoaUsdcBalance.toFixed(2)}</div>
                   </div>
                 </div>
                 <button
                   onClick={() => setView('deposit')}
-                  className="px-6 py-2.5 rounded-full bg-accent-dynamic text-black font-bold text-lg"
+                  className="px-5 py-2.5 rounded-xl bg-accent-dynamic text-black font-bold text-sm"
                 >
                   Deposit
                 </button>
@@ -2917,14 +3322,73 @@ const PerpsModal = ({
             {/* Open Positions */}
             <div className="px-4 mb-5">
               <div className="text-gray-500 font-semibold mb-1">Open Positions</div>
-              <div className="text-gray-300 text-5xl font-bold mb-6">$0.00</div>
-              <div className="text-center py-2">
-                <div className="text-[#1fd6c0] text-4xl mb-2">∞</div>
-                <p className="text-white/90 font-semibold text-3xl mb-1">No Open Positions</p>
-                <button className="text-gray-500 text-sm flex items-center gap-1 mx-auto">
-                  Learn more about Perps <span>›</span>
-                </button>
+              <div className="text-gray-300 text-4xl font-bold mb-2">${totalOpenPositionUsd.toFixed(2)}</div>
+              <div className={`text-sm mb-3 ${totalOpenPnlUsd >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                PnL {totalOpenPnlUsd >= 0 ? '+' : ''}${totalOpenPnlUsd.toFixed(2)}
               </div>
+              {positionsLoading ? (
+                <div className="text-gray-500 text-sm py-2">Loading positions...</div>
+              ) : openPositions.length === 0 ? (
+                <div className="text-center py-2">
+                  <img
+                    src="https://www.avantisfi.com/images/avantis-logo.svg"
+                    alt="Avantis"
+                    className="w-10 h-10 mx-auto mb-2 opacity-80"
+                  />
+                  <p className="text-white/90 font-semibold text-lg mb-1">No Open Positions</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {openPositions.map((p) => (
+                    <div key={p.id} className="bg-[#191919] border border-gray-800 rounded-xl p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-white font-semibold">
+                          {p.symbol}/USD <span className={p.isLong ? 'text-green-400' : 'text-red-400'}>{p.isLong ? 'LONG' : 'SHORT'}</span>
+                        </div>
+                        <div className="text-xs text-gray-500">{p.leverage.toFixed(0)}x</div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs mb-2">
+                        <div className="text-gray-400">Size <span className="text-white">${p.sizeUsd.toFixed(2)}</span></div>
+                        <div className="text-gray-400">Collateral <span className="text-white">${p.collateralUsd.toFixed(2)}</span></div>
+                        <div className="text-gray-400">Entry <span className="text-white">${p.entryPrice.toFixed(2)}</span></div>
+                        <div className="text-gray-400">Mark <span className="text-white">${p.markPrice.toFixed(2)}</span></div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 mb-2">
+                        <input
+                          type="number"
+                          placeholder="TP"
+                          value={positionEdits[p.id]?.tp || ''}
+                          onChange={(e) => setPositionEdits((prev) => ({ ...prev, [p.id]: { tp: e.target.value, sl: prev[p.id]?.sl || '' } }))}
+                          className="bg-gray-800 rounded-lg px-2 py-1.5 text-white text-xs outline-none"
+                        />
+                        <input
+                          type="number"
+                          placeholder="SL"
+                          value={positionEdits[p.id]?.sl || ''}
+                          onChange={(e) => setPositionEdits((prev) => ({ ...prev, [p.id]: { tp: prev[p.id]?.tp || '', sl: e.target.value } }))}
+                          className="bg-gray-800 rounded-lg px-2 py-1.5 text-white text-xs outline-none"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleUpdatePositionTpSl(p)}
+                          disabled={isLoading}
+                          className="flex-1 bg-gray-800 text-gray-200 rounded-lg py-2 text-xs font-semibold disabled:opacity-50"
+                        >
+                          Update TP/SL
+                        </button>
+                        <button
+                          onClick={() => handleClosePosition(p)}
+                          disabled={isLoading}
+                          className="flex-1 bg-red-600/80 text-white rounded-lg py-2 text-xs font-semibold disabled:opacity-50"
+                        >
+                          Close
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Markets Header */}
@@ -2933,9 +3397,6 @@ const PerpsModal = ({
                 Markets <span className="text-gray-500">›</span>
               </button>
               <div className="flex items-center gap-2">
-                <button className="w-8 h-8 rounded-full bg-gray-800/90 border border-gray-700 flex items-center justify-center">
-                  <span className="text-gray-400 text-sm">🔍</span>
-                </button>
                 <select 
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as 'volume' | 'price' | 'change')}
@@ -2947,13 +3408,43 @@ const PerpsModal = ({
                 </select>
               </div>
             </div>
+            <div className="px-4 mb-3">
+              <input
+                type="text"
+                value={marketSearch}
+                onChange={(e) => setMarketSearch(e.target.value)}
+                placeholder="Search market"
+                className="w-full bg-gray-900/80 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white outline-none"
+              />
+              <div className="flex gap-2 mt-2">
+                {(['all', 'crypto', 'forex', 'commodities'] as const).map((group) => (
+                  <button
+                    key={group}
+                    onClick={() => setMarketGroupFilter(group)}
+                    className={`px-3 py-1 rounded-full text-xs capitalize ${
+                      marketGroupFilter === group
+                        ? 'bg-accent-dynamic text-black font-semibold'
+                        : 'bg-gray-800 text-gray-400'
+                    }`}
+                  >
+                    {group}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             {/* Markets List */}
             <div className="space-y-1">
-              {PERPS_MARKETS.map((market) => {
+              {filteredSortedMarkets.map((market) => {
                 const priceData = marketPrices[market.symbol];
                 const price = priceData?.price || 0;
                 const change = priceData?.change24h || 0;
+                const pairName = `${market.symbol}/USD`;
+                const marketMeta = pairLeverageLimits[pairName];
+                const displayLev = isZeroFeeMode
+                  ? (marketMeta?.zfpMax || market.maxLeverage)
+                  : (marketMeta?.standardMax || market.maxLeverage);
+                const volumeOi = marketMeta?.pairOI || 0;
                 
                 return (
                   <button
@@ -2974,9 +3465,9 @@ const PerpsModal = ({
                         <div className="text-white font-medium">{market.symbol}</div>
                         <div className="flex items-center gap-2 text-xs">
                           <span className="text-gray-500">UP TO</span>
-                          <span className="text-gray-400">{market.maxLeverage}x</span>
+                          <span className="text-gray-400">{Math.floor(displayLev)}x</span>
                           <span className="text-gray-600">•</span>
-                          <span className="text-gray-500">VOL $1.2B</span>
+                          <span className="text-gray-500">VOL ${formatCompactUsd(volumeOi)}</span>
                         </div>
                       </div>
                     </div>
@@ -3342,6 +3833,39 @@ const PerpsModal = ({
                 EOA Balances: ${eoaUsdcBalance.toFixed(2)} USDC • {eoaEthBalance.toFixed(5)} ETH
               </div>
 
+            </div>
+
+            <div className="bg-gray-800/40 rounded-xl p-3 mb-3 border border-gray-700/60">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-white font-medium">Set TP/SL</div>
+                <button
+                  type="button"
+                  onClick={() => setShowTpSlInputs((v) => !v)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${showTpSlInputs ? 'bg-accent-dynamic' : 'bg-gray-600'}`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${showTpSlInputs ? 'translate-x-6' : 'translate-x-1'}`}
+                  />
+                </button>
+              </div>
+              {showTpSlInputs && (
+                <div className="grid grid-cols-2 gap-2 mt-3">
+                  <input
+                    type="number"
+                    value={takeProfit}
+                    onChange={(e) => setTakeProfit(e.target.value)}
+                    placeholder="Take Profit"
+                    className="bg-gray-700 rounded-lg px-3 py-2 text-white text-sm outline-none"
+                  />
+                  <input
+                    type="number"
+                    value={stopLoss}
+                    onChange={(e) => setStopLoss(e.target.value)}
+                    placeholder="Stop Loss"
+                    className="bg-gray-700 rounded-lg px-3 py-2 text-white text-sm outline-none"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Position Summary */}
