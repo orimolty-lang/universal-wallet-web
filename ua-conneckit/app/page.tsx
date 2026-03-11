@@ -251,6 +251,7 @@ interface OpenPerpsPosition {
   pnlUsd: number;
   pnlPercent: number;
   liquidationPrice: number;
+  beingMarketClosed: boolean;
   tpPrice: number;
   slPrice: number;
   timestamp: number;
@@ -1839,6 +1840,29 @@ const AVANTIS_TRADING_STORAGE_ABI = [
       },
     ],
   },
+  {
+    name: 'openTradesInfo',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: '_trader', type: 'address' },
+      { name: '_pairIndex', type: 'uint256' },
+      { name: '_index', type: 'uint256' },
+    ],
+    outputs: [
+      {
+        name: '',
+        type: 'tuple',
+        components: [
+          { name: 'openInterestUSDC', type: 'uint256' },
+          { name: 'tpLastUpdated', type: 'uint256' },
+          { name: 'slLastUpdated', type: 'uint256' },
+          { name: 'beingMarketClosed', type: 'bool' },
+          { name: 'lossProtection', type: 'uint256' },
+        ],
+      },
+    ],
+  },
 ] as const;
 
 // ERC20 approve ABI for USDC approval
@@ -2061,13 +2085,14 @@ const PerpsModal = ({
   }>>([]);
   const BASE_USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
   const marketPricesRef = useRef<Record<string, { price: number; change24h: number }>>({});
+  const previousPositionIdsRef = useRef<Set<string>>(new Set());
   
   // Helper to add debug messages
   const addDebug = (msg: string) => {
     console.log('[Perps Debug]', msg);
     setDebugLog(prev => [...prev.slice(-20), `${new Date().toLocaleTimeString()}: ${msg}`]);
   };
-  const [txResult, setTxResult] = useState<{ txId: string; status: string } | null>(null);
+  const [txResult, setTxResult] = useState<{ txId: string; status: 'pending' | 'complete'; action: 'open' | 'close' | 'update' } | null>(null);
   const [sortBy, setSortBy] = useState<'volume' | 'price' | 'change'>('volume');
   const selectedPairConfig = pairLeverageLimits[selectedPair.name];
   const executionPairIndex = selectedPairConfig?.pairIndex ?? selectedPair.index;
@@ -2495,7 +2520,10 @@ const PerpsModal = ({
         const openCount = countHex ? Number(BigInt(countHex)) : 0;
         if (!Number.isFinite(openCount) || openCount <= 0) continue;
 
-        for (let i = 0; i < Math.min(openCount, 20); i++) {
+        // Position indices may not be contiguous after closes, so scan a wider window.
+        const scanLimit = Math.min(60, Math.max(20, openCount * 3));
+        const seenIndices = new Set<number>();
+        for (let i = 0; i < scanLimit; i++) {
           const tradeCallData = encodeFunctionData({
             abi: AVANTIS_TRADING_STORAGE_ABI,
             functionName: 'openTrades',
@@ -2509,6 +2537,7 @@ const PerpsModal = ({
             data: tradeHex as `0x${string}`,
           }) as {
             trader: `0x${string}`;
+            index: bigint;
             initialPosToken: bigint;
             positionSizeUSDC: bigint;
             openPrice: bigint;
@@ -2519,6 +2548,27 @@ const PerpsModal = ({
             timestamp: bigint;
           };
           if (!trade || trade.trader.toLowerCase() === '0x0000000000000000000000000000000000000000') continue;
+          const positionIndex = Number(trade.index);
+          if (!Number.isFinite(positionIndex) || positionIndex < 0) continue;
+          if (seenIndices.has(positionIndex)) continue;
+          seenIndices.add(positionIndex);
+
+          const infoCallData = encodeFunctionData({
+            abi: AVANTIS_TRADING_STORAGE_ABI,
+            functionName: 'openTradesInfo',
+            args: [ownerEOA as `0x${string}`, BigInt(pairIndex), BigInt(positionIndex)],
+          });
+          const infoHex = await baseRpcCall('eth_call', [{ to: AVANTIS_TRADING_STORAGE_ADDRESS, data: infoCallData }, 'latest']);
+          let beingMarketClosed = false;
+          if (infoHex) {
+            const info = decodeFunctionResult({
+              abi: AVANTIS_TRADING_STORAGE_ABI,
+              functionName: 'openTradesInfo',
+              data: infoHex as `0x${string}`,
+            }) as { beingMarketClosed: boolean };
+            beingMarketClosed = !!info?.beingMarketClosed;
+          }
+
           const leverageNum = Number(trade.leverage) / 1e10;
           const initialCollateralUsd = Number(trade.initialPosToken) / 1e6;
           const rawPositionUsd = Number(trade.positionSizeUSDC) / 1e6;
@@ -2538,11 +2588,11 @@ const PerpsModal = ({
           const liqDistance = (entryPrice / Math.max(leverageNum, 1e-9)) * 0.9;
           const liquidationPrice = trade.buy ? entryPrice - liqDistance : entryPrice + liqDistance;
           positions.push({
-            id: `${pairIndex}-${i}`,
+            id: `${pairIndex}-${positionIndex}`,
             pairName,
             symbol: market.symbol,
             pairIndex,
-            positionIndex: i,
+            positionIndex,
             isLong: trade.buy,
             collateralUsd,
             sizeUsd,
@@ -2552,13 +2602,33 @@ const PerpsModal = ({
             pnlUsd,
             pnlPercent,
             liquidationPrice,
+            beingMarketClosed,
             tpPrice: Number(trade.tp) > 0 ? Number(trade.tp) / 1e10 : 0,
             slPrice: Number(trade.sl) > 0 ? Number(trade.sl) / 1e10 : 0,
             timestamp: Number(trade.timestamp),
           });
+          if (positions.filter((p) => p.pairIndex === pairIndex).length >= openCount) break;
         }
       }
       positions.sort((a, b) => b.timestamp - a.timestamp);
+
+      const currentIds = new Set(positions.map((p) => p.id));
+      for (const oldId of Array.from(previousPositionIdsRef.current)) {
+        if (!currentIds.has(oldId)) {
+          const [oldPairIndex] = oldId.split('-');
+          const oldPair = Object.entries(pairLeverageLimits).find(([, v]) => String(v.pairIndex) === oldPairIndex)?.[0] || 'Unknown';
+          upsertPerpsActivity({
+            id: `removed-${oldId}-${Date.now()}`,
+            action: 'Position removed (closed/liquidated)',
+            pairName: oldPair,
+            txHash: '-',
+            status: 'confirmed',
+            timestamp: Date.now(),
+          });
+        }
+      }
+      previousPositionIdsRef.current = currentIds;
+
       setOpenPositions(positions);
       setPositionEdits((prev) => {
         const next = { ...prev };
@@ -2577,7 +2647,7 @@ const PerpsModal = ({
     } finally {
       setPositionsLoading(false);
     }
-  }, [ownerEOA, pairLeverageLimits, baseRpcCall]);
+  }, [ownerEOA, pairLeverageLimits, baseRpcCall, upsertPerpsActivity]);
 
   useEffect(() => {
     if (!isOpen || !ownerEOA) return;
@@ -3155,7 +3225,7 @@ const PerpsModal = ({
         timestamp: Date.now(),
       });
 
-      setTxResult({ txId: tradeHash, status: 'pending' });
+      setTxResult({ txId: tradeHash, status: 'pending', action: 'open' });
       setLoadingStatus('Position opening...');
       const tradeReceipt = await waitReceipt(tradeHash) as { status?: string };
       addDebug(`OpenTrade receipt status: ${tradeReceipt?.status || 'unknown'}`);
@@ -3178,7 +3248,7 @@ const PerpsModal = ({
         status: 'confirmed',
         timestamp: Date.now(),
       });
-      setTxResult({ txId: tradeHash, status: 'complete' });
+      setTxResult({ txId: tradeHash, status: 'complete', action: 'open' });
       setLoadingStatus('Position opened');
       await fetchOpenPositions();
       setTimeout(() => setTxResult(null), 2500);
@@ -3255,10 +3325,16 @@ const PerpsModal = ({
       await ensureWalletOnBase();
 
       const executionFee = await fetchExecutionFeeWei(1);
+      const collateralToClose = BigInt(Math.max(1, Math.floor(position.collateralUsd * 1e6)));
+      addDebug(`Close args -> pair=${position.pairIndex}, index=${position.positionIndex}, collateralToClose=${collateralToClose.toString()}`);
       const closeCalldata = encodeFunctionData({
         abi: AVANTIS_TRADING_ABI,
         functionName: 'closeTradeMarket',
-        args: [BigInt(position.pairIndex), BigInt(position.positionIndex), BigInt(0)],
+        args: [
+          BigInt(position.pairIndex),
+          BigInt(position.positionIndex),
+          collateralToClose,
+        ],
       });
       const txHash = await walletProvider.request({
         method: 'eth_sendTransaction',
@@ -3278,7 +3354,7 @@ const PerpsModal = ({
         status: 'pending',
         timestamp: Date.now(),
       });
-      setTxResult({ txId: txHash, status: 'pending' });
+      setTxResult({ txId: txHash, status: 'pending', action: 'close' });
       setLoadingStatus('Closing position...');
       const closeReceipt = await waitForBaseReceipt(txHash) as unknown as { status?: string };
       addDebug(`Close receipt status: ${closeReceipt?.status || 'unknown'}`);
@@ -3301,7 +3377,7 @@ const PerpsModal = ({
         status: 'confirmed',
         timestamp: Date.now(),
       });
-      setTxResult({ txId: txHash, status: 'complete' });
+      setTxResult({ txId: txHash, status: 'complete', action: 'close' });
       await fetchOpenPositions();
       setTimeout(() => setTxResult(null), 2500);
     } catch (err) {
@@ -3377,7 +3453,7 @@ const PerpsModal = ({
         status: 'pending',
         timestamp: Date.now(),
       });
-      setTxResult({ txId: txHash, status: 'pending' });
+      setTxResult({ txId: txHash, status: 'pending', action: 'update' });
       const updateReceipt = await waitForBaseReceipt(txHash) as unknown as { status?: string };
       addDebug(`Update TP/SL receipt status: ${updateReceipt?.status || 'unknown'}`);
       if (updateReceipt?.status !== '0x1') {
@@ -3399,7 +3475,7 @@ const PerpsModal = ({
         status: 'confirmed',
         timestamp: Date.now(),
       });
-      setTxResult({ txId: txHash, status: 'complete' });
+      setTxResult({ txId: txHash, status: 'complete', action: 'update' });
       await fetchOpenPositions();
       setTimeout(() => setTxResult(null), 2500);
     } catch (err) {
@@ -3543,8 +3619,11 @@ const PerpsModal = ({
                         <div className="text-gray-400">Entry <span className="text-white">${p.entryPrice.toFixed(2)}</span></div>
                         <div className="text-gray-400">Mark <span className="text-white">${p.markPrice.toFixed(2)}</span></div>
                         <div className="text-gray-400">Liq <span className={p.isLong ? 'text-red-300' : 'text-green-300'}>${p.liquidationPrice.toFixed(2)}</span></div>
-                        <div className="text-gray-400">PnL <span className={p.pnlUsd >= 0 ? 'text-green-400' : 'text-red-400'}>{p.pnlUsd >= 0 ? '+' : ''}${p.pnlUsd.toFixed(2)}</span></div>
+                        <div className="text-gray-400">PnL <span className={p.pnlUsd >= 0 ? 'text-green-400' : 'text-red-400'}>{p.pnlUsd >= 0 ? '+' : ''}${p.pnlUsd.toFixed(2)} ({p.pnlPercent >= 0 ? '+' : ''}{p.pnlPercent.toFixed(2)}%)</span></div>
                       </div>
+                      {p.beingMarketClosed && (
+                        <div className="text-[11px] text-yellow-300 mb-2">Close requested, awaiting oracle execution...</div>
+                      )}
                       <div className="grid grid-cols-2 gap-2 mb-2">
                         <input
                           type="number"
@@ -4117,7 +4196,9 @@ const PerpsModal = ({
                   : 'bg-green-900/30 border border-green-500/50 text-green-300'
               }`}>
                 <div className="font-bold mb-1">
-                  {txResult.status === 'pending' ? '⏳ Opening...' : '✅ Position Opened!'}
+                  {txResult.status === 'pending'
+                    ? (txResult.action === 'open' ? '⏳ Opening...' : txResult.action === 'close' ? '⏳ Closing...' : '⏳ Updating TP/SL...')
+                    : (txResult.action === 'open' ? '✅ Position Opened!' : txResult.action === 'close' ? '✅ Close Requested' : '✅ TP/SL Updated')}
                 </div>
                 <div className="text-xs font-mono break-all">
                   TX: {txResult.txId.slice(0, 20)}...
