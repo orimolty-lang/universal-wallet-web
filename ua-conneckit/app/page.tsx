@@ -2072,7 +2072,7 @@ const PerpsModal = ({
   const [marketSearch, setMarketSearch] = useState('');
   const [marketGroupFilter, setMarketGroupFilter] = useState<'all' | 'crypto' | 'forex' | 'commodities'>('all');
   const [showTpSlInputs, setShowTpSlInputs] = useState(false);
-  const [openPositions, setOpenPositions] = useState<OpenPerpsPosition[]>([]);
+  const [displayOpenPositions, setDisplayOpenPositions] = useState<OpenPerpsPosition[]>([]);
   const [positionsLoading, setPositionsLoading] = useState(false);
   const [positionEdits, setPositionEdits] = useState<Record<string, { tp: string; sl: string }>>({});
   const [perpsActivity, setPerpsActivity] = useState<Array<{
@@ -2084,6 +2084,7 @@ const PerpsModal = ({
     timestamp: number;
   }>>([]);
   const BASE_USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+  const AVANTIS_HEADER_LOGO_URL = 'https://1312337203-files.gitbook.io/~/files/v0/b/gitbook-x-prod.appspot.com/o/spaces%2F76vAZHPcNKY10NzuKsC4%2Fuploads%2FEbbnsKGrcR2kXz3JxZ1w%2FAvantis%20White%20Logo%20-%20Horizontal.png?alt=media';
   const marketPricesRef = useRef<Record<string, { price: number; change24h: number }>>({});
   const previousPositionIdsRef = useRef<Set<string>>(new Set());
   
@@ -2136,6 +2137,28 @@ const PerpsModal = ({
       // ignore storage quota issues
     }
   }, [perpsActivity]);
+  useEffect(() => {
+    if (!ownerEOA) return;
+    try {
+      const raw = localStorage.getItem(`perps_positions_v1:${ownerEOA.toLowerCase()}`);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as OpenPerpsPosition[];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        setDisplayOpenPositions(parsed);
+        previousPositionIdsRef.current = new Set(parsed.map((p) => p.id));
+      }
+    } catch {
+      // ignore storage parsing issues
+    }
+  }, [ownerEOA]);
+  useEffect(() => {
+    if (!ownerEOA) return;
+    try {
+      localStorage.setItem(`perps_positions_v1:${ownerEOA.toLowerCase()}`, JSON.stringify(displayOpenPositions));
+    } catch {
+      // ignore storage quota issues
+    }
+  }, [ownerEOA, displayOpenPositions]);
 
   // Unified UA balance shown in Perps flows
   const unifiedUaBalance = useMemo(() => {
@@ -2500,12 +2523,23 @@ const PerpsModal = ({
 
   const fetchOpenPositions = useCallback(async () => {
     if (!ownerEOA) {
-      setOpenPositions([]);
+      setDisplayOpenPositions([]);
+      previousPositionIdsRef.current = new Set();
       return;
     }
     setPositionsLoading(true);
     try {
+      const knownPairCount = PERPS_MARKETS.reduce((count, market) => {
+        const pairName = `${market.symbol}/USD`;
+        return pairLeverageLimits[pairName]?.pairIndex !== undefined ? count + 1 : count;
+      }, 0);
+      if (knownPairCount === 0) {
+        // Socket metadata not ready yet; preserve current UI until we can query positions reliably.
+        return;
+      }
+
       const positions: OpenPerpsPosition[] = [];
+      let queriedAnyCountSuccessfully = false;
       for (const market of PERPS_MARKETS) {
         const pairName = `${market.symbol}/USD`;
         const pairIndex = pairLeverageLimits[pairName]?.pairIndex;
@@ -2517,6 +2551,7 @@ const PerpsModal = ({
           args: [ownerEOA as `0x${string}`, BigInt(pairIndex)],
         });
         const countHex = await baseRpcCall('eth_call', [{ to: AVANTIS_TRADING_STORAGE_ADDRESS, data: countCallData }, 'latest']);
+        if (typeof countHex === 'string') queriedAnyCountSuccessfully = true;
         const openCount = countHex ? Number(BigInt(countHex)) : 0;
         if (!Number.isFinite(openCount) || openCount <= 0) continue;
 
@@ -2611,6 +2646,10 @@ const PerpsModal = ({
         }
       }
       positions.sort((a, b) => b.timestamp - a.timestamp);
+      if (!queriedAnyCountSuccessfully) {
+        addDebug('Positions refresh skipped (temporary RPC gap), keeping last known positions visible.');
+        return;
+      }
 
       const currentIds = new Set(positions.map((p) => p.id));
       for (const oldId of Array.from(previousPositionIdsRef.current)) {
@@ -2629,7 +2668,7 @@ const PerpsModal = ({
       }
       previousPositionIdsRef.current = currentIds;
 
-      setOpenPositions(positions);
+      setDisplayOpenPositions(positions);
       setPositionEdits((prev) => {
         const next = { ...prev };
         for (const p of positions) {
@@ -3535,8 +3574,8 @@ const PerpsModal = ({
     });
     return filtered;
   }, [marketSearch, marketGroupFilter, marketPrices, pairLeverageLimits, sortBy]);
-  const totalOpenPositionUsd = openPositions.reduce((sum, p) => sum + p.sizeUsd, 0);
-  const totalOpenPnlUsd = openPositions.reduce((sum, p) => sum + p.pnlUsd, 0);
+  const totalOpenCollateralUsd = displayOpenPositions.reduce((sum, p) => sum + p.collateralUsd, 0);
+  const totalOpenPnlUsd = displayOpenPositions.reduce((sum, p) => sum + p.pnlUsd, 0);
 
   return (
     <BottomSheet isOpen={isOpen} onClose={() => { setView('markets'); onClose(); }}>
@@ -3549,11 +3588,11 @@ const PerpsModal = ({
               <div className="w-10 h-10" />
               <h2 className="text-white text-2xl font-bold flex items-center gap-2">
                 <img
-                  src="https://www.avantisfi.com/images/avantis-logo.svg"
+                  src={AVANTIS_HEADER_LOGO_URL}
                   alt="Avantis"
-                  className="w-7 h-7"
+                  className="h-8 w-auto"
                 />
-                Perps
+                <span className="text-xl">Perps</span>
               </h2>
               <button className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center">
                 <span className="text-gray-400">⏱</span>
@@ -3588,24 +3627,30 @@ const PerpsModal = ({
             {/* Open Positions */}
             <div className="px-4 mb-5">
               <div className="text-gray-500 font-semibold mb-1">Open Positions</div>
-              <div className="text-gray-300 text-4xl font-bold mb-2">${totalOpenPositionUsd.toFixed(2)}</div>
+              <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Total Collateral</div>
+              <div className="text-gray-300 text-4xl font-bold mb-2">${totalOpenCollateralUsd.toFixed(2)}</div>
               <div className={`text-sm mb-3 ${totalOpenPnlUsd >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                 PnL {totalOpenPnlUsd >= 0 ? '+' : ''}${totalOpenPnlUsd.toFixed(2)}
               </div>
-              {positionsLoading ? (
-                <div className="text-gray-500 text-sm py-2">Loading positions...</div>
-              ) : openPositions.length === 0 ? (
+              {displayOpenPositions.length === 0 ? (
+                positionsLoading ? (
+                  <div className="text-gray-500 text-sm py-2">Loading positions...</div>
+                ) : (
                 <div className="text-center py-2">
                   <img
-                    src="https://www.avantisfi.com/images/avantis-logo.svg"
+                    src={AVANTIS_HEADER_LOGO_URL}
                     alt="Avantis"
-                    className="w-10 h-10 mx-auto mb-2 opacity-80"
+                    className="h-8 w-auto mx-auto mb-2 opacity-80"
                   />
                   <p className="text-white/90 font-semibold text-lg mb-1">No Open Positions</p>
                 </div>
+                )
               ) : (
                 <div className="space-y-2">
-                  {openPositions.map((p) => (
+                  {positionsLoading && (
+                    <div className="text-[11px] text-gray-500">Refreshing positions...</div>
+                  )}
+                  {displayOpenPositions.map((p) => (
                     <div key={p.id} className="bg-[#191919] border border-gray-800 rounded-xl p-3">
                       <div className="flex items-center justify-between mb-2">
                         <div className="text-white font-semibold">
