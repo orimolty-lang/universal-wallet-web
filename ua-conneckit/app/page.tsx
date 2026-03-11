@@ -2203,6 +2203,42 @@ const PerpsModal = ({
         : Number(usdcAsset.amount || 0);
     return Number.isFinite(totalAmount) ? totalAmount : 0;
   }, [assets]);
+  const uaBaseEthAvailable = useMemo(() => {
+    const assetList = (assets?.assets || []) as Array<{
+      tokenType?: string;
+      symbol?: string;
+      amount?: number | string;
+      chainAggregation?: Array<{
+        amount?: number | string;
+        token?: { chainId?: number | string };
+      }>;
+    }>;
+
+    const ethAsset = assetList.find((a) => {
+      const tokenType = a.tokenType?.toUpperCase();
+      const symbol = a.symbol?.toUpperCase();
+      return tokenType === 'ETH' || symbol === 'ETH';
+    });
+    if (!ethAsset) return 0;
+
+    const baseEntry = ethAsset.chainAggregation?.find(
+      (c) => Number(c.token?.chainId) === CHAIN_ID.BASE_MAINNET
+    );
+    if (baseEntry) {
+      const baseAmount =
+        typeof baseEntry.amount === 'string'
+          ? parseFloat(baseEntry.amount)
+          : Number(baseEntry.amount || 0);
+      return Number.isFinite(baseAmount) ? baseAmount : 0;
+    }
+
+    // Fallback when chain breakdown isn't available from SDK response.
+    const totalAmount =
+      typeof ethAsset.amount === 'string'
+        ? parseFloat(ethAsset.amount)
+        : Number(ethAsset.amount || 0);
+    return Number.isFinite(totalAmount) ? totalAmount : 0;
+  }, [assets]);
 
   // Back-compat for existing trading UI labels/checks
   const usdcBalance = unifiedUaBalance;
@@ -2790,13 +2826,19 @@ const PerpsModal = ({
       if (shouldFundEth) {
         setDepositStage('gas');
         setLoadingStatus('Preparing ETH gas top-up...');
-        await sendWithExpiryRetry(
-          () => universalAccount.createConvertTransaction({
-            expectToken: { type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethTarget.toString() },
-            chainId: CHAIN_ID.BASE_MAINNET,
-          }),
-          'Convert to Base ETH',
-        );
+        const ethShortfall = Math.max(0, ethTarget - uaBaseEthAvailable);
+        if (ethShortfall > 0.00000001) {
+          addDebug(`Base ETH in UA: ${uaBaseEthAvailable.toFixed(6)}. Converting shortfall: ${ethShortfall.toFixed(6)} ETH`);
+          await sendWithExpiryRetry(
+            () => universalAccount.createConvertTransaction({
+              expectToken: { type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethShortfall.toString() },
+              chainId: CHAIN_ID.BASE_MAINNET,
+            }),
+            'Convert to Base ETH',
+          );
+        } else {
+          addDebug(`Sufficient Base ETH already in UA (${uaBaseEthAvailable.toFixed(6)}). Skipping ETH convert step`);
+        }
 
         await sendWithExpiryRetry(
           () => universalAccount.createUniversalTransaction({
