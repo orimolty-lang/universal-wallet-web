@@ -2,7 +2,7 @@
 
 import { ConnectKitProvider, createConfig } from "@particle-network/connectkit";
 import { authWalletConnectors } from "@particle-network/connectkit/auth";
-import { arbitrum } from "@particle-network/connectkit/chains";
+import { arbitrum, base } from "@particle-network/connectkit/chains";
 import { evmWalletConnectors } from "@particle-network/connectkit/evm";
 import { wallet, EntryPosition } from "@particle-network/connectkit/wallet";
 import React from "react";
@@ -81,7 +81,7 @@ export const ParticleConnectkit = ({ children }: React.PropsWithChildren) => {
         visible: isWalletVisible, // Dictates whether or not the wallet modal is included/visible or not
       }),
     ],
-    chains: [arbitrum],
+    chains: [base, arbitrum],
   });
 
   return <ConnectKitProvider config={config}>{children}</ConnectKitProvider>;
