@@ -226,6 +226,13 @@ interface ProfileSettings {
   backgroundColor: string;
 }
 
+interface PairLeverageLimits {
+  standardMin: number;
+  standardMax: number;
+  zfpMin: number;
+  zfpMax: number;
+}
+
 // Common emojis for profile selection
 const PROFILE_EMOJIS = [
   "🍊", "😀", "😎", "🤠", "👻", "👽", "🤖", "👾", "🦊", "🐶", "🐱", "🦁",
@@ -1856,6 +1863,14 @@ const AVANTIS_PAIRS = PERPS_MARKETS.map(m => ({
   maxLeverage: m.maxLeverage 
 }));
 
+const AVANTIS_SOCKET_API_URL = 'https://socket-api-pub.avantisfi.com/socket-api/v1/data';
+
+const parsePairNameFromSocketSymbol = (symbol: string): string => {
+  // Socket symbols are usually "Crypto.ETH/USD", "FX.EUR/USD", etc.
+  const dotIndex = symbol.indexOf('.');
+  return dotIndex >= 0 ? symbol.slice(dotIndex + 1).toUpperCase() : symbol.toUpperCase();
+};
+
 // Pyth Price Feed IDs for ALL Avantis pairs
 const PYTH_FEED_IDS: Record<string, string> = {
   // Crypto
@@ -1921,6 +1936,8 @@ const PerpsModal = ({
   const [ownerEOA, setOwnerEOA] = useState<string>("");
   const [eoaUsdcBalance, setEoaUsdcBalance] = useState<number>(0);
   const [eoaEthBalance, setEoaEthBalance] = useState<number>(0);
+  const [isZeroFeeMode, setIsZeroFeeMode] = useState(false);
+  const [pairLeverageLimits, setPairLeverageLimits] = useState<Record<string, PairLeverageLimits>>({});
   const BASE_USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
   
   // Helper to add debug messages
@@ -1930,6 +1947,17 @@ const PerpsModal = ({
   };
   const [txResult, setTxResult] = useState<{ txId: string; status: string } | null>(null);
   const [sortBy, setSortBy] = useState<'volume' | 'price' | 'change'>('volume');
+  const activeLeverageLimits = useMemo(() => {
+    const limits = pairLeverageLimits[selectedPair.name];
+    const standardMin = limits ? Math.max(2, Math.floor(limits.standardMin)) : 2;
+    const standardMax = limits ? Math.max(standardMin, Math.floor(limits.standardMax)) : selectedPair.maxLeverage;
+    const zfpMin = limits ? Math.max(2, Math.floor(limits.zfpMin)) : standardMin;
+    const zfpMax = limits ? Math.max(zfpMin, Math.floor(limits.zfpMax)) : standardMax;
+    return { standardMin, standardMax, zfpMin, zfpMax };
+  }, [pairLeverageLimits, selectedPair]);
+  const zfpAvailable = activeLeverageLimits.zfpMax > 0;
+  const leverageMin = isZeroFeeMode ? activeLeverageLimits.zfpMin : activeLeverageLimits.standardMin;
+  const leverageMax = isZeroFeeMode ? activeLeverageLimits.zfpMax : activeLeverageLimits.standardMax;
 
   // Unified UA balance shown in Perps flows
   const unifiedUaBalance = useMemo(() => {
@@ -2084,6 +2112,75 @@ const PerpsModal = ({
     }
   }, [isOpen, view]);
 
+  // Fetch live leverage limits (including Zero Fee Perps ranges) from Avantis Socket API.
+  useEffect(() => {
+    let cancelled = false;
+    const loadLeverageLimits = async () => {
+      if (!isOpen) return;
+      try {
+        const response = await fetch(AVANTIS_SOCKET_API_URL);
+        const json = await response.json();
+        const pairInfos = json?.data?.pairInfos as Record<string, unknown> | undefined;
+        if (!pairInfos || typeof pairInfos !== 'object') return;
+
+        const limitsMap: Record<string, PairLeverageLimits> = {};
+        for (const infoRaw of Object.values(pairInfos)) {
+          const info = infoRaw as {
+            feed?: { attributes?: { symbol?: string } };
+            leverages?: {
+              minLeverage?: number;
+              maxLeverage?: number;
+              pnlMinLeverage?: number;
+              pnlMaxLeverage?: number;
+            };
+          };
+          const symbol = info.feed?.attributes?.symbol;
+          const leverages = info.leverages;
+          if (!symbol || !leverages) continue;
+
+          const pairName = parsePairNameFromSocketSymbol(symbol);
+          const standardMin = Number(leverages.minLeverage ?? 2);
+          const standardMax = Number(leverages.maxLeverage ?? 0);
+          const zfpMin = Number(leverages.pnlMinLeverage ?? standardMin);
+          const zfpMax = Number(leverages.pnlMaxLeverage ?? standardMax);
+          if (!Number.isFinite(standardMax) || standardMax <= 0) continue;
+
+          limitsMap[pairName] = {
+            standardMin: Number.isFinite(standardMin) && standardMin > 0 ? standardMin : 2,
+            standardMax,
+            zfpMin: Number.isFinite(zfpMin) && zfpMin > 0 ? zfpMin : standardMin,
+            zfpMax: Number.isFinite(zfpMax) && zfpMax > 0 ? zfpMax : standardMax,
+          };
+        }
+
+        if (!cancelled && Object.keys(limitsMap).length > 0) {
+          setPairLeverageLimits(limitsMap);
+        }
+      } catch {
+        // Keep static fallback limits if API fails.
+      }
+    };
+
+    loadLeverageLimits();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isZeroFeeMode && !zfpAvailable) {
+      setIsZeroFeeMode(false);
+    }
+  }, [isZeroFeeMode, zfpAvailable]);
+
+  useEffect(() => {
+    setLeverage((prev) => {
+      if (prev < leverageMin) return leverageMin;
+      if (prev > leverageMax) return leverageMax;
+      return prev;
+    });
+  }, [leverageMin, leverageMax]);
+
   const fetchOwnerBalances = useCallback(async (eoa: string) => {
     const [ethRes, usdcRes] = await Promise.all([
       fetch('https://mainnet.base.org', {
@@ -2148,7 +2245,6 @@ const PerpsModal = ({
     const pair = AVANTIS_PAIRS.find(p => p.name === `${market.symbol}/USD`);
     if (pair) {
       setSelectedPair(pair);
-      setLeverage((prev) => Math.min(prev, pair.maxLeverage));
     }
     setView('trade');
   };
@@ -2305,8 +2401,13 @@ const PerpsModal = ({
       const collateralAmount = parseFloat(collateral);
       const tpPrice = takeProfit ? parseFloat(takeProfit) : 0;
       const slPrice = stopLoss ? parseFloat(stopLoss) : 0;
-      if (leverage > selectedPair.maxLeverage) {
-        setError(`Max leverage for ${selectedPair.name} is ${selectedPair.maxLeverage}x.`);
+      if (isZeroFeeMode && !zfpAvailable) {
+        setError(`Zero Fee Perps is not available for ${selectedPair.name} right now.`);
+        setIsLoading(false);
+        return;
+      }
+      if (leverage < leverageMin || leverage > leverageMax) {
+        setError(`Leverage for ${selectedPair.name} must be between ${leverageMin}x and ${leverageMax}x${isZeroFeeMode ? ' in Zero Fee mode' : ''}.`);
         setIsLoading(false);
         return;
       }
@@ -2321,6 +2422,7 @@ const PerpsModal = ({
       
       addDebug(`Collateral: $${collateralAmount}, Leverage: ${leverage}x, Position: $${positionValue}`);
       addDebug(`Pair: ${selectedPair.name}, Direction: ${isLong ? 'LONG' : 'SHORT'}`);
+      addDebug(`Mode: ${isZeroFeeMode ? 'Zero Fee Perps (MARKET_ZERO_FEE)' : 'Standard Perps (MARKET)'}`);
       
       console.log('[Perps] Opening position:', {
         pair: selectedPair.name,
@@ -2459,6 +2561,7 @@ const PerpsModal = ({
 
       // Step 2: Encode the openTrade call (inner calldata)
       const timestamp = BigInt(Math.floor(Date.now() / 1000)); // Unix timestamp in seconds
+      const orderTypeValue = isZeroFeeMode ? 3 : 0; // 0=MARKET, 3=MARKET_ZERO_FEE
       const innerOpenTradeCalldata = encodeFunctionData({
         abi: AVANTIS_TRADING_ABI,
         functionName: 'openTrade',
@@ -2476,7 +2579,7 @@ const PerpsModal = ({
             sl: slScaled,
             timestamp: timestamp,
           },
-          0, // orderType: 0 = MARKET
+          orderTypeValue,
           slippageP,
         ],
       });
@@ -2501,6 +2604,7 @@ const PerpsModal = ({
         pairIndex: selectedPair.index,
         leverage,
         isLong,
+        orderTypeValue,
         positionSizeUSDC: positionSizeUSDC.toString(),
         openPrice: openPriceScaled.toString(),
         approveAmount: approveAmount.toString(),
@@ -2509,6 +2613,7 @@ const PerpsModal = ({
       // EOA execution path (same model as PerpsTrader): approve + openTrade directly from owner EOA
       addDebug(`Trader(EOA): ${traderAddress}`);
       addDebug(`Leverage: ${leverage}x`);
+      addDebug(`OrderType: ${isZeroFeeMode ? 'MARKET_ZERO_FEE (3)' : 'MARKET (0)'}`);
 
       const waitReceipt = async (txHash: string) => {
         for (let i = 0; i < 30; i++) {
@@ -2668,7 +2773,9 @@ const PerpsModal = ({
         const msg = err.message.toLowerCase();
         const fullMsg = err.message; // Keep original for display
         
-        if (msg.includes('simulation') || msg.includes('revert')) {
+        if (msg.includes('leverage_incorrect')) {
+          errorMessage = `Invalid leverage for ${selectedPair.name}. Use ${leverageMin}x-${leverageMax}x${isZeroFeeMode ? ' in Zero Fee mode' : ''}.`;
+        } else if (msg.includes('simulation') || msg.includes('revert')) {
           // Show full error for debugging + trader address for verification
           errorMessage = `Simulation failed: ${fullMsg.slice(0, 100)}${errorDetails ? ' ' + errorDetails : ''}`;
         } else if (msg.includes('insufficient') || msg.includes('balance')) {
@@ -2690,7 +2797,15 @@ const PerpsModal = ({
     }
   };
 
-  const canTrade = collateral && parseFloat(collateral) > 0 && parseFloat(collateral) <= usdcBalance;
+  const isLeverageValid =
+    leverage >= leverageMin &&
+    leverage <= leverageMax &&
+    (!isZeroFeeMode || zfpAvailable);
+  const canTrade =
+    !!collateral &&
+    parseFloat(collateral) > 0 &&
+    parseFloat(collateral) <= usdcBalance &&
+    isLeverageValid;
   const depositAmountNum = parseFloat(depositAmount) || 0;
   const gasTopUpNum = parseFloat(gasTopUpAmount) || 0;
   const canDeposit =
@@ -3086,6 +3201,37 @@ const PerpsModal = ({
               </button>
             </div>
 
+            {/* Zero Fee Perps Mode */}
+            <div className="bg-gray-800/40 rounded-xl p-3 mb-3 border border-gray-700/60">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm text-white font-medium">Zero Fee Perps (ZFP)</div>
+                  <div className="text-[11px] text-gray-400">
+                    {zfpAvailable
+                      ? `Standard ${activeLeverageLimits.standardMin}x-${activeLeverageLimits.standardMax}x • ZFP ${activeLeverageLimits.zfpMin}x-${activeLeverageLimits.zfpMax}x`
+                      : 'Not available for this market'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={!zfpAvailable}
+                  onClick={() => setIsZeroFeeMode((prev) => !prev)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    isZeroFeeMode && zfpAvailable ? 'bg-accent-dynamic' : 'bg-gray-600'
+                  } ${!zfpAvailable ? 'opacity-40 cursor-not-allowed' : ''}`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      isZeroFeeMode && zfpAvailable ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              <div className="text-[11px] text-gray-500 mt-2">
+                Order type: {isZeroFeeMode ? 'Market Zero Fee' : 'Market'}
+              </div>
+            </div>
+
             {/* Leverage */}
             <div className="bg-gray-800/50 rounded-xl p-4 mb-3">
               <div className="flex justify-between text-sm mb-2">
@@ -3094,15 +3240,15 @@ const PerpsModal = ({
               </div>
               <input
                 type="range"
-                min="2"
-                max={selectedPair.maxLeverage}
+                min={leverageMin}
+                max={leverageMax}
                 value={leverage}
                 onChange={(e) => setLeverage(Number(e.target.value))}
                 className="w-full accent-dynamic h-2"
               />
               <div className="flex justify-between text-xs text-gray-500 mt-1">
-                <span>2x</span>
-                <span>{selectedPair.maxLeverage}x</span>
+                <span>{leverageMin}x</span>
+                <span>{leverageMax}x</span>
               </div>
             </div>
 
