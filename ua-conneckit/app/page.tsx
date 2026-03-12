@@ -2063,7 +2063,7 @@ const PERPS_MARKET_SYMBOL_META: Record<string, PerpsMarket> = PERPS_MARKETS.redu
   acc[market.symbol] = market;
   return acc;
 }, {} as Record<string, PerpsMarket>);
-const DEFAULT_PERPS_MARKET_LOGO = 'https://www.avantisfi.com/favicon.ico';
+const DEFAULT_PERPS_MARKET_LOGO = '';
 
 const AVANTIS_SOCKET_API_URL = 'https://socket-api-pub.avantisfi.com/socket-api/v1/data';
 
@@ -2096,6 +2096,40 @@ const inferPerpsGroupFromSocketSymbol = (socketSymbol?: string): PerpsMarketGrou
 
 const MARKET_NAME_ALIASES: Record<string, string> = {
   AVNT: 'Avantis',
+};
+const FOREX_FLAG_BY_SYMBOL: Record<string, string> = {
+  USD: 'us',
+  EUR: 'eu',
+  GBP: 'gb',
+  JPY: 'jp',
+  CHF: 'ch',
+  CAD: 'ca',
+  AUD: 'au',
+  NZD: 'nz',
+  CNY: 'cn',
+  HKD: 'hk',
+};
+const resolveMarketLogo = ({
+  symbol,
+  group,
+  staticLogo,
+  fromSymbol,
+}: {
+  symbol: string;
+  group: PerpsMarketGroup;
+  staticLogo?: string;
+  fromSymbol?: string;
+}) => {
+  if (staticLogo) return staticLogo;
+  const baseSymbol = (fromSymbol || symbol || '').toUpperCase();
+  if (group === 'forex') {
+    const cc = FOREX_FLAG_BY_SYMBOL[baseSymbol];
+    if (cc) return `https://flagcdn.com/w80/${cc}.png`;
+  }
+  if (group === 'crypto') {
+    return `https://cryptoicons.org/api/icon/${baseSymbol.toLowerCase()}/200`;
+  }
+  return '';
 };
 
 const PerpsModal = ({
@@ -2151,7 +2185,7 @@ const PerpsModal = ({
     timestamp: number;
   }>>([]);
   const BASE_USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
-  const AVANTIS_HEADER_LOGO_URL = 'https://1312337203-files.gitbook.io/~/files/v0/b/gitbook-x-prod.appspot.com/o/spaces%2F76vAZHPcNKY10NzuKsC4%2Fuploads%2FEbbnsKGrcR2kXz3JxZ1w%2FAvantis%20White%20Logo%20-%20Horizontal.png?alt=media';
+  const AVANTIS_HEADER_LOGO_URL = 'https://1312337203-files.gitbook.io/~/files/v0/b/gitbook-x-prod.appspot.com/o/spaces%2F76vAZHPcNKY10NzuKsC4%2Fuploads%2FfM44ZIUWnrYhajk68ioy%2FAvantis%20White%20Logo%20-%20Iconmark.png?alt=media';
   const marketPricesRef = useRef<Record<string, { price: number; change24h: number }>>({});
   const previousPositionIdsRef = useRef<Set<string>>(new Set());
   const [showPerpsHistoryModal, setShowPerpsHistoryModal] = useState(false);
@@ -2192,7 +2226,12 @@ const PerpsModal = ({
         symbol,
         name: staticMeta?.name || MARKET_NAME_ALIASES[symbol] || symbol,
         maxLeverage: Math.max(2, Math.floor(limits.standardMax || staticMeta?.maxLeverage || 100)),
-        logo: staticMeta?.logo || DEFAULT_PERPS_MARKET_LOGO,
+        logo: resolveMarketLogo({
+          symbol,
+          group: limits.group || staticMeta?.group || 'other',
+          staticLogo: staticMeta?.logo || DEFAULT_PERPS_MARKET_LOGO,
+          fromSymbol: limits.fromSymbol,
+        }),
         color: staticMeta?.color || '#6b7280',
         group: limits.group || staticMeta?.group || 'other',
         pairName,
@@ -2526,6 +2565,17 @@ const PerpsModal = ({
     const usdc = usdcRes?.result ? Number(BigInt(usdcRes.result)) / 1e6 : 0;
     return { eth, usdc };
   }, [BASE_USDC_ADDRESS]);
+  const refreshOwnerBalances = useCallback(async (targetEoa?: string) => {
+    const eoa = (targetEoa || ownerEOA || '').trim();
+    if (!eoa) return;
+    try {
+      const { eth, usdc } = await fetchOwnerBalances(eoa);
+      setEoaEthBalance(eth);
+      setEoaUsdcBalance(usdc);
+    } catch {
+      // ignore transient RPC failures
+    }
+  }, [ownerEOA, fetchOwnerBalances]);
 
   // Resolve owner EOA and balances (execution wallet)
   useEffect(() => {
@@ -2555,15 +2605,20 @@ const PerpsModal = ({
         setOwnerEOA(eoa);
         if (!eoa) return;
 
-        const { eth, usdc } = await fetchOwnerBalances(eoa);
-        setEoaEthBalance(eth);
-        setEoaUsdcBalance(usdc);
+        await refreshOwnerBalances(eoa);
       } catch {
         // ignore
       }
     };
     loadOwner();
-  }, [isOpen, primaryWallet, universalAccount, fetchOwnerBalances]);
+  }, [isOpen, primaryWallet, universalAccount, refreshOwnerBalances]);
+  useEffect(() => {
+    if (!isOpen || !ownerEOA) return;
+    const t = setInterval(() => {
+      refreshOwnerBalances();
+    }, 10000);
+    return () => clearInterval(t);
+  }, [isOpen, ownerEOA, refreshOwnerBalances]);
 
   const handleSelectMarket = (market: PerpsMarket) => {
     setSelectedMarket(market);
@@ -2737,7 +2792,8 @@ const PerpsModal = ({
               ? rawPositionUsd / leverageNum
               : rawPositionUsd;
           if (!Number.isFinite(collateralUsd) || collateralUsd <= 0) continue;
-          const sizeUsd = rawPositionUsd > 0 ? rawPositionUsd : collateralUsd * leverageNum;
+          // Avantis storage raw position field can vary by mode; derive notional from collateral * leverage for stable UI/PnL.
+          const sizeUsd = collateralUsd * Math.max(leverageNum, 0);
           const entryPrice = Number(trade.openPrice) / 1e10;
           const markPrice = marketPricesRef.current[pairName]?.price || entryPrice;
           const pnlUsd = trade.buy
@@ -3458,6 +3514,11 @@ const PerpsModal = ({
       setTxResult({ txId: tradeHash, status: 'complete', action: 'open' });
       setLoadingStatus('Position opened');
       await fetchOpenPositions();
+      await refreshOwnerBalances();
+      setTimeout(() => {
+        fetchOpenPositions();
+        refreshOwnerBalances();
+      }, 6000);
       setTimeout(() => setTxResult(null), 2500);
 
       // Reset form
@@ -3586,6 +3647,11 @@ const PerpsModal = ({
       });
       setTxResult({ txId: txHash, status: 'complete', action: 'close' });
       await fetchOpenPositions();
+      await refreshOwnerBalances();
+      setTimeout(() => {
+        fetchOpenPositions();
+        refreshOwnerBalances();
+      }, 8000);
       setTimeout(() => setTxResult(null), 2500);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -3684,6 +3750,7 @@ const PerpsModal = ({
       });
       setTxResult({ txId: txHash, status: 'complete', action: 'update' });
       await fetchOpenPositions();
+      await refreshOwnerBalances();
       setTimeout(() => setTxResult(null), 2500);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -3760,13 +3827,13 @@ const PerpsModal = ({
             {/* Header */}
             <div className="flex items-center justify-between px-4 mb-3">
               <div className="w-10 h-10" />
-              <h2 className="text-white text-2xl font-bold flex items-center gap-2">
+              <h2 className="text-white text-2xl font-bold flex items-center gap-2.5">
                 <img
                   src={AVANTIS_HEADER_LOGO_URL}
                   alt="Avantis"
-                  className="h-8 w-auto"
+                  className="h-10 w-10"
                 />
-                <span className="text-xl">Perps</span>
+                <span className="text-2xl">Perps</span>
               </h2>
               <button
                 onClick={() => setShowPerpsHistoryModal(true)}
@@ -3956,8 +4023,13 @@ const PerpsModal = ({
                           className="w-7 h-7"
                           onError={(e) => {
                             (e.currentTarget as HTMLImageElement).style.display = 'none';
+                            const sibling = e.currentTarget.nextElementSibling as HTMLElement | null;
+                            if (sibling) sibling.style.display = 'flex';
                           }}
                         />
+                        <span className="hidden items-center justify-center w-full h-full text-[10px] font-bold text-gray-300">
+                          {market.symbol.slice(0, 4)}
+                        </span>
                       </div>
                       {/* Token Info */}
                       <div className="text-left">
@@ -4176,7 +4248,19 @@ const PerpsModal = ({
                   className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden"
                   style={{ backgroundColor: `${selectedMarket.color}20` }}
                 >
-                  <img src={selectedMarket.logo} alt={selectedMarket.symbol} className="w-6 h-6" />
+                  <img
+                    src={selectedMarket.logo}
+                    alt={selectedMarket.symbol}
+                    className="w-6 h-6"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.display = 'none';
+                      const sibling = e.currentTarget.nextElementSibling as HTMLElement | null;
+                      if (sibling) sibling.style.display = 'flex';
+                    }}
+                  />
+                  <span className="hidden items-center justify-center w-full h-full text-[9px] font-bold text-gray-300">
+                    {selectedMarket.symbol.slice(0, 4)}
+                  </span>
                 </div>
                 <span className="text-white font-bold text-lg">{selectedMarket.pairName}</span>
               </div>
