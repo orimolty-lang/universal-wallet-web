@@ -2364,32 +2364,34 @@ const PerpsModal = ({
       }
 
       const uniqueFeedIds = Array.from(new Set(feedTargets.map((x) => x.feedId)));
-      const params = new URLSearchParams();
-      for (const id of uniqueFeedIds) {
-        params.append('ids[]', id);
-      }
-      try {
-        const response = await fetch(`https://hermes.pyth.network/v2/updates/price/latest?${params.toString()}`);
-        const data = await response.json();
-        const parsed = Array.isArray(data?.parsed) ? data.parsed : [];
-        const priceByFeedId = new Map<string, number>();
-        const normalizeFeedId = (id: string) => id.replace(/^0x/i, '').toLowerCase();
-        for (const item of parsed) {
-          const id = typeof item?.id === 'string' ? item.id : '';
-          const p = item?.price;
-          if (!id || !p || !Number.isFinite(Number(p.price)) || !Number.isFinite(Number(p.expo))) continue;
-          const price = Number(p.price) * Math.pow(10, Number(p.expo));
-          if (Number.isFinite(price) && price > 0) {
-            priceByFeedId.set(normalizeFeedId(id), price);
+      const normalizeFeedId = (id: string) => id.replace(/^0x/i, '').toLowerCase();
+      const priceByFeedId = new Map<string, number>();
+      const fetchPriceForFeedId = async (feedId: string) => {
+        try {
+          const response = await fetch(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${feedId}`);
+          if (!response.ok) return;
+          const data = await response.json();
+          const parsed = Array.isArray(data?.parsed) ? data.parsed : [];
+          for (const item of parsed) {
+            const id = typeof item?.id === 'string' ? item.id : '';
+            const p = item?.price;
+            if (!id || !p || !Number.isFinite(Number(p.price)) || !Number.isFinite(Number(p.expo))) continue;
+            const price = Number(p.price) * Math.pow(10, Number(p.expo));
+            if (Number.isFinite(price) && price > 0) {
+              priceByFeedId.set(normalizeFeedId(id), price);
+            }
           }
+        } catch {
+          // per-feed failures are ignored so one broken id doesn't nuke all prices
         }
-        for (const { pairName, feedId } of feedTargets) {
-          const price = priceByFeedId.get(normalizeFeedId(feedId));
-          if (!price) continue;
-          prices[pairName] = { price, change24h: 0 };
-        }
-      } catch {
-        // no static fallbacks in production market data path
+      };
+      for (let i = 0; i < uniqueFeedIds.length; i += 12) {
+        await Promise.all(uniqueFeedIds.slice(i, i + 12).map(fetchPriceForFeedId));
+      }
+      for (const { pairName, feedId } of feedTargets) {
+        const price = priceByFeedId.get(normalizeFeedId(feedId));
+        if (!price) continue;
+        prices[pairName] = { price, change24h: 0 };
       }
       
       setMarketPrices(prices);
