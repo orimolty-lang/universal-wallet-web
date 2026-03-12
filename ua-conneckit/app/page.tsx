@@ -224,6 +224,7 @@ interface ProfileSettings {
   customImage: string | null;
   displayName: string;
   backgroundColor: string;
+  blindSigningEnabled: boolean;
 }
 
 interface PairLeverageLimits {
@@ -234,6 +235,24 @@ interface PairLeverageLimits {
   zfpMax: number;
   pairOI?: number;
   pairMaxOI?: number;
+  socketSymbol?: string;
+  group?: PerpsMarketGroup;
+  fromSymbol?: string;
+  toSymbol?: string;
+  displayName?: string;
+}
+
+type PerpsMarketGroup = 'crypto' | 'forex' | 'commodities' | 'equity' | 'other';
+
+interface PerpsMarket {
+  index: number;
+  symbol: string;
+  name: string;
+  maxLeverage: number;
+  logo: string;
+  color: string;
+  group: PerpsMarketGroup;
+  pairName: string;
 }
 
 interface OpenPerpsPosition {
@@ -301,6 +320,49 @@ function applyAccentTheme(hexColor: string) {
   
   console.log('[Theme] Applied accent color:', hexColor);
 }
+
+type WalletClientLike = {
+  account?: { address?: `0x${string}` };
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  signMessage?: (args: { message: string | { raw: `0x${string}` } }) => Promise<unknown>;
+};
+
+const signUniversalRootHash = async ({
+  walletClient,
+  rootHash,
+  signerAddress,
+  blindSigningEnabled,
+}: {
+  walletClient: WalletClientLike;
+  rootHash: `0x${string}`;
+  signerAddress?: `0x${string}`;
+  blindSigningEnabled: boolean;
+}): Promise<string> => {
+  const signer = signerAddress || walletClient.account?.address;
+  if (!signer) {
+    throw new Error('Signer address unavailable for UA signature');
+  }
+
+  if (blindSigningEnabled && walletClient.signMessage) {
+    try {
+      const signature = await walletClient.signMessage({ message: { raw: rootHash } });
+      if (typeof signature === 'string' && signature.startsWith('0x')) {
+        return signature;
+      }
+    } catch {
+      // Fall back to explicit personal_sign path if blind sign path is unsupported.
+    }
+  }
+
+  const signature = await walletClient.request({
+    method: 'personal_sign',
+    params: [rootHash, signer],
+  });
+  if (typeof signature !== 'string') {
+    throw new Error('Invalid signature response from wallet');
+  }
+  return signature;
+};
 
 // Token icon mapping
 const TOKEN_ICONS: Record<string, string> = {
@@ -1121,6 +1183,7 @@ const ConvertModal = ({
   onClose,
   assets,
   universalAccount,
+  blindSigningEnabled,
   onTransactionCreated,
   onSuccess,
 }: {
@@ -1128,6 +1191,7 @@ const ConvertModal = ({
   onClose: () => void;
   assets: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
+  blindSigningEnabled: boolean;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onTransactionCreated?: (tx: any) => void;
   onSuccess?: () => void; // Callback to refresh balances
@@ -1403,10 +1467,12 @@ const ConvertModal = ({
         const walletClient = primaryWallet.getWalletClient();
         
         // Sign the root hash
-        const signature = await walletClient.request({
-          method: 'personal_sign',
+        const signature = await signUniversalRootHash({
+          walletClient: walletClient as unknown as WalletClientLike,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          params: [(tx as any).rootHash as `0x${string}`, walletClient.account?.address as `0x${string}`],
+          rootHash: (tx as any).rootHash as `0x${string}`,
+          signerAddress: walletClient.account?.address as `0x${string}` | undefined,
+          blindSigningEnabled,
         });
 
         // Send transaction
@@ -1955,7 +2021,7 @@ const PYTH_ABI = [
 // - Execution fees: 18 decimals wei
 
 // ALL Avantis Perps Markets (from SDK docs)
-const PERPS_MARKETS = [
+const BASE_PERPS_MARKETS: Omit<PerpsMarket, 'pairName'>[] = [
   // Crypto (Group 0 & 1)
   { index: 0, symbol: 'BTC', name: 'Bitcoin', maxLeverage: 100, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/bitcoin/info/logo.png', color: '#F7931A', group: 'crypto' },
   { index: 1, symbol: 'ETH', name: 'Ethereum', maxLeverage: 100, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png', color: '#627EEA', group: 'crypto' },
@@ -1984,13 +2050,19 @@ const PERPS_MARKETS = [
   { index: 20, symbol: 'XAU', name: 'Gold', maxLeverage: 50, logo: 'https://s2.coinmarketcap.com/static/img/coins/64x64/5176.png', color: '#FFD700', group: 'commodities' },
   { index: 21, symbol: 'XAG', name: 'Silver', maxLeverage: 50, logo: 'https://s2.coinmarketcap.com/static/img/coins/64x64/5180.png', color: '#C0C0C0', group: 'commodities' },
 ];
+const PERPS_MARKETS: PerpsMarket[] = BASE_PERPS_MARKETS.map((m) => ({ ...m, pairName: `${m.symbol}/USD` }));
 
 // Legacy format for compatibility
 const AVANTIS_PAIRS = PERPS_MARKETS.map(m => ({ 
   index: m.index, 
-  name: `${m.symbol}/USD`, 
+  name: m.pairName, 
   maxLeverage: m.maxLeverage 
 }));
+const PERPS_MARKET_SYMBOL_META: Record<string, PerpsMarket> = PERPS_MARKETS.reduce((acc, market) => {
+  acc[market.symbol] = market;
+  return acc;
+}, {} as Record<string, PerpsMarket>);
+const DEFAULT_PERPS_MARKET_LOGO = 'https://www.avantisfi.com/favicon.ico';
 
 const AVANTIS_SOCKET_API_URL = 'https://socket-api-pub.avantisfi.com/socket-api/v1/data';
 
@@ -2000,6 +2072,15 @@ const parsePairNameFromSocketSymbol = (symbol: string): string => {
   const normalized = dotIndex >= 0 ? symbol.slice(dotIndex + 1).toUpperCase() : symbol.toUpperCase();
   if (normalized === 'USD/JPY') return 'JPY/USD';
   return normalized;
+};
+
+const inferPerpsGroupFromSocketSymbol = (socketSymbol?: string): PerpsMarketGroup => {
+  const prefix = socketSymbol?.split('.', 1)?.[0]?.toUpperCase() || '';
+  if (prefix === 'CRYPTO') return 'crypto';
+  if (prefix === 'FX') return 'forex';
+  if (prefix === 'METAL' || prefix === 'COMMODITIES') return 'commodities';
+  if (prefix === 'EQUITY') return 'equity';
+  return 'other';
 };
 
 // Pyth Price Feed IDs for ALL Avantis pairs
@@ -2038,11 +2119,13 @@ const PerpsModal = ({
   onClose,
   assets,
   universalAccount,
+  blindSigningEnabled,
 }: {
   isOpen: boolean;
   onClose: () => void;
   assets: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
+  blindSigningEnabled: boolean;
 }) => {
   const [primaryWallet] = useWallets();
   const [view, setView] = useState<'markets' | 'trade' | 'deposit'>('markets');
@@ -2070,10 +2153,10 @@ const PerpsModal = ({
   const [isZeroFeeMode, setIsZeroFeeMode] = useState(false);
   const [pairLeverageLimits, setPairLeverageLimits] = useState<Record<string, PairLeverageLimits>>({});
   const [marketSearch, setMarketSearch] = useState('');
-  const [marketGroupFilter, setMarketGroupFilter] = useState<'all' | 'crypto' | 'forex' | 'commodities'>('all');
+  const [marketGroupFilter, setMarketGroupFilter] = useState<'all' | PerpsMarketGroup>('all');
   const [showTpSlInputs, setShowTpSlInputs] = useState(false);
   const [displayOpenPositions, setDisplayOpenPositions] = useState<OpenPerpsPosition[]>([]);
-  const [positionsLoading, setPositionsLoading] = useState(false);
+  const [, setPositionsLoading] = useState(false);
   const [positionEdits, setPositionEdits] = useState<Record<string, { tp: string; sl: string }>>({});
   const [perpsActivity, setPerpsActivity] = useState<Array<{
     id: string;
@@ -2087,6 +2170,7 @@ const PerpsModal = ({
   const AVANTIS_HEADER_LOGO_URL = 'https://1312337203-files.gitbook.io/~/files/v0/b/gitbook-x-prod.appspot.com/o/spaces%2F76vAZHPcNKY10NzuKsC4%2Fuploads%2FEbbnsKGrcR2kXz3JxZ1w%2FAvantis%20White%20Logo%20-%20Horizontal.png?alt=media';
   const marketPricesRef = useRef<Record<string, { price: number; change24h: number }>>({});
   const previousPositionIdsRef = useRef<Set<string>>(new Set());
+  const [showPerpsHistoryModal, setShowPerpsHistoryModal] = useState(false);
   
   // Helper to add debug messages
   const addDebug = (msg: string) => {
@@ -2115,6 +2199,39 @@ const PerpsModal = ({
     if (abs >= 1_000) return `${(value / 1_000).toFixed(2)}K`;
     return value.toFixed(2);
   };
+  const availableMarkets = useMemo<PerpsMarket[]>(() => {
+    const merged = new Map<string, PerpsMarket>();
+    for (const market of PERPS_MARKETS) {
+      merged.set(market.pairName, market);
+    }
+    for (const [pairName, limits] of Object.entries(pairLeverageLimits)) {
+      const existing = merged.get(pairName);
+      const symbol = (limits.fromSymbol || pairName.split('/')[0] || pairName).toUpperCase();
+      const staticMeta = PERPS_MARKET_SYMBOL_META[symbol];
+      const fallback: PerpsMarket = {
+        index: Number.isFinite(Number(limits.pairIndex)) ? Number(limits.pairIndex) : 1000 + merged.size,
+        symbol,
+        name: limits.displayName || symbol,
+        maxLeverage: Math.max(2, Math.floor(limits.standardMax || staticMeta?.maxLeverage || 100)),
+        logo: staticMeta?.logo || DEFAULT_PERPS_MARKET_LOGO,
+        color: staticMeta?.color || '#6b7280',
+        group: limits.group || staticMeta?.group || 'other',
+        pairName,
+      };
+      merged.set(pairName, {
+        ...(existing || fallback),
+        pairName,
+        index: Number.isFinite(Number(limits.pairIndex))
+          ? Number(limits.pairIndex)
+          : (existing?.index ?? fallback.index),
+        maxLeverage: Math.max(2, Math.floor(limits.standardMax || existing?.maxLeverage || fallback.maxLeverage)),
+      });
+    }
+    return Array.from(merged.values()).sort((a, b) => {
+      if (a.index !== b.index) return a.index - b.index;
+      return a.pairName.localeCompare(b.pairName);
+    });
+  }, [pairLeverageLimits]);
   useEffect(() => {
     marketPricesRef.current = marketPrices;
   }, [marketPrices]);
@@ -2137,6 +2254,9 @@ const PerpsModal = ({
       // ignore storage quota issues
     }
   }, [perpsActivity]);
+  useEffect(() => {
+    if (!isOpen) setShowPerpsHistoryModal(false);
+  }, [isOpen]);
   useEffect(() => {
     if (!ownerEOA) return;
     try {
@@ -2225,6 +2345,7 @@ const PerpsModal = ({
       const feedId = PYTH_FEED_IDS[selectedPair.name];
       if (!feedId) {
         console.log('[Perps] No Pyth feed ID for', selectedPair.name);
+        setCurrentPrice(null);
         return;
       }
       
@@ -2273,8 +2394,8 @@ const PerpsModal = ({
     const fetchAllPrices = async () => {
       const prices: Record<string, { price: number; change24h: number }> = {};
       
-      for (const market of PERPS_MARKETS) {
-        const pairName = `${market.symbol}/USD`;
+      for (const market of availableMarkets) {
+        const pairName = market.pairName;
         const feedId = PYTH_FEED_IDS[pairName];
         if (!feedId) continue;
         
@@ -2310,7 +2431,7 @@ const PerpsModal = ({
     if (isOpen && view === 'markets') {
       fetchAllPrices();
     }
-  }, [isOpen, view]);
+  }, [isOpen, view, availableMarkets]);
 
   // Fetch live leverage limits (including Zero Fee Perps ranges) from Avantis Socket API.
   useEffect(() => {
@@ -2335,13 +2456,15 @@ const PerpsModal = ({
             };
             pairOI?: number;
             pairMaxOI?: number;
+            from?: string;
+            to?: string;
           };
           const symbol = info.feed?.attributes?.symbol;
           const leverages = info.leverages;
-          if (!symbol || !leverages) continue;
+          if (!leverages) continue;
           const parsedPairIndex = Number(pairIndexKey);
 
-          const pairName = parsePairNameFromSocketSymbol(symbol);
+          const pairName = parsePairNameFromSocketSymbol(symbol || `${info.from || ''}/${info.to || ''}`);
           const standardMin = Number(leverages.minLeverage ?? 2);
           const standardMax = Number(leverages.maxLeverage ?? 0);
           const zfpMin = Number(leverages.pnlMinLeverage ?? standardMin);
@@ -2356,6 +2479,11 @@ const PerpsModal = ({
             zfpMax: Number.isFinite(zfpMax) && zfpMax > 0 ? zfpMax : standardMax,
             pairOI: Number.isFinite(Number(info.pairOI)) ? Number(info.pairOI) : 0,
             pairMaxOI: Number.isFinite(Number(info.pairMaxOI)) ? Number(info.pairMaxOI) : 0,
+            socketSymbol: symbol,
+            group: inferPerpsGroupFromSocketSymbol(symbol),
+            fromSymbol: (info.from || '').toUpperCase() || undefined,
+            toSymbol: (info.to || '').toUpperCase() || undefined,
+            displayName: (info.from && info.to) ? `${info.from}/${info.to}` : undefined,
           };
         }
 
@@ -2453,11 +2581,17 @@ const PerpsModal = ({
     loadOwner();
   }, [isOpen, primaryWallet, universalAccount, fetchOwnerBalances]);
 
-  const handleSelectMarket = (market: typeof PERPS_MARKETS[0]) => {
+  const handleSelectMarket = (market: PerpsMarket) => {
     setSelectedMarket(market);
-    const pair = AVANTIS_PAIRS.find(p => p.name === `${market.symbol}/USD`);
+    const pair = AVANTIS_PAIRS.find(p => p.name === market.pairName);
     if (pair) {
       setSelectedPair(pair);
+    } else {
+      setSelectedPair({
+        index: market.index,
+        name: market.pairName,
+        maxLeverage: market.maxLeverage,
+      });
     }
     setView('trade');
   };
@@ -2535,8 +2669,8 @@ const PerpsModal = ({
     }
     setPositionsLoading(true);
     try {
-      const knownPairCount = PERPS_MARKETS.reduce((count, market) => {
-        const pairName = `${market.symbol}/USD`;
+      const knownPairCount = availableMarkets.reduce((count, market) => {
+        const pairName = market.pairName;
         return pairLeverageLimits[pairName]?.pairIndex !== undefined ? count + 1 : count;
       }, 0);
       if (knownPairCount === 0) {
@@ -2546,8 +2680,8 @@ const PerpsModal = ({
 
       const positions: OpenPerpsPosition[] = [];
       let queriedAnyCountSuccessfully = false;
-      for (const market of PERPS_MARKETS) {
-        const pairName = `${market.symbol}/USD`;
+      for (const market of availableMarkets) {
+        const pairName = market.pairName;
         const pairIndex = pairLeverageLimits[pairName]?.pairIndex;
         if (pairIndex === undefined) continue;
 
@@ -2692,7 +2826,7 @@ const PerpsModal = ({
     } finally {
       setPositionsLoading(false);
     }
-  }, [ownerEOA, pairLeverageLimits, baseRpcCall, upsertPerpsActivity]);
+  }, [ownerEOA, pairLeverageLimits, baseRpcCall, upsertPerpsActivity, availableMarkets]);
 
   useEffect(() => {
     if (!isOpen || !ownerEOA) return;
@@ -2778,9 +2912,11 @@ const PerpsModal = ({
               throw new Error(`${label} missing rootHash`);
             }
             // Match ConvertModal flow for UA signing compatibility.
-            const signature = await walletClient.request({
-              method: 'personal_sign',
-              params: [rootHash, ownerEOA as `0x${string}`],
+            const signature = await signUniversalRootHash({
+              walletClient: walletClient as unknown as WalletClientLike,
+              rootHash,
+              signerAddress: ownerEOA as `0x${string}`,
+              blindSigningEnabled,
             });
             const res = await universalAccount.sendTransaction(tx, signature as string);
             addDebug(`${label} sent: ${res?.transactionId || 'txid-missing'}`);
@@ -3583,6 +3719,8 @@ const PerpsModal = ({
     !!collateral &&
     parseFloat(collateral) > 0 &&
     parseFloat(collateral) <= usdcBalance &&
+    !!currentPrice &&
+    currentPrice > 0 &&
     isLeverageValid;
   const depositAmountNum = parseFloat(depositAmount) || 0;
   const gasTopUpNum = parseFloat(gasTopUpAmount) || 0;
@@ -3603,25 +3741,30 @@ const PerpsModal = ({
           : 'Deposit + Top up gas';
   const filteredSortedMarkets = useMemo(() => {
     const searchLower = marketSearch.trim().toLowerCase();
-    const filtered = PERPS_MARKETS.filter((m) => {
+    const isProtocolWideQuery = searchLower === 'avantis' || searchLower === 'avnt';
+    const filtered = availableMarkets.filter((m) => {
       const groupOk = marketGroupFilter === 'all' || m.group === marketGroupFilter;
       if (!groupOk) return false;
-      if (!searchLower) return true;
-      return m.symbol.toLowerCase().includes(searchLower) || m.name.toLowerCase().includes(searchLower);
+      if (!searchLower || isProtocolWideQuery) return true;
+      return (
+        m.symbol.toLowerCase().includes(searchLower) ||
+        m.name.toLowerCase().includes(searchLower) ||
+        m.pairName.toLowerCase().includes(searchLower)
+      );
     });
     filtered.sort((a, b) => {
       const pa = marketPrices[a.symbol]?.price || 0;
       const pb = marketPrices[b.symbol]?.price || 0;
       const ca = marketPrices[a.symbol]?.change24h || 0;
       const cb = marketPrices[b.symbol]?.change24h || 0;
-      const va = pairLeverageLimits[`${a.symbol}/USD`]?.pairOI || 0;
-      const vb = pairLeverageLimits[`${b.symbol}/USD`]?.pairOI || 0;
+      const va = pairLeverageLimits[a.pairName]?.pairOI || 0;
+      const vb = pairLeverageLimits[b.pairName]?.pairOI || 0;
       if (sortBy === 'price') return pb - pa;
       if (sortBy === 'change') return cb - ca;
       return vb - va;
     });
     return filtered;
-  }, [marketSearch, marketGroupFilter, marketPrices, pairLeverageLimits, sortBy]);
+  }, [marketSearch, marketGroupFilter, marketPrices, pairLeverageLimits, sortBy, availableMarkets]);
   const totalOpenCollateralUsd = displayOpenPositions.reduce((sum, p) => sum + p.collateralUsd, 0);
   const totalOpenPnlUsd = displayOpenPositions.reduce((sum, p) => sum + p.pnlUsd, 0);
 
@@ -3642,7 +3785,10 @@ const PerpsModal = ({
                 />
                 <span className="text-xl">Perps</span>
               </h2>
-              <button className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center">
+              <button
+                onClick={() => setShowPerpsHistoryModal(true)}
+                className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center"
+              >
                 <span className="text-gray-400">⏱</span>
               </button>
             </div>
@@ -3681,9 +3827,6 @@ const PerpsModal = ({
                 PnL {totalOpenPnlUsd >= 0 ? '+' : ''}${totalOpenPnlUsd.toFixed(2)}
               </div>
               {displayOpenPositions.length === 0 ? (
-                positionsLoading ? (
-                  <div className="text-gray-500 text-sm py-2">Loading positions...</div>
-                ) : (
                 <div className="text-center py-2">
                   <img
                     src={AVANTIS_HEADER_LOGO_URL}
@@ -3692,12 +3835,8 @@ const PerpsModal = ({
                   />
                   <p className="text-white/90 font-semibold text-lg mb-1">No Open Positions</p>
                 </div>
-                )
               ) : (
                 <div className="space-y-2">
-                  {positionsLoading && (
-                    <div className="text-[11px] text-gray-500">Refreshing positions...</div>
-                  )}
                   {displayOpenPositions.map((p) => (
                     <div key={p.id} className="bg-[#191919] border border-gray-800 rounded-xl p-3">
                       <div className="flex items-center justify-between mb-2">
@@ -3755,32 +3894,6 @@ const PerpsModal = ({
               )}
             </div>
 
-            {/* Recent Activity */}
-            <div className="px-4 mb-4">
-              <div className="text-gray-500 font-semibold mb-2">Recent Activity</div>
-              {perpsActivity.length === 0 ? (
-                <div className="text-xs text-gray-500 bg-[#151515] border border-gray-800 rounded-xl px-3 py-2">
-                  No recent perps activity yet.
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  {perpsActivity.slice(0, 6).map((a) => (
-                    <div key={a.id} className="bg-[#151515] border border-gray-800 rounded-xl px-3 py-2 flex items-center justify-between">
-                      <div>
-                        <div className="text-xs text-white">{a.action} • {a.pairName}</div>
-                        <div className="text-[10px] text-gray-500">{new Date(a.timestamp).toLocaleString()}</div>
-                      </div>
-                      <div className={`text-[11px] font-semibold ${
-                        a.status === 'confirmed' ? 'text-green-400' : a.status === 'failed' ? 'text-red-400' : 'text-yellow-300'
-                      }`}>
-                        {a.status}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
             {/* Markets Header */}
             <div className="flex items-center justify-between px-4 mb-3">
               <button className="text-white text-3xl font-semibold flex items-center gap-1">
@@ -3807,7 +3920,7 @@ const PerpsModal = ({
                 className="w-full bg-gray-900/80 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white outline-none"
               />
               <div className="flex gap-2 mt-2">
-                {(['all', 'crypto', 'forex', 'commodities'] as const).map((group) => (
+                {(['all', 'crypto', 'forex', 'commodities', 'equity', 'other'] as const).map((group) => (
                   <button
                     key={group}
                     onClick={() => setMarketGroupFilter(group)}
@@ -3829,16 +3942,22 @@ const PerpsModal = ({
                 const priceData = marketPrices[market.symbol];
                 const price = priceData?.price || 0;
                 const change = priceData?.change24h || 0;
-                const pairName = `${market.symbol}/USD`;
+                const pairName = market.pairName;
                 const marketMeta = pairLeverageLimits[pairName];
                 const displayLev = isZeroFeeMode
                   ? (marketMeta?.zfpMax || market.maxLeverage)
                   : (marketMeta?.standardMax || market.maxLeverage);
                 const volumeOi = marketMeta?.pairOI || 0;
+                const fallbackVolume = marketMeta?.pairMaxOI || 0;
+                const volumeDisplay = volumeOi > 0
+                  ? formatCompactUsd(volumeOi)
+                  : fallbackVolume > 0
+                    ? formatCompactUsd(fallbackVolume)
+                    : '--';
                 
                 return (
                   <button
-                    key={market.index}
+                    key={`${market.pairName}-${market.index}`}
                     onClick={() => handleSelectMarket(market)}
                     className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-800/50 transition-colors"
                   >
@@ -3848,23 +3967,32 @@ const PerpsModal = ({
                         className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden"
                         style={{ backgroundColor: `${market.color}20` }}
                       >
-                        <img src={market.logo} alt={market.symbol} className="w-7 h-7" />
+                        <img
+                          src={market.logo}
+                          alt={market.symbol}
+                          className="w-7 h-7"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
                       </div>
                       {/* Token Info */}
                       <div className="text-left">
-                        <div className="text-white font-medium">{market.symbol}</div>
+                        <div className="text-white font-medium">{market.pairName}</div>
                         <div className="flex items-center gap-2 text-xs">
                           <span className="text-gray-500">UP TO</span>
                           <span className="text-gray-400">{Math.floor(displayLev)}x</span>
                           <span className="text-gray-600">•</span>
-                          <span className="text-gray-500">VOL ${formatCompactUsd(volumeOi)}</span>
+                          <span className="text-gray-500">VOL ${volumeDisplay}</span>
                         </div>
                       </div>
                     </div>
                     {/* Price & Change */}
                     <div className="text-right">
                       <div className="text-white font-medium">
-                        ${price >= 1000 ? price.toLocaleString(undefined, { maximumFractionDigits: 0 }) : price.toFixed(2)}
+                        {price > 0
+                          ? `$${price >= 1000 ? price.toLocaleString(undefined, { maximumFractionDigits: 0 }) : price.toFixed(2)}`
+                          : '--'}
                       </div>
                       <div className={`text-sm ${change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                         {change >= 0 ? '+' : ''}{change.toFixed(2)}%
@@ -4067,7 +4195,7 @@ const PerpsModal = ({
                 >
                   <img src={selectedMarket.logo} alt={selectedMarket.symbol} className="w-6 h-6" />
                 </div>
-                <span className="text-white font-bold text-lg">{selectedMarket.symbol}/USD</span>
+                <span className="text-white font-bold text-lg">{selectedMarket.pairName}</span>
               </div>
             </div>
 
@@ -4301,6 +4429,43 @@ const PerpsModal = ({
           </div>
         )}
       </div>
+      <BottomSheet isOpen={showPerpsHistoryModal} onClose={() => setShowPerpsHistoryModal(false)}>
+        <div className="px-5 pb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-white text-lg font-bold">Perps Activity</h3>
+            <button
+              onClick={() => setShowPerpsHistoryModal(false)}
+              className="w-8 h-8 rounded-full bg-gray-800 text-gray-300"
+            >
+              ✕
+            </button>
+          </div>
+          {perpsActivity.length === 0 ? (
+            <div className="text-xs text-gray-500 bg-[#151515] border border-gray-800 rounded-xl px-3 py-3">
+              No recent perps activity yet.
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-[55vh] overflow-y-auto pr-1">
+              {perpsActivity.map((a) => (
+                <div key={a.id} className="bg-[#151515] border border-gray-800 rounded-xl px-3 py-2.5 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs text-white">{a.action} • {a.pairName}</div>
+                    <div className="text-[10px] text-gray-500 mt-0.5">{new Date(a.timestamp).toLocaleString()}</div>
+                    {a.txHash && a.txHash !== '-' && (
+                      <div className="text-[10px] text-gray-500 font-mono mt-0.5">{a.txHash.slice(0, 14)}...{a.txHash.slice(-6)}</div>
+                    )}
+                  </div>
+                  <div className={`text-[11px] font-semibold ${
+                    a.status === 'confirmed' ? 'text-green-400' : a.status === 'failed' ? 'text-red-400' : 'text-yellow-300'
+                  }`}>
+                    {a.status}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </BottomSheet>
     </BottomSheet>
   );
 };
@@ -6169,6 +6334,8 @@ const SettingsModal = ({
   isOpen, 
   onClose, 
   onLogout,
+  blindSigningEnabled,
+  onToggleBlindSigning,
   onOpenAccountSecurity,
   onOpenMasterPassword,
   onOpenAppLock
@@ -6176,6 +6343,8 @@ const SettingsModal = ({
   isOpen: boolean; 
   onClose: () => void; 
   onLogout: () => void;
+  blindSigningEnabled: boolean;
+  onToggleBlindSigning: (enabled: boolean) => void;
   onOpenAccountSecurity?: () => void;
   onOpenMasterPassword?: () => void;
   onOpenAppLock?: () => void;
@@ -6232,21 +6401,22 @@ const SettingsModal = ({
           </svg>
         </button>
         
-        {/* Preferences Section */}
-        <div className="text-gray-500 text-xs uppercase tracking-wider mb-2 mt-6">Preferences</div>
-        
-        <button className="w-full flex items-center justify-between py-3 border-b border-gray-800">
-          <span className="text-white">Network</span>
-          <span className="text-gray-500">Mainnet</span>
-        </button>
-        <button className="w-full flex items-center justify-between py-3 border-b border-gray-800">
-          <span className="text-white">Currency</span>
-          <span className="text-gray-500">USD</span>
-        </button>
-        <button className="w-full flex items-center justify-between py-3 border-b border-gray-800">
-          <span className="text-white">Slippage Tolerance</span>
-          <span className="text-gray-500">1%</span>
-        </button>
+        <div className="text-gray-500 text-xs uppercase tracking-wider mb-2 mt-6">Signing</div>
+        <div className="w-full flex items-center justify-between py-3 border-b border-gray-800">
+          <div className="pr-3">
+            <div className="text-white">Blind Signing</div>
+            <div className="text-[11px] text-gray-500">When enabled, UA signing uses a lower-friction blind-sign path when supported.</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onToggleBlindSigning(!blindSigningEnabled)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${blindSigningEnabled ? 'bg-accent-dynamic' : 'bg-gray-600'}`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${blindSigningEnabled ? 'translate-x-6' : 'translate-x-1'}`}
+            />
+          </button>
+        </div>
         
         <button 
           onClick={onLogout}
@@ -6359,11 +6529,24 @@ const App = () => {
 
   // Profile settings (persisted to localStorage)
   const [profile, setProfile] = useState<ProfileSettings>(() => {
+    const defaults: ProfileSettings = {
+      emoji: "🍊",
+      customImage: null,
+      displayName: "Wallet",
+      backgroundColor: "#f97316",
+      blindSigningEnabled: false,
+    };
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('walletProfile');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        try {
+          return { ...defaults, ...JSON.parse(saved) };
+        } catch {
+          return defaults;
+        }
+      }
     }
-    return { emoji: "🍊", customImage: null, displayName: "Wallet", backgroundColor: "#f97316" };
+    return defaults;
   });
 
   const updateProfile = (p: ProfileSettings) => {
@@ -6735,6 +6918,7 @@ const App = () => {
         onClose={() => setShowConvertModal(false)}
         assets={primaryAssets}
         universalAccount={universalAccountInstance}
+        blindSigningEnabled={profile.blindSigningEnabled}
         onTransactionCreated={(tx) => {
           console.log('[Convert] Transaction created:', tx);
         }}
@@ -6750,6 +6934,7 @@ const App = () => {
         onClose={() => setShowPerpsModal(false)}
         assets={combinedAssets as IAssetsResponse | null}
         universalAccount={universalAccountInstance}
+        blindSigningEnabled={profile.blindSigningEnabled}
       />
 
       <PolymarketModal
@@ -6790,6 +6975,8 @@ const App = () => {
         isOpen={showSettingsModal} 
         onClose={() => setShowSettingsModal(false)} 
         onLogout={disconnect}
+        blindSigningEnabled={profile.blindSigningEnabled}
+        onToggleBlindSigning={(enabled) => updateProfile({ ...profile, blindSigningEnabled: enabled })}
         onOpenAccountSecurity={openAccountAndSecurity}
         onOpenMasterPassword={openSetMasterPassword}
         onOpenAppLock={() => setShowAppLockModal(true)}
