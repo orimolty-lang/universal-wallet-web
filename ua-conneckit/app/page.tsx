@@ -2373,17 +2373,18 @@ const PerpsModal = ({
         const data = await response.json();
         const parsed = Array.isArray(data?.parsed) ? data.parsed : [];
         const priceByFeedId = new Map<string, number>();
+        const normalizeFeedId = (id: string) => id.replace(/^0x/i, '').toLowerCase();
         for (const item of parsed) {
           const id = typeof item?.id === 'string' ? item.id : '';
           const p = item?.price;
           if (!id || !p || !Number.isFinite(Number(p.price)) || !Number.isFinite(Number(p.expo))) continue;
           const price = Number(p.price) * Math.pow(10, Number(p.expo));
           if (Number.isFinite(price) && price > 0) {
-            priceByFeedId.set(id, price);
+            priceByFeedId.set(normalizeFeedId(id), price);
           }
         }
         for (const { pairName, feedId } of feedTargets) {
-          const price = priceByFeedId.get(feedId);
+          const price = priceByFeedId.get(normalizeFeedId(feedId));
           if (!price) continue;
           prices[pairName] = { price, change24h: 0 };
         }
