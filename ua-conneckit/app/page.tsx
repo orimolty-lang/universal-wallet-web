@@ -2109,6 +2109,16 @@ const FOREX_FLAG_BY_SYMBOL: Record<string, string> = {
   CNY: 'cn',
   HKD: 'hk',
 };
+const buildTickerLogoDataUri = (symbol: string, color = '#374151') => {
+  const safeSymbol = (symbol || '?').toUpperCase().slice(0, 4);
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+      <rect width="128" height="128" rx="64" fill="${color}"/>
+      <text x="64" y="72" font-family="Arial, sans-serif" font-size="34" font-weight="700" text-anchor="middle" fill="#e5e7eb">${safeSymbol}</text>
+    </svg>
+  `;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+};
 const resolveMarketLogo = ({
   symbol,
   group,
@@ -2129,7 +2139,7 @@ const resolveMarketLogo = ({
   if (group === 'crypto') {
     return `https://cryptoicons.org/api/icon/${baseSymbol.toLowerCase()}/200`;
   }
-  return '';
+  return buildTickerLogoDataUri(baseSymbol);
 };
 
 const PerpsModal = ({
@@ -4022,8 +4032,14 @@ const PerpsModal = ({
                           alt={market.symbol}
                           className="w-7 h-7"
                           onError={(e) => {
-                            (e.currentTarget as HTMLImageElement).style.display = 'none';
-                            const sibling = e.currentTarget.nextElementSibling as HTMLElement | null;
+                            const img = e.currentTarget as HTMLImageElement;
+                            const fallback = buildTickerLogoDataUri(market.symbol, market.color);
+                            if (img.src !== fallback) {
+                              img.src = fallback;
+                              return;
+                            }
+                            img.style.display = 'none';
+                            const sibling = img.nextElementSibling as HTMLElement | null;
                             if (sibling) sibling.style.display = 'flex';
                           }}
                         />
@@ -4253,8 +4269,14 @@ const PerpsModal = ({
                     alt={selectedMarket.symbol}
                     className="w-6 h-6"
                     onError={(e) => {
-                      (e.currentTarget as HTMLImageElement).style.display = 'none';
-                      const sibling = e.currentTarget.nextElementSibling as HTMLElement | null;
+                      const img = e.currentTarget as HTMLImageElement;
+                      const fallback = buildTickerLogoDataUri(selectedMarket.symbol, selectedMarket.color);
+                      if (img.src !== fallback) {
+                        img.src = fallback;
+                        return;
+                      }
+                      img.style.display = 'none';
+                      const sibling = img.nextElementSibling as HTMLElement | null;
                       if (sibling) sibling.style.display = 'flex';
                     }}
                   />
