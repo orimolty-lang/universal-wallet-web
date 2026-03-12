@@ -2098,6 +2098,23 @@ const inferPerpsGroupFromSocketSymbol = (socketSymbol?: string): PerpsMarketGrou
 const MARKET_NAME_ALIASES: Record<string, string> = {
   AVNT: 'Avantis',
 };
+const MARKET_LOGO_OVERRIDES: Record<string, string> = {
+  AVNT: 'https://coin-images.coingecko.com/coins/images/68972/large/avnt-token.png',
+  SPY: 'https://logo.clearbit.com/ssga.com',
+  QQQ: 'https://logo.clearbit.com/invesco.com',
+  COIN: 'https://logo.clearbit.com/coinbase.com',
+  NVDA: 'https://logo.clearbit.com/nvidia.com',
+  AAPL: 'https://logo.clearbit.com/apple.com',
+  AMZN: 'https://logo.clearbit.com/amazon.com',
+  MSFT: 'https://logo.clearbit.com/microsoft.com',
+  META: 'https://logo.clearbit.com/meta.com',
+  TSLA: 'https://logo.clearbit.com/tesla.com',
+  GOOG: 'https://logo.clearbit.com/google.com',
+  HOOD: 'https://logo.clearbit.com/robinhood.com',
+  XAU: 'https://img.icons8.com/color/96/gold-bars.png',
+  XAG: 'https://img.icons8.com/color/96/silver-bars.png',
+  USOILSPOT: 'https://img.icons8.com/color/96/oil-industry.png',
+};
 const FOREX_FLAG_BY_SYMBOL: Record<string, string> = {
   USD: 'us',
   EUR: 'eu',
@@ -2133,6 +2150,8 @@ const resolveMarketLogo = ({
 }) => {
   if (staticLogo) return staticLogo;
   const baseSymbol = (fromSymbol || symbol || '').toUpperCase();
+  const logoOverride = MARKET_LOGO_OVERRIDES[baseSymbol];
+  if (logoOverride) return logoOverride;
   const cachedTokenLogo = TOKEN_LOGOS[baseSymbol];
   if (cachedTokenLogo) return cachedTokenLogo;
   if (group === 'forex') {
