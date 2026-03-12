@@ -235,6 +235,7 @@ interface PairLeverageLimits {
   zfpMax: number;
   pairOI?: number;
   pairMaxOI?: number;
+  feedId?: string;
   socketSymbol?: string;
   group?: PerpsMarketGroup;
   fromSymbol?: string;
@@ -2074,6 +2075,16 @@ const parsePairNameFromSocketSymbol = (symbol: string): string => {
   return normalized;
 };
 
+const buildPairName = (from?: string, to?: string, socketSymbol?: string): string => {
+  const fromNorm = (from || '').toUpperCase().trim();
+  const toNorm = (to || '').toUpperCase().trim();
+  if (fromNorm && toNorm) {
+    if (fromNorm === 'USD' && toNorm === 'JPY') return 'JPY/USD';
+    return `${fromNorm}/${toNorm}`;
+  }
+  return parsePairNameFromSocketSymbol(socketSymbol || '');
+};
+
 const inferPerpsGroupFromSocketSymbol = (socketSymbol?: string): PerpsMarketGroup => {
   const prefix = socketSymbol?.split('.', 1)?.[0]?.toUpperCase() || '';
   if (prefix === 'CRYPTO') return 'crypto';
@@ -2083,35 +2094,8 @@ const inferPerpsGroupFromSocketSymbol = (socketSymbol?: string): PerpsMarketGrou
   return 'other';
 };
 
-// Pyth Price Feed IDs for ALL Avantis pairs
-const PYTH_FEED_IDS: Record<string, string> = {
-  // Crypto
-  'BTC/USD': '0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43',
-  'ETH/USD': '0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace',
-  'SOL/USD': '0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d',
-  'LINK/USD': '0x8ac0c70fff57e9aefdf5edf44b51d62c2d433653cbb2cf5cc06bb115af04d221',
-  'DOGE/USD': '0xdcef50dd0a4cd2dcc17e45df1676dcb336a11a61c69df7a0299b0150c672d25c',
-  'XRP/USD': '0xec5d399846a9209f3fe5881d70aae9268c94339ff9817e8d18ff19fa05eaea1c',
-  'BNB/USD': '0x2f95862b045670cd22bee3114c39763a4a08beeb663b145d283c31d7d1101c4f',
-  'ADA/USD': '0x2a01deaec9e51a579277b34b122399984d0bbf57e2458a7e42fecd2829867a0d',
-  'AVAX/USD': '0x93da3352f9f1d105fdfe4971cfa80e9dd777bfc5d0f683ebb6e1294b92137bb7',
-  'MATIC/USD': '0x5de33440f6b82ae2d2f23e6a5a50a5d48e7e5b5d05c0c84c3c8c6a1b3b7e0e8b',
-  'ARB/USD': '0x3fa4252848f9f0a1480be62745a4629d9eb1322aebab8a791e344b3b9c1adcf5',
-  'OP/USD': '0x385f64d993f7b77d8182ed5003d97c60aa3361f3cecfe711544d2d59165e9bdf',
-  'NEAR/USD': '0xc415de8d2eba7db216527dff4b60e8f3a5311c740dadb233e13e12547e226750',
-  'AAVE/USD': '0x2b9ab1e972a281585084148ba1389800799bd4be63b957507db1349314e47445',
-  'UNI/USD': '0x78d185a741d07edb3412b09008b7c5cfb9bbbd7d568bf00ba737b456ba171501',
-  'PEPE/USD': '0xd69731a2e74ac1ce884fc3890f7ee324b6deb66147055249568869ed700882e4',
-  'WIF/USD': '0x4ca4beeca86f0d164160323817a4e42b10010a724c2217c6ee41b54cd4cc61fc',
-  'SUI/USD': '0x23d7315113f5b1d3ba7a83604c44b94d79f4fd69af77f804fc7f920a6dc65744',
-  'TRX/USD': '0x67aed5a24fdad045475e7195c98a98aea119c763f272d4523f5bac93a4f33c2b',
-  // Forex
-  'EUR/USD': '0xa995d00bb36a63cef7fd2c287dc105fc8f3d93779f062f09551b0af3e81ec30b',
-  'GBP/USD': '0x84c2dde9633d93d1bcad84e7dc41c9d56578b7ec52fabedc1f335d673df0a7c1',
-  'JPY/USD': '0xef2c98c804ba503c6a707e38be4dfbb16683775f195b091252bf24693042fd52',
-  // Commodities
-  'XAU/USD': '0x765d2ba906dbc32ca17cc11f5310a89e9ee1f6420508c63861f2f8ba4ee34bb2',
-  'XAG/USD': '0xf2fb02c32b055c805e7238d628e5e9dadef274376114eb1f012337cabe93871e',
+const MARKET_NAME_ALIASES: Record<string, string> = {
+  AVNT: 'Avantis',
 };
 
 const PerpsModal = ({
@@ -2200,34 +2184,21 @@ const PerpsModal = ({
     return value.toFixed(2);
   };
   const availableMarkets = useMemo<PerpsMarket[]>(() => {
-    const merged = new Map<string, PerpsMarket>();
-    for (const market of PERPS_MARKETS) {
-      merged.set(market.pairName, market);
-    }
-    for (const [pairName, limits] of Object.entries(pairLeverageLimits)) {
-      const existing = merged.get(pairName);
+    const dynamicMarkets: PerpsMarket[] = Object.entries(pairLeverageLimits).map(([pairName, limits], idx) => {
       const symbol = (limits.fromSymbol || pairName.split('/')[0] || pairName).toUpperCase();
       const staticMeta = PERPS_MARKET_SYMBOL_META[symbol];
-      const fallback: PerpsMarket = {
-        index: Number.isFinite(Number(limits.pairIndex)) ? Number(limits.pairIndex) : 1000 + merged.size,
+      return {
+        index: Number.isFinite(Number(limits.pairIndex)) ? Number(limits.pairIndex) : 1000 + idx,
         symbol,
-        name: limits.displayName || symbol,
+        name: staticMeta?.name || MARKET_NAME_ALIASES[symbol] || symbol,
         maxLeverage: Math.max(2, Math.floor(limits.standardMax || staticMeta?.maxLeverage || 100)),
         logo: staticMeta?.logo || DEFAULT_PERPS_MARKET_LOGO,
         color: staticMeta?.color || '#6b7280',
         group: limits.group || staticMeta?.group || 'other',
         pairName,
       };
-      merged.set(pairName, {
-        ...(existing || fallback),
-        pairName,
-        index: Number.isFinite(Number(limits.pairIndex))
-          ? Number(limits.pairIndex)
-          : (existing?.index ?? fallback.index),
-        maxLeverage: Math.max(2, Math.floor(limits.standardMax || existing?.maxLeverage || fallback.maxLeverage)),
-      });
-    }
-    return Array.from(merged.values()).sort((a, b) => {
+    });
+    return dynamicMarkets.sort((a, b) => {
       if (a.index !== b.index) return a.index - b.index;
       return a.pairName.localeCompare(b.pairName);
     });
@@ -2342,7 +2313,7 @@ const PerpsModal = ({
   // Fetch current price from Pyth oracle
   useEffect(() => {
     const fetchPythPrice = async () => {
-      const feedId = PYTH_FEED_IDS[selectedPair.name];
+      const feedId = pairLeverageLimits[selectedPair.name]?.feedId;
       if (!feedId) {
         console.log('[Perps] No Pyth feed ID for', selectedPair.name);
         setCurrentPrice(null);
@@ -2362,24 +2333,12 @@ const PerpsModal = ({
           const price = Number(priceData.price) * Math.pow(10, priceData.expo);
           setCurrentPrice(price);
           console.log('[Perps] Pyth price for', selectedPair.name, ':', price);
+        } else {
+          setCurrentPrice(null);
         }
       } catch (err) {
         console.error('[Perps] Failed to fetch Pyth price:', err);
-        // Fallback to static prices
-        const fallbackPrices: Record<string, number> = {
-          'BTC/USD': 95000,
-          'ETH/USD': 3500,
-          'SOL/USD': 150,
-          'LINK/USD': 18,
-          'DOGE/USD': 0.32,
-          'XRP/USD': 2.1,
-          'EUR/USD': 1.08,
-          'GBP/USD': 1.27,
-          'USD/JPY': 150.5,
-          'XAU/USD': 2650,
-        'XAG/USD': 31,
-        };
-        setCurrentPrice(fallbackPrices[selectedPair.name] || 0);
+        setCurrentPrice(null);
       }
     };
     
@@ -2387,42 +2346,49 @@ const PerpsModal = ({
     // Refresh price every 5 seconds
     const interval = setInterval(fetchPythPrice, 5000);
     return () => clearInterval(interval);
-  }, [selectedPair]);
+  }, [selectedPair, pairLeverageLimits]);
 
   // Fetch all market prices for the markets list
   useEffect(() => {
     const fetchAllPrices = async () => {
       const prices: Record<string, { price: number; change24h: number }> = {};
-      
-      for (const market of availableMarkets) {
-        const pairName = market.pairName;
-        const feedId = PYTH_FEED_IDS[pairName];
-        if (!feedId) continue;
-        
-        try {
-          const response = await fetch(
-            `https://hermes.pyth.network/v2/updates/price/latest?ids[]=${feedId}`
-          );
-          const data = await response.json();
-          
-          if (data.parsed?.[0]?.price) {
-            const priceData = data.parsed[0].price;
-            const price = Number(priceData.price) * Math.pow(10, priceData.expo);
-            // Simulate 24h change (Pyth doesn't provide this directly)
-            const change24h = (Math.random() - 0.5) * 10; // -5% to +5%
-            prices[market.symbol] = { price, change24h };
+      const feedTargets = availableMarkets
+        .map((market) => ({
+          pairName: market.pairName,
+          feedId: pairLeverageLimits[market.pairName]?.feedId,
+        }))
+        .filter((x): x is { pairName: string; feedId: string } => !!x.feedId);
+      if (feedTargets.length === 0) {
+        setMarketPrices({});
+        return;
+      }
+
+      const uniqueFeedIds = Array.from(new Set(feedTargets.map((x) => x.feedId)));
+      const params = new URLSearchParams();
+      for (const id of uniqueFeedIds) {
+        params.append('ids[]', id);
+      }
+      try {
+        const response = await fetch(`https://hermes.pyth.network/v2/updates/price/latest?${params.toString()}`);
+        const data = await response.json();
+        const parsed = Array.isArray(data?.parsed) ? data.parsed : [];
+        const priceByFeedId = new Map<string, number>();
+        for (const item of parsed) {
+          const id = typeof item?.id === 'string' ? item.id : '';
+          const p = item?.price;
+          if (!id || !p || !Number.isFinite(Number(p.price)) || !Number.isFinite(Number(p.expo))) continue;
+          const price = Number(p.price) * Math.pow(10, Number(p.expo));
+          if (Number.isFinite(price) && price > 0) {
+            priceByFeedId.set(id, price);
           }
-        } catch {
-          // Use fallback
-          const fallbackPrices: Record<string, number> = {
-            'BTC': 95000, 'ETH': 2080, 'SOL': 89, 'LINK': 18,
-            'DOGE': 0.32, 'XRP': 2.1, 'XAU': 2650, 'XAG': 31,
-          };
-          prices[market.symbol] = { 
-            price: fallbackPrices[market.symbol] || 0, 
-            change24h: (Math.random() - 0.5) * 10 
-          };
         }
+        for (const { pairName, feedId } of feedTargets) {
+          const price = priceByFeedId.get(feedId);
+          if (!price) continue;
+          prices[pairName] = { price, change24h: 0 };
+        }
+      } catch {
+        // no static fallbacks in production market data path
       }
       
       setMarketPrices(prices);
@@ -2431,7 +2397,7 @@ const PerpsModal = ({
     if (isOpen && view === 'markets') {
       fetchAllPrices();
     }
-  }, [isOpen, view, availableMarkets]);
+  }, [isOpen, view, availableMarkets, pairLeverageLimits]);
 
   // Fetch live leverage limits (including Zero Fee Perps ranges) from Avantis Socket API.
   useEffect(() => {
@@ -2447,7 +2413,7 @@ const PerpsModal = ({
         const limitsMap: Record<string, PairLeverageLimits> = {};
         for (const [pairIndexKey, infoRaw] of Object.entries(pairInfos)) {
           const info = infoRaw as {
-            feed?: { attributes?: { symbol?: string } };
+            feed?: { feedId?: string; attributes?: { symbol?: string } };
             leverages?: {
               minLeverage?: number;
               maxLeverage?: number;
@@ -2464,7 +2430,8 @@ const PerpsModal = ({
           if (!leverages) continue;
           const parsedPairIndex = Number(pairIndexKey);
 
-          const pairName = parsePairNameFromSocketSymbol(symbol || `${info.from || ''}/${info.to || ''}`);
+          const pairName = buildPairName(info.from, info.to, symbol);
+          if (!pairName || !pairName.includes('/')) continue;
           const standardMin = Number(leverages.minLeverage ?? 2);
           const standardMax = Number(leverages.maxLeverage ?? 0);
           const zfpMin = Number(leverages.pnlMinLeverage ?? standardMin);
@@ -2479,6 +2446,7 @@ const PerpsModal = ({
             zfpMax: Number.isFinite(zfpMax) && zfpMax > 0 ? zfpMax : standardMax,
             pairOI: Number.isFinite(Number(info.pairOI)) ? Number(info.pairOI) : 0,
             pairMaxOI: Number.isFinite(Number(info.pairMaxOI)) ? Number(info.pairMaxOI) : 0,
+            feedId: typeof info.feed?.feedId === 'string' ? info.feed.feedId : undefined,
             socketSymbol: symbol,
             group: inferPerpsGroupFromSocketSymbol(symbol),
             fromSymbol: (info.from || '').toUpperCase() || undefined,
@@ -2514,6 +2482,19 @@ const PerpsModal = ({
       return prev;
     });
   }, [leverageMin, leverageMax]);
+  useEffect(() => {
+    if (availableMarkets.length === 0) return;
+    const stillExists = availableMarkets.some((m) => m.pairName === selectedMarket.pairName);
+    if (!stillExists) {
+      const nextMarket = availableMarkets[0];
+      setSelectedMarket(nextMarket);
+      setSelectedPair({
+        index: nextMarket.index,
+        name: nextMarket.pairName,
+        maxLeverage: nextMarket.maxLeverage,
+      });
+    }
+  }, [availableMarkets, selectedMarket.pairName]);
 
   const fetchOwnerBalances = useCallback(async (eoa: string) => {
     const [ethRes, usdcRes] = await Promise.all([
@@ -2649,7 +2630,7 @@ const PerpsModal = ({
   }, [baseRpcCall]);
 
   const fetchPythUpdateData = useCallback(async (pairName: string) => {
-    const feedId = PYTH_FEED_IDS[pairName];
+    const feedId = pairLeverageLimits[pairName]?.feedId;
     if (!feedId) return [] as string[];
     try {
       const response = await fetch(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${feedId}`);
@@ -2659,7 +2640,7 @@ const PerpsModal = ({
     } catch {
       return [] as string[];
     }
-  }, []);
+  }, [pairLeverageLimits]);
 
   const fetchOpenPositions = useCallback(async () => {
     if (!ownerEOA) {
@@ -2755,7 +2736,7 @@ const PerpsModal = ({
           if (!Number.isFinite(collateralUsd) || collateralUsd <= 0) continue;
           const sizeUsd = rawPositionUsd > 0 ? rawPositionUsd : collateralUsd * leverageNum;
           const entryPrice = Number(trade.openPrice) / 1e10;
-          const markPrice = marketPricesRef.current[market.symbol]?.price || entryPrice;
+          const markPrice = marketPricesRef.current[pairName]?.price || entryPrice;
           const pnlUsd = trade.buy
             ? ((markPrice - entryPrice) / Math.max(entryPrice, 1e-9)) * sizeUsd
             : ((entryPrice - markPrice) / Math.max(entryPrice, 1e-9)) * sizeUsd;
@@ -3741,11 +3722,10 @@ const PerpsModal = ({
           : 'Deposit + Top up gas';
   const filteredSortedMarkets = useMemo(() => {
     const searchLower = marketSearch.trim().toLowerCase();
-    const isProtocolWideQuery = searchLower === 'avantis' || searchLower === 'avnt';
     const filtered = availableMarkets.filter((m) => {
       const groupOk = marketGroupFilter === 'all' || m.group === marketGroupFilter;
       if (!groupOk) return false;
-      if (!searchLower || isProtocolWideQuery) return true;
+      if (!searchLower) return true;
       return (
         m.symbol.toLowerCase().includes(searchLower) ||
         m.name.toLowerCase().includes(searchLower) ||
@@ -3753,10 +3733,10 @@ const PerpsModal = ({
       );
     });
     filtered.sort((a, b) => {
-      const pa = marketPrices[a.symbol]?.price || 0;
-      const pb = marketPrices[b.symbol]?.price || 0;
-      const ca = marketPrices[a.symbol]?.change24h || 0;
-      const cb = marketPrices[b.symbol]?.change24h || 0;
+      const pa = marketPrices[a.pairName]?.price || 0;
+      const pb = marketPrices[b.pairName]?.price || 0;
+      const ca = marketPrices[a.pairName]?.change24h || 0;
+      const cb = marketPrices[b.pairName]?.change24h || 0;
       const va = pairLeverageLimits[a.pairName]?.pairOI || 0;
       const vb = pairLeverageLimits[b.pairName]?.pairOI || 0;
       if (sortBy === 'price') return pb - pa;
@@ -3939,7 +3919,7 @@ const PerpsModal = ({
             {/* Markets List */}
             <div className="space-y-1">
               {filteredSortedMarkets.map((market) => {
-                const priceData = marketPrices[market.symbol];
+                const priceData = marketPrices[market.pairName];
                 const price = priceData?.price || 0;
                 const change = priceData?.change24h || 0;
                 const pairName = market.pairName;
