@@ -2100,17 +2100,34 @@ const MARKET_NAME_ALIASES: Record<string, string> = {
 };
 const MARKET_LOGO_OVERRIDES: Record<string, string> = {
   AVNT: 'https://coin-images.coingecko.com/coins/images/68972/large/avnt-token.png',
-  SPY: 'https://logo.clearbit.com/ssga.com',
-  QQQ: 'https://logo.clearbit.com/invesco.com',
-  COIN: 'https://logo.clearbit.com/coinbase.com',
-  NVDA: 'https://logo.clearbit.com/nvidia.com',
-  AAPL: 'https://logo.clearbit.com/apple.com',
-  AMZN: 'https://logo.clearbit.com/amazon.com',
-  MSFT: 'https://logo.clearbit.com/microsoft.com',
-  META: 'https://logo.clearbit.com/meta.com',
-  TSLA: 'https://logo.clearbit.com/tesla.com',
-  GOOG: 'https://logo.clearbit.com/google.com',
-  HOOD: 'https://logo.clearbit.com/robinhood.com',
+  SPY: 'https://coin-images.coingecko.com/coins/images/68655/large/spyon_160x160.png',
+  QQQ: 'https://coin-images.coingecko.com/coins/images/68654/large/qqqon_160x160.png',
+  COIN: 'https://coin-images.coingecko.com/coins/images/68612/large/coinon_160x160.png',
+  NVDA: 'https://coin-images.coingecko.com/coins/images/68623/large/nvdaon_160x160.png',
+  AAPL: 'https://coin-images.coingecko.com/coins/images/68616/large/aaplon_160x160.png',
+  AMZN: 'https://coin-images.coingecko.com/coins/images/68604/large/amznon_160x160.png',
+  MSFT: 'https://coin-images.coingecko.com/coins/images/68625/large/msfton_160x160.png',
+  META: 'https://coin-images.coingecko.com/coins/images/68645/large/metaon_160x160.png',
+  TSLA: 'https://coin-images.coingecko.com/coins/images/68628/large/tslaon_160x160.png',
+  GOOG: 'https://coin-images.coingecko.com/coins/images/68606/large/googlon_160x160.png',
+  HOOD: 'https://coin-images.coingecko.com/coins/images/68581/large/hoodon_160x160.png',
+  HYPE: 'https://coin-images.coingecko.com/coins/images/50882/large/hyperliquid.jpg',
+  PUMP: 'https://coin-images.coingecko.com/coins/images/67164/large/pump.jpg',
+  AERO: 'https://coin-images.coingecko.com/coins/images/31745/large/token.png',
+  SHIB: 'https://coin-images.coingecko.com/coins/images/11939/large/shiba.png',
+  LIT: 'https://coin-images.coingecko.com/coins/images/13825/large/logo_200x200.png',
+  ZRO: 'https://coin-images.coingecko.com/coins/images/28206/large/ftxG9_TJ_400x400.jpeg',
+  ASTER: 'https://coin-images.coingecko.com/coins/images/69040/large/_ASTER.png',
+  XMR: 'https://coin-images.coingecko.com/coins/images/69/large/monero_logo.png',
+  VIRTUAL: 'https://coin-images.coingecko.com/coins/images/34057/large/LOGOMARK.png',
+  ZEC: 'https://coin-images.coingecko.com/coins/images/486/large/circle-zcash-color.png',
+  ONDO: 'https://coin-images.coingecko.com/coins/images/26580/large/ONDO.png',
+  BONK: 'https://coin-images.coingecko.com/coins/images/28600/large/bonk.jpg',
+  POL: 'https://coin-images.coingecko.com/coins/images/32440/large/pol.png',
+  MON: 'https://coin-images.coingecko.com/coins/images/38927/large/mon.png',
+  RENDER: 'https://coin-images.coingecko.com/coins/images/11636/large/rndr.png',
+  JUP: 'https://coin-images.coingecko.com/coins/images/34188/large/jup.png',
+  PENDLE: 'https://coin-images.coingecko.com/coins/images/15069/large/Pendle_Logo_Normal-03.png',
   XAU: 'https://img.icons8.com/color/96/gold-bars.png',
   XAG: 'https://img.icons8.com/color/96/silver-bars.png',
   USOILSPOT: 'https://img.icons8.com/color/96/oil-industry.png',
@@ -2142,14 +2159,17 @@ const resolveMarketLogo = ({
   group,
   staticLogo,
   fromSymbol,
+  dynamicLogo,
 }: {
   symbol: string;
   group: PerpsMarketGroup;
   staticLogo?: string;
   fromSymbol?: string;
+  dynamicLogo?: string;
 }) => {
   if (staticLogo) return staticLogo;
   const baseSymbol = (fromSymbol || symbol || '').toUpperCase();
+  if (dynamicLogo) return dynamicLogo;
   const logoOverride = MARKET_LOGO_OVERRIDES[baseSymbol];
   if (logoOverride) return logoOverride;
   const cachedTokenLogo = TOKEN_LOGOS[baseSymbol];
@@ -2207,6 +2227,7 @@ const PerpsModal = ({
   const [showTpSlInputs, setShowTpSlInputs] = useState(false);
   const [displayOpenPositions, setDisplayOpenPositions] = useState<OpenPerpsPosition[]>([]);
   const [, setPositionsLoading] = useState(false);
+  const [dynamicMarketLogos, setDynamicMarketLogos] = useState<Record<string, string>>({});
   const [positionEdits, setPositionEdits] = useState<Record<string, { tp: string; sl: string }>>({});
   const [perpsActivity, setPerpsActivity] = useState<Array<{
     id: string;
@@ -2263,6 +2284,7 @@ const PerpsModal = ({
           group: limits.group || staticMeta?.group || 'other',
           staticLogo: staticMeta?.logo || DEFAULT_PERPS_MARKET_LOGO,
           fromSymbol: limits.fromSymbol,
+          dynamicLogo: dynamicMarketLogos[symbol],
         }),
         color: staticMeta?.color || '#6b7280',
         group: limits.group || staticMeta?.group || 'other',
@@ -2273,7 +2295,7 @@ const PerpsModal = ({
       if (a.index !== b.index) return a.index - b.index;
       return a.pairName.localeCompare(b.pairName);
     });
-  }, [pairLeverageLimits]);
+  }, [pairLeverageLimits, dynamicMarketLogos]);
   useEffect(() => {
     marketPricesRef.current = marketPrices;
   }, [marketPrices]);
@@ -2299,6 +2321,67 @@ const PerpsModal = ({
   useEffect(() => {
     if (!isOpen) setShowPerpsHistoryModal(false);
   }, [isOpen]);
+  useEffect(() => {
+    if (!isOpen) return;
+    try {
+      const raw = localStorage.getItem('perps_market_logo_cache_v1');
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Record<string, string>;
+      if (parsed && typeof parsed === 'object') {
+        setDynamicMarketLogos(parsed);
+      }
+    } catch {
+      // ignore logo cache parse errors
+    }
+  }, [isOpen]);
+  useEffect(() => {
+    if (!isOpen) return;
+    const symbolsToFetch = Array.from(new Set(
+      availableMarkets
+        .filter((m) => m.group === 'crypto')
+        .map((m) => m.symbol.toUpperCase())
+        .filter((symbol) => !MARKET_LOGO_OVERRIDES[symbol] && !TOKEN_LOGOS[symbol] && !dynamicMarketLogos[symbol])
+    ));
+    if (symbolsToFetch.length === 0) return;
+    let cancelled = false;
+    const fetchLogoForSymbol = async (symbol: string) => {
+      try {
+        const res = await fetch(`https://api.mobula.io/api/1/search?input=${encodeURIComponent(symbol)}`, {
+          headers: {
+            Authorization: MOBULA_API_KEY,
+            'Content-Type': 'application/json',
+          },
+        });
+        if (!res.ok) return;
+        const json = await res.json();
+        const list = Array.isArray(json?.data) ? json.data : [];
+        const exact = list.find((x: { symbol?: string; logo?: string }) => String(x?.symbol || '').toUpperCase() === symbol);
+        const candidate = exact || list[0];
+        const logo = typeof candidate?.logo === 'string' ? candidate.logo : '';
+        if (!logo || cancelled) return;
+        setDynamicMarketLogos((prev) => {
+          if (prev[symbol] === logo) return prev;
+          const next = { ...prev, [symbol]: logo };
+          try {
+            localStorage.setItem('perps_market_logo_cache_v1', JSON.stringify(next));
+          } catch {
+            // ignore storage issues
+          }
+          return next;
+        });
+      } catch {
+        // ignore individual symbol lookup failures
+      }
+    };
+    (async () => {
+      for (let i = 0; i < symbolsToFetch.length; i += 4) {
+        await Promise.all(symbolsToFetch.slice(i, i + 4).map(fetchLogoForSymbol));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, availableMarkets, dynamicMarketLogos]);
   useEffect(() => {
     if (!ownerEOA) return;
     try {
@@ -3903,7 +3986,6 @@ const PerpsModal = ({
             {/* Open Positions */}
             <div className="px-4 mb-5">
               <div className="text-gray-500 font-semibold mb-1">Open Positions</div>
-              <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Total Collateral</div>
               <div className="text-gray-300 text-4xl font-bold mb-2">${totalOpenCollateralUsd.toFixed(2)}</div>
               <div className={`text-sm mb-3 ${totalOpenPnlUsd >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                 PnL {totalOpenPnlUsd >= 0 ? '+' : ''}${totalOpenPnlUsd.toFixed(2)}
