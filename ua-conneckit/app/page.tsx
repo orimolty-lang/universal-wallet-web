@@ -679,6 +679,7 @@ const TOKEN_LOGOS: Record<string, string> = {
   "AVAX": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/avalanchec/info/logo.png",
   "ARB": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png",
   "OP": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/optimism/info/logo.png",
+  "AVNT": "https://coin-images.coingecko.com/coins/images/68972/large/avnt-token.png",
 };
 
 const getChainName = (chainId: number | string) => {
@@ -2132,6 +2133,8 @@ const resolveMarketLogo = ({
 }) => {
   if (staticLogo) return staticLogo;
   const baseSymbol = (fromSymbol || symbol || '').toUpperCase();
+  const cachedTokenLogo = TOKEN_LOGOS[baseSymbol];
+  if (cachedTokenLogo) return cachedTokenLogo;
   if (group === 'forex') {
     const cc = FOREX_FLAG_BY_SYMBOL[baseSymbol];
     if (cc) return `https://flagcdn.com/w80/${cc}.png`;
@@ -4030,7 +4033,7 @@ const PerpsModal = ({
                         <img
                           src={market.logo}
                           alt={market.symbol}
-                          className="w-7 h-7"
+                          className="w-7 h-7 object-contain"
                           onError={(e) => {
                             const img = e.currentTarget as HTMLImageElement;
                             const fallback = buildTickerLogoDataUri(market.symbol, market.color);
@@ -4267,7 +4270,7 @@ const PerpsModal = ({
                   <img
                     src={selectedMarket.logo}
                     alt={selectedMarket.symbol}
-                    className="w-6 h-6"
+                    className="w-6 h-6 object-contain"
                     onError={(e) => {
                       const img = e.currentTarget as HTMLImageElement;
                       const fallback = buildTickerLogoDataUri(selectedMarket.symbol, selectedMarket.color);
