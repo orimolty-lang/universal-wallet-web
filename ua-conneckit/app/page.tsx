@@ -377,50 +377,47 @@ const TOKEN_ICONS: Record<string, string> = {
 
 const getTokenIcon = (symbol: string) => TOKEN_ICONS[symbol?.toUpperCase()] || "•";
 
-// Chain badge component for showing which chain a token is on
-const ChainBadge = ({ blockchain }: { blockchain: string }) => {
-  // Map blockchain names to CHAIN_LOGOS keys and short names
-  const chainMapping: Record<string, { logoKey: string; shortName: string }> = {
-    "ethereum": { logoKey: "Ethereum", shortName: "ETH" },
-    "base": { logoKey: "Base", shortName: "Base" },
-    "arbitrum": { logoKey: "Arbitrum", shortName: "ARB" },
-    "optimism": { logoKey: "Optimism", shortName: "OP" },
-    "polygon": { logoKey: "Polygon", shortName: "MATIC" },
-    "bsc": { logoKey: "BNB Chain", shortName: "BSC" },
-    "bnb": { logoKey: "BNB Chain", shortName: "BSC" },
-    "solana": { logoKey: "Solana", shortName: "SOL" },
-    "avalanche": { logoKey: "Avalanche", shortName: "AVAX" },
-  };
-  
-  const chainLower = blockchain.toLowerCase();
-  const mapping = chainMapping[chainLower];
-  
-  // CHAIN_LOGOS is defined later in the file, so we need to handle gracefully
-  const getChainLogo = (key: string) => {
-    const logos: Record<string, string> = {
-      "Ethereum": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png",
-      "Base": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/info/logo.png",
-      "Arbitrum": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png",
-      "Optimism": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/optimism/info/logo.png",
-      "Polygon": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png",
-      "BNB Chain": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/binance/info/logo.png",
-      "Solana": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png",
-      "Avalanche": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/avalanchec/info/logo.png",
-    };
-    return logos[key];
-  };
-  
-  const logo = mapping ? getChainLogo(mapping.logoKey) : undefined;
-  const shortName = mapping?.shortName || blockchain;
-  
-  return (
-    <div className="flex items-center gap-1 bg-gray-800/80 rounded-full px-1.5 py-0.5">
-      {logo && (
-        <img src={logo} alt={blockchain} className="w-3 h-3 rounded-full" />
-      )}
-      <span className="text-gray-400 text-[10px]">{shortName}</span>
-    </div>
-  );
+const normalizeBlockchain = (blockchain?: string): string => {
+  if (!blockchain) return "";
+  const raw = blockchain.trim().toLowerCase();
+  if (!raw) return "";
+  if (raw.includes("sol")) return "solana";
+  if (raw.includes("arb")) return "arbitrum";
+  if (raw.includes("optim")) return "optimism";
+  if (raw.includes("polygon") || raw === "matic") return "polygon";
+  if (raw.includes("avax") || raw.includes("avalanche")) return "avalanche";
+  if (raw.includes("bnb") || raw.includes("bsc") || raw.includes("binance")) return "bsc";
+  if (raw.includes("eth") || raw.includes("erc20")) return "ethereum";
+  if (raw.includes("base")) return "base";
+  return raw;
+};
+
+const BLOCKCHAIN_TO_CHAIN_NAME: Record<string, string> = {
+  ethereum: "Ethereum",
+  base: "Base",
+  arbitrum: "Arbitrum",
+  optimism: "Optimism",
+  polygon: "Polygon",
+  bsc: "BNB Chain",
+  solana: "Solana",
+  avalanche: "Avalanche",
+};
+
+const BLOCKCHAIN_TO_DEX_CHAIN: Record<string, string> = {
+  ethereum: "ethereum",
+  base: "base",
+  arbitrum: "arbitrum",
+  optimism: "optimism",
+  polygon: "polygon",
+  bsc: "bsc",
+  solana: "solana",
+  avalanche: "avalanche",
+};
+
+const getChainLogoForBlockchain = (blockchain?: string): string | undefined => {
+  const normalized = normalizeBlockchain(blockchain);
+  const chainName = BLOCKCHAIN_TO_CHAIN_NAME[normalized];
+  return chainName ? CHAIN_LOGOS[chainName] : undefined;
 };
 
 // Helper functions
@@ -435,8 +432,8 @@ const copyToClipboard = (text: string) => {
 
 const formatPrice = (price: number): string => {
   if (price === 0) return "$0.00";
-  if (price < 0.00001) return `$${price.toExponential(2)}`;
-  if (price < 0.01) return `$${price.toFixed(6)}`;
+  if (price < 0.000001) return `$${price.toFixed(10).replace(/\.?0+$/, "")}`;
+  if (price < 0.01) return `$${price.toFixed(8).replace(/\.?0+$/, "")}`;
   if (price < 1) return `$${price.toFixed(4)}`;
   if (price < 1000) return `$${price.toFixed(2)}`;
   return `$${price.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -1107,16 +1104,19 @@ const SendModal = ({
 
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose}>
-      <div className="px-6 pb-8">
-        <h2 className="text-white text-xl font-bold mb-6 text-center">Send</h2>
+      <div className="px-5 pb-8">
+        <h2 className="text-white text-xl font-bold mb-2">Send</h2>
+        <p className="text-gray-400 text-sm mb-5">
+          Send tokens from your Universal Account to another wallet.
+        </p>
 
         {/* Token Selection */}
-        <div className="mb-4">
+        <div className="mb-3 bg-[#252525] rounded-xl p-3 border border-white/10">
           <label className="text-gray-400 text-sm mb-2 block">Token</label>
           <select
             value={selectedToken || ""}
             onChange={(e) => setSelectedToken(e.target.value)}
-            className="w-full bg-gray-800 rounded-xl px-3 py-2 text-white outline-none"
+            className="w-full bg-black/30 rounded-xl px-3 py-2 text-white outline-none border border-white/10"
           >
             <option value="">Select a token</option>
             {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
@@ -1127,30 +1127,30 @@ const SendModal = ({
         </div>
 
         {/* Recipient */}
-        <div className="mb-4">
+        <div className="mb-3 bg-[#252525] rounded-xl p-3 border border-white/10">
           <label className="text-gray-400 text-sm mb-2 block">Recipient Address</label>
           <input
             type="text"
             value={recipient}
             onChange={(e) => setRecipient(e.target.value)}
             placeholder="0x... or .eth"
-            className="w-full bg-gray-800 rounded-xl px-3 py-2 text-white outline-none"
+            className="w-full bg-black/30 rounded-xl px-3 py-2 text-white outline-none border border-white/10"
           />
         </div>
 
         {/* Amount */}
-        <div className="mb-6">
+        <div className="mb-6 bg-[#252525] rounded-xl p-3 border border-white/10">
           <label className="text-gray-400 text-sm mb-2 block">Amount</label>
           <input
             type="number"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder="0.00"
-            className="w-full bg-gray-800 rounded-xl px-3 py-2 text-white outline-none"
+            className="w-full bg-black/30 rounded-xl px-3 py-2 text-white outline-none border border-white/10"
           />
         </div>
 
-        <button className="w-full bg-accent-dynamic text-black font-bold py-4 rounded-xl">
+        <button className="w-full bg-accent-dynamic text-white font-bold py-4 rounded-full">
           Review Send
         </button>
       </div>
@@ -1545,8 +1545,11 @@ const ConvertModal = ({
 
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose}>
-      <div className="px-4 pb-4">
-        <h2 className="text-white text-lg font-bold mb-2 text-center">Convert</h2>
+      <div className="px-5 pb-8">
+        <h2 className="text-white text-xl font-bold mb-2">Convert</h2>
+        <p className="text-gray-400 text-sm mb-4">
+          Move value between chains and primary assets in your Universal Account.
+        </p>
 
         {error && (
           <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-2 mb-2 text-red-300 text-xs">
@@ -1555,7 +1558,7 @@ const ConvertModal = ({
         )}
 
         {/* From Section - Compact */}
-        <div className="bg-[#1a1a1a] rounded-xl p-3 mb-1 border border-white/10">
+        <div className="bg-[#252525] rounded-xl p-3 mb-1 border border-white/10">
           <div className="text-gray-400 text-xs mb-1">From</div>
           
           <div className="flex gap-2 mb-1">
@@ -1563,7 +1566,7 @@ const ConvertModal = ({
             <div className="flex-1 relative">
               <button
                 onClick={() => { setFromAssetOpen(!fromAssetOpen); setFromChainOpen(false); }}
-                className="w-full bg-gray-700 rounded-lg px-2 py-1.5 text-white text-left flex items-center justify-between"
+                className="w-full bg-black/30 rounded-lg px-2 py-1.5 text-white text-left flex items-center justify-between border border-white/10"
               >
                 <div className="flex items-center gap-2">
                   {fromAsset ? (
@@ -1578,7 +1581,7 @@ const ConvertModal = ({
                 <span className="text-gray-400 text-xs">▼</span>
               </button>
               {fromAssetOpen && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-xl border border-gray-700 overflow-hidden z-20 max-h-40 overflow-y-auto">
+                <div className="absolute top-full left-0 right-0 mt-1 bg-[#1d1d1d] rounded-xl border border-white/10 overflow-hidden z-20 max-h-40 overflow-y-auto">
                   {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                   {uaAssets.map((a: any, i: number) => (
                     <button
@@ -1599,7 +1602,7 @@ const ConvertModal = ({
             <div className="w-28 relative">
               <button
                 onClick={() => { if (fromAsset) { setFromChainOpen(!fromChainOpen); setFromAssetOpen(false); }}}
-                className={`w-full bg-gray-700 rounded-lg px-2 py-1.5 text-left flex items-center justify-between ${!fromAsset ? 'opacity-50' : ''}`}
+                className={`w-full bg-black/30 rounded-lg px-2 py-1.5 text-left flex items-center justify-between border border-white/10 ${!fromAsset ? 'opacity-50' : ''}`}
                 disabled={!fromAsset}
               >
                 <div className="flex items-center gap-1">
@@ -1615,7 +1618,7 @@ const ConvertModal = ({
                 <span className="text-gray-400 text-[10px]">▼</span>
               </button>
               {fromChainOpen && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-xl border border-gray-700 overflow-hidden z-20 max-h-40 overflow-y-auto">
+                <div className="absolute top-full left-0 right-0 mt-1 bg-[#1d1d1d] rounded-xl border border-white/10 overflow-hidden z-20 max-h-40 overflow-y-auto">
                   {fromChains.map((c: { chainId: number; balance: number; balanceUSD: number }) => (
                     <button
                       key={c.chainId}
@@ -1640,11 +1643,11 @@ const ConvertModal = ({
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0.00"
-              className="flex-1 bg-gray-700 rounded-lg px-2 py-1.5 text-white outline-none"
+              className="flex-1 bg-black/30 rounded-lg px-2 py-1.5 text-white outline-none border border-white/10"
             />
             <button 
               onClick={handleMax}
-              className="bg-gray-700 px-2 py-1.5 rounded-lg text-purple-400 text-xs hover:bg-gray-600"
+              className="bg-black/30 px-2 py-1.5 rounded-lg text-accent-dynamic text-xs hover:bg-black/40 border border-white/10"
             >
               MAX
             </button>
@@ -1662,7 +1665,7 @@ const ConvertModal = ({
         </div>
 
         {/* To Section - Compact */}
-        <div className="bg-[#1a1a1a] rounded-xl p-3 mb-2 border border-white/10">
+        <div className="bg-[#252525] rounded-xl p-3 mb-2 border border-white/10">
           <div className="text-gray-400 text-xs mb-1">To</div>
           
           <div className="flex gap-2">
@@ -1670,7 +1673,7 @@ const ConvertModal = ({
             <div className="flex-1 relative">
               <button
                 onClick={() => { setToAssetOpen(!toAssetOpen); setToChainOpen(false); }}
-                className="w-full bg-gray-700 rounded-lg px-2 py-1.5 text-white text-left flex items-center justify-between"
+                className="w-full bg-black/30 rounded-lg px-2 py-1.5 text-white text-left flex items-center justify-between border border-white/10"
               >
                 <div className="flex items-center gap-2">
                   {toAsset ? (
@@ -1685,7 +1688,7 @@ const ConvertModal = ({
                 <span className="text-gray-400 text-xs">▼</span>
               </button>
               {toAssetOpen && (
-                <div className="absolute bottom-full left-0 right-0 mb-1 bg-gray-800 rounded-xl border border-gray-700 overflow-hidden z-20 max-h-40 overflow-y-auto">
+                <div className="absolute bottom-full left-0 right-0 mb-1 bg-[#1d1d1d] rounded-xl border border-white/10 overflow-hidden z-20 max-h-40 overflow-y-auto">
                   {UA_PRIMARY_ASSETS.map((a) => (
                     <button
                       key={a.symbol}
@@ -1704,7 +1707,7 @@ const ConvertModal = ({
             <div className="w-28 relative">
               <button
                 onClick={() => { if (toAsset) { setToChainOpen(!toChainOpen); setToAssetOpen(false); }}}
-                className={`w-full bg-gray-700 rounded-lg px-2 py-1.5 text-left flex items-center justify-between ${!toAsset ? 'opacity-50' : ''}`}
+                className={`w-full bg-black/30 rounded-lg px-2 py-1.5 text-left flex items-center justify-between border border-white/10 ${!toAsset ? 'opacity-50' : ''}`}
                 disabled={!toAsset}
               >
                 <div className="flex items-center gap-1">
@@ -1720,7 +1723,7 @@ const ConvertModal = ({
                 <span className="text-gray-400 text-[10px]">▼</span>
               </button>
               {toChainOpen && (
-                <div className="absolute bottom-full left-0 right-0 mb-1 bg-gray-800 rounded-xl border border-gray-700 overflow-hidden z-20 max-h-40 overflow-y-auto">
+                <div className="absolute bottom-full left-0 right-0 mb-1 bg-[#1d1d1d] rounded-xl border border-white/10 overflow-hidden z-20 max-h-40 overflow-y-auto">
                   {toChains.map((chainId: number) => (
                     <button
                       key={chainId}
@@ -5190,7 +5193,7 @@ const HomeTab = ({
         >
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-xl bg-accent-dynamic-20 flex items-center justify-center">
-              <span className="text-2xl">📊</span>
+              <span className="text-2xl">∞</span>
             </div>
             <div className="text-left">
               <div className="text-white font-semibold">Perps</div>
@@ -5244,6 +5247,7 @@ const SearchTab = ({
   const [selectedToken, setSelectedToken] = useState<TokenResult | null>(null);
   const [showSwapModal, setShowSwapModal] = useState(false);
   const [swapTargetToken, setSwapTargetToken] = useState<TokenResult | null>(null);
+  const dexMetricsCacheRef = useRef<Record<string, { volume?: number; liquidity?: number; priceChange24h?: number }>>({});
 
   // Calculate user balance for selected token
   const getUserBalance = useCallback((token: TokenResult | null) => {
@@ -5280,7 +5284,98 @@ const SearchTab = ({
     });
   };
 
-  const searchTokens = async (q: string) => {
+  const isAddressQuery = useMemo(() => {
+    const trimmed = query.trim();
+    return /^0x[a-fA-F0-9]{40}$/.test(trimmed) || /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trimmed);
+  }, [query]);
+
+  const pickPrimaryContract = useCallback((token: TokenResult, searchInput: string) => {
+    const contracts = token.contracts || [];
+    if (!contracts.length) return undefined;
+    const trimmed = searchInput.trim();
+    if (trimmed) {
+      const lower = trimmed.toLowerCase();
+      const exact = contracts.find((c) => (c.address || "").toLowerCase() === lower);
+      if (exact) return exact;
+    }
+    const order = ["base", "solana", "ethereum", "arbitrum", "bsc", "polygon", "optimism", "avalanche"];
+    const sorted = [...contracts].sort((a, b) => {
+      const ai = order.indexOf(normalizeBlockchain(a.blockchain));
+      const bi = order.indexOf(normalizeBlockchain(b.blockchain));
+      return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+    });
+    return sorted[0];
+  }, []);
+
+  const fetchDexMetrics = useCallback(async (address: string, blockchain: string) => {
+    const normalizedChain = normalizeBlockchain(blockchain);
+    const dexChain = BLOCKCHAIN_TO_DEX_CHAIN[normalizedChain];
+    const cacheKey = `${normalizedChain}:${address.toLowerCase()}`;
+    const cached = dexMetricsCacheRef.current[cacheKey];
+    if (cached) return cached;
+
+    try {
+      const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${address}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      const allPairs = Array.isArray(data?.pairs) ? data.pairs : [];
+      if (!allPairs.length) return null;
+
+      const pairs = dexChain
+        ? allPairs.filter((p: { chainId?: string }) => (p.chainId || "").toLowerCase() === dexChain)
+        : allPairs;
+      const candidates = pairs.length ? pairs : allPairs;
+      if (!candidates.length) return null;
+
+      const best = [...candidates].sort((a: {
+        volume?: { h24?: number | string };
+        liquidity?: { usd?: number | string };
+      }, b: {
+        volume?: { h24?: number | string };
+        liquidity?: { usd?: number | string };
+      }) => {
+        const av = Number(a?.volume?.h24 || 0);
+        const bv = Number(b?.volume?.h24 || 0);
+        const al = Number(a?.liquidity?.usd || 0);
+        const bl = Number(b?.liquidity?.usd || 0);
+        return (bv * 1.5 + bl) - (av * 1.5 + al);
+      })[0] as {
+        volume?: { h24?: number | string };
+        liquidity?: { usd?: number | string };
+        priceChange?: { h24?: number | string };
+      };
+
+      const metrics = {
+        volume: Number(best?.volume?.h24 || 0) || undefined,
+        liquidity: Number(best?.liquidity?.usd || 0) || undefined,
+        priceChange24h: Number(best?.priceChange?.h24 || 0) || undefined,
+      };
+      dexMetricsCacheRef.current[cacheKey] = metrics;
+      return metrics;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const scoreToken = useCallback((token: TokenResult, searchInput: string) => {
+    const q = searchInput.trim().toLowerCase();
+    let score = 0;
+    const symbol = token.symbol.toLowerCase();
+    const name = token.name.toLowerCase();
+    if (q) {
+      if (symbol === q) score += 80;
+      else if (symbol.startsWith(q)) score += 35;
+      if (name === q) score += 30;
+      else if (name.startsWith(q)) score += 12;
+      if (isAddressQuery && token.contracts?.some((c) => (c.address || "").toLowerCase() === q)) score += 120;
+    }
+    const volumeScore = Math.log10((token.volume || 0) + 1) * 14;
+    const liquidityScore = Math.log10((token.liquidity || 0) + 1) * 10;
+    const marketCapScore = Math.log10((token.market_cap || 0) + 1) * 6;
+    return score + volumeScore + liquidityScore + marketCapScore;
+  }, [isAddressQuery]);
+
+  const searchTokens = useCallback(async (q: string) => {
     if (!q.trim() || q.length < 2) {
       setResults([]);
       setError(null);
@@ -5305,7 +5400,7 @@ const SearchTab = ({
       // Map Mobula response to our format with defensive checks
       // Mobula returns contracts as string[] and blockchains as string[]
       const rawTokens = data?.data || [];
-      const tokens: TokenResult[] = rawTokens.slice(0, 15).map((t: {
+      const tokens: TokenResult[] = rawTokens.slice(0, 30).map((t: {
         id?: number | string;
         name?: string;
         symbol?: string;
@@ -5351,19 +5446,70 @@ const SearchTab = ({
           circulatingSupply: typeof t.circulating_supply === 'number' ? t.circulating_supply : undefined,
         };
       });
-      setResults(tokens);
+      const enriched = await Promise.all(tokens.map(async (token, idx) => {
+        if ((token.volume && token.liquidity) || idx > 12) return token;
+        const primary = pickPrimaryContract(token, q);
+        if (!primary?.address) return token;
+        const metrics = await fetchDexMetrics(primary.address, primary.blockchain);
+        if (!metrics) return token;
+        return {
+          ...token,
+          volume: token.volume ?? metrics.volume,
+          liquidity: token.liquidity ?? metrics.liquidity,
+          price_change_24h: typeof token.price_change_24h === "number" ? token.price_change_24h : metrics.priceChange24h,
+        };
+      }));
+
+      const ranked = enriched
+        .sort((a, b) => scoreToken(b, q) - scoreToken(a, q))
+        .slice(0, 15);
+      setResults(ranked);
     } catch (e) {
       console.error("Search failed:", e);
       setError(e instanceof Error ? e.message : "Search failed");
       setResults([]);
     }
     setLoading(false);
-  };
+  }, [fetchDexMetrics, pickPrimaryContract, scoreToken]);
 
   useEffect(() => {
     const timer = setTimeout(() => searchTokens(query), 500);
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [query, searchTokens]);
+
+  useEffect(() => {
+    if (query || !recentTokens.length) return;
+    let cancelled = false;
+    const enrichRecent = async () => {
+      const updated = await Promise.all(recentTokens.map(async (token, idx) => {
+        if ((token.volume && token.liquidity) || idx > 7) return token;
+        const primary = pickPrimaryContract(token, "");
+        if (!primary?.address) return token;
+        const metrics = await fetchDexMetrics(primary.address, primary.blockchain);
+        if (!metrics) return token;
+        return {
+          ...token,
+          volume: token.volume ?? metrics.volume,
+          liquidity: token.liquidity ?? metrics.liquidity,
+          price_change_24h: typeof token.price_change_24h === "number" ? token.price_change_24h : metrics.priceChange24h,
+        };
+      }));
+      if (cancelled) return;
+      const changed = updated.some((token, i) =>
+        token.volume !== recentTokens[i]?.volume ||
+        token.liquidity !== recentTokens[i]?.liquidity ||
+        token.price_change_24h !== recentTokens[i]?.price_change_24h
+      );
+      if (changed) {
+        setRecentTokens(updated);
+        localStorage.setItem("recentTokensV2", JSON.stringify(updated));
+      }
+    };
+    enrichRecent();
+    return () => {
+      cancelled = true;
+    };
+  }, [query, recentTokens, pickPrimaryContract, fetchDexMetrics]);
 
   return (
     <div className="flex-1 overflow-auto pb-24 bg-[#0a0a0a] px-4 pt-4">
@@ -5394,16 +5540,8 @@ const SearchTab = ({
         <div>
           <div className="text-gray-500 text-xs uppercase mb-3">History</div>
           {recentTokens.map((token) => {
-            // Get primary chain for badge
-            const primaryChain = token.contracts?.[0]?.blockchain;
-            const chainLogo = primaryChain ? (() => {
-              const mapping: Record<string, string> = {
-                ethereum: "Ethereum", base: "Base", arbitrum: "Arbitrum",
-                optimism: "Optimism", polygon: "Polygon", bsc: "BNB Chain",
-                bnb: "BNB Chain", solana: "Solana", avalanche: "Avalanche",
-              };
-              return CHAIN_LOGOS[mapping[primaryChain.toLowerCase()] || "Base"];
-            })() : null;
+            const primaryContract = pickPrimaryContract(token, query);
+            const chainLogo = getChainLogoForBlockchain(primaryContract?.blockchain);
             
             return (
             <button 
@@ -5434,17 +5572,6 @@ const SearchTab = ({
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-white font-medium text-sm">{token.symbol}</span>
-                      {/* Chain badges */}
-                      {token.contracts && token.contracts.length > 0 && (
-                        <div className="flex gap-1">
-                          {token.contracts.slice(0, 2).map((c, i) => (
-                            <ChainBadge key={i} blockchain={c.blockchain} />
-                          ))}
-                          {token.contracts.length > 2 && (
-                            <span className="text-gray-500 text-[10px]">+{token.contracts.length - 2}</span>
-                          )}
-                        </div>
-                      )}
                     </div>
                     <div className="text-gray-500 text-xs truncate max-w-[120px]">{token.name}</div>
                   </div>
@@ -5460,15 +5587,9 @@ const SearchTab = ({
               </div>
               {/* Bottom row: LIQ, VOL, MCAP */}
               <div className="flex gap-3 mt-2 ml-12 text-xs">
-                {token.liquidity && token.liquidity > 0 && (
-                  <span className="text-gray-500">LIQ <span className="text-gray-400">{formatMarketCap(token.liquidity)}</span></span>
-                )}
-                {token.volume && token.volume > 0 && (
-                  <span className="text-gray-500">VOL <span className="text-gray-400">{formatMarketCap(token.volume)}</span></span>
-                )}
-                {token.market_cap && token.market_cap > 0 && (
-                  <span className="text-gray-500">MCAP <span className="text-gray-400">{formatMarketCap(token.market_cap)}</span></span>
-                )}
+                <span className="text-gray-500">LIQ <span className="text-gray-400">{token.liquidity && token.liquidity > 0 ? formatMarketCap(token.liquidity) : "N/A"}</span></span>
+                <span className="text-gray-500">VOL <span className="text-gray-400">{token.volume && token.volume > 0 ? formatMarketCap(token.volume) : "N/A"}</span></span>
+                <span className="text-gray-500">MCAP <span className="text-gray-400">{token.market_cap && token.market_cap > 0 ? formatMarketCap(token.market_cap) : "N/A"}</span></span>
               </div>
             </button>
             );
@@ -5486,16 +5607,8 @@ const SearchTab = ({
       {results.length > 0 && (
         <div>
           {results.map((token) => {
-            // Get primary chain for badge
-            const primaryChain = token.contracts?.[0]?.blockchain;
-            const chainLogo = primaryChain ? (() => {
-              const mapping: Record<string, string> = {
-                ethereum: "Ethereum", base: "Base", arbitrum: "Arbitrum",
-                optimism: "Optimism", polygon: "Polygon", bsc: "BNB Chain",
-                bnb: "BNB Chain", solana: "Solana", avalanche: "Avalanche",
-              };
-              return CHAIN_LOGOS[mapping[primaryChain.toLowerCase()] || "Base"];
-            })() : null;
+            const primaryContract = pickPrimaryContract(token, query);
+            const chainLogo = getChainLogoForBlockchain(primaryContract?.blockchain);
             
             return (
             <button 
@@ -5535,19 +5648,11 @@ const SearchTab = ({
                 <div className="text-left">
                   <div className="flex items-center gap-2">
                     <span className="text-white">{token.name}</span>
-                    {/* Chain badges */}
-                    {token.contracts && token.contracts.length > 0 && (
-                      <div className="flex gap-1">
-                        {token.contracts.slice(0, 2).map((c, i) => (
-                          <ChainBadge key={i} blockchain={c.blockchain} />
-                        ))}
-                        {token.contracts.length > 2 && (
-                          <span className="text-gray-500 text-[10px]">+{token.contracts.length - 2}</span>
-                        )}
-                      </div>
-                    )}
                   </div>
                   <div className="text-gray-500 text-sm uppercase">{token.symbol}</div>
+                  <div className="text-gray-500 text-xs mt-0.5">
+                    VOL {token.volume && token.volume > 0 ? formatMarketCap(token.volume) : "N/A"} • LIQ {token.liquidity && token.liquidity > 0 ? formatMarketCap(token.liquidity) : "N/A"}
+                  </div>
                 </div>
               </div>
               <div className="text-right">

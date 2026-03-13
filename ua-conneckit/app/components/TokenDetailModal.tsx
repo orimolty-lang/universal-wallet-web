@@ -1,6 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 
 // Types
 interface TokenContract {
@@ -42,8 +42,8 @@ interface TokenDetailModalProps {
 // Helper functions
 const formatPrice = (price: number): string => {
   if (price === 0) return "$0.00";
-  if (price < 0.00001) return `$${price.toExponential(2)}`;
-  if (price < 0.01) return `$${price.toFixed(6)}`;
+  if (price < 0.000001) return `$${price.toFixed(10).replace(/\.?0+$/, "")}`;
+  if (price < 0.01) return `$${price.toFixed(8).replace(/\.?0+$/, "")}`;
   if (price < 1) return `$${price.toFixed(4)}`;
   if (price < 1000) return `$${price.toFixed(2)}`;
   return `$${price.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -113,6 +113,21 @@ const NETWORK_SLUGS: Record<string, { dexscreener: string; geckoterminal: string
   "bnb": { dexscreener: "bsc", geckoterminal: "bsc" },
   "solana": { dexscreener: "solana", geckoterminal: "solana" },
   "avalanche": { dexscreener: "avalanche", geckoterminal: "avax" },
+};
+
+const normalizeBlockchain = (blockchain?: string): string => {
+  if (!blockchain) return "";
+  const raw = blockchain.trim().toLowerCase();
+  if (!raw) return "";
+  if (raw.includes("sol")) return "solana";
+  if (raw.includes("arb")) return "arbitrum";
+  if (raw.includes("optim")) return "optimism";
+  if (raw.includes("polygon") || raw === "matic") return "polygon";
+  if (raw.includes("avax") || raw.includes("avalanche")) return "avalanche";
+  if (raw.includes("bnb") || raw.includes("bsc") || raw.includes("binance")) return "bsc";
+  if (raw.includes("eth") || raw.includes("erc20")) return "ethereum";
+  if (raw.includes("base")) return "base";
+  return raw;
 };
 
 // Embedded Chart Component using GeckoTerminal
@@ -212,6 +227,7 @@ export const TokenDetailModal = ({
   onSend,
 }: TokenDetailModalProps) => {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [fallbackMetrics, setFallbackMetrics] = useState<{ volume?: number; liquidity?: number; priceChange24h?: number } | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
   const startYRef = useRef<number | null>(null);
   const currentYRef = useRef<number>(0);
@@ -243,9 +259,65 @@ export const TokenDetailModal = ({
     currentYRef.current = 0;
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    setFallbackMetrics(null);
+    const loadFallbackMetrics = async () => {
+      if (!token?.contracts?.length) return;
+      if (token.volume && token.liquidity && typeof token.price_change_24h === "number") return;
+      const contract = token.contracts[0];
+      if (!contract?.address) return;
+      try {
+        const normalized = normalizeBlockchain(contract.blockchain);
+        const dexChain = NETWORK_SLUGS[normalized]?.dexscreener;
+        const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${contract.address}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const allPairs = Array.isArray(data?.pairs) ? data.pairs : [];
+        if (!allPairs.length) return;
+        const filtered = dexChain
+          ? allPairs.filter((p: { chainId?: string }) => (p.chainId || "").toLowerCase() === dexChain)
+          : allPairs;
+        const pairs = filtered.length ? filtered : allPairs;
+        const best = [...pairs].sort((a: {
+          volume?: { h24?: number | string };
+          liquidity?: { usd?: number | string };
+        }, b: {
+          volume?: { h24?: number | string };
+          liquidity?: { usd?: number | string };
+        }) => {
+          const av = Number(a?.volume?.h24 || 0);
+          const bv = Number(b?.volume?.h24 || 0);
+          const al = Number(a?.liquidity?.usd || 0);
+          const bl = Number(b?.liquidity?.usd || 0);
+          return (bv * 1.5 + bl) - (av * 1.5 + al);
+        })[0] as {
+          volume?: { h24?: number | string };
+          liquidity?: { usd?: number | string };
+          priceChange?: { h24?: number | string };
+        };
+        if (cancelled) return;
+        setFallbackMetrics({
+          volume: Number(best?.volume?.h24 || 0) || undefined,
+          liquidity: Number(best?.liquidity?.usd || 0) || undefined,
+          priceChange24h: Number(best?.priceChange?.h24 || 0) || undefined,
+        });
+      } catch {
+        // ignore fallback errors
+      }
+    };
+    loadFallbackMetrics();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
   if (!token) return null;
 
-  const priceChange = token.price_change_24h || 0;
+  const displayedVolume = token.volume || fallbackMetrics?.volume || 0;
+  const displayedLiquidity = token.liquidity || fallbackMetrics?.liquidity || 0;
+  const hasKnownPriceChange = typeof token.price_change_24h === "number" || typeof fallbackMetrics?.priceChange24h === "number";
+  const priceChange = typeof token.price_change_24h === "number" ? token.price_change_24h : (fallbackMetrics?.priceChange24h || 0);
   const priceChangePositive = priceChange >= 0;
 
   // Get primary contract address (first one)
@@ -328,14 +400,16 @@ export const TokenDetailModal = ({
 
           {/* Price Change */}
           <div className="flex items-center gap-2 mb-4">
-            <span
-              className={`text-sm font-medium ${
-                priceChangePositive ? "text-red-500" : "text-green-500"
-              }`}
-            >
-              {priceChangePositive ? "↓" : "↑"}
-              {Math.abs(priceChange).toFixed(2)}%
-            </span>
+            {hasKnownPriceChange && (
+              <span
+                className={`text-sm font-medium ${
+                  priceChangePositive ? "text-green-500" : "text-red-500"
+                }`}
+              >
+                {priceChangePositive ? "↑" : "↓"}
+                {Math.abs(priceChange).toFixed(2)}%
+              </span>
+            )}
             <span className="text-gray-500 text-sm bg-gray-800 px-2 py-0.5 rounded">
               24h
             </span>
@@ -395,7 +469,16 @@ export const TokenDetailModal = ({
                     <span>24h Volume</span>
                   </div>
                   <span className="text-accent-dynamic font-medium">
-                    {formatLargeNumber(token.volume || 0)}
+                    {formatLargeNumber(displayedVolume)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-gray-400 text-sm">
+                    <span>💧</span>
+                    <span>Liquidity</span>
+                  </div>
+                  <span className="text-accent-dynamic font-medium">
+                    {formatLargeNumber(displayedLiquidity)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
