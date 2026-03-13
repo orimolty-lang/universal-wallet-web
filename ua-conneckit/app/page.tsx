@@ -5108,8 +5108,8 @@ const HomeTab = ({
           className="w-full flex items-center justify-between p-4 bg-gray-900 rounded-2xl border border-gray-800 hover:border-accent-dynamic/50 transition-colors"
         >
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-accent-dynamic-20 flex items-center justify-center">
-              <span className="text-2xl">🔮</span>
+            <div className="w-12 h-12 rounded-xl bg-accent-dynamic-20 flex items-center justify-center overflow-hidden">
+              <img src="https://polymarket.com/favicon.ico" alt="" className="w-8 h-8" />
             </div>
             <div className="text-left">
               <div className="text-white font-semibold">Prediction Markets</div>

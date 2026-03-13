@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { X, TrendingUp, TrendingDown, Loader2, ExternalLink, Search, RotateCw } from "lucide-react";
 import BottomSheet from "../../components/BottomSheet";
 import type { UniversalAccount } from "@particle-network/universal-account-sdk";
@@ -148,6 +148,8 @@ export default function PolymarketModal({
   const { address } = useAccount();
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Market[] | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
   const [allMarkets, setAllMarkets] = useState<Market[]>([]);
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [selectedOutcome, setSelectedOutcome] = useState<number>(0);
@@ -262,40 +264,51 @@ export default function PolymarketModal({
     };
   };
 
-  // Fetch trending/popular markets
+  // Fetch markets: mix of top-by-volume (liquid) + newest for freshness
   const fetchMarkets = useCallback(async () => {
     setIsLoadingMarkets(true);
     setError(null);
     try {
-      // Primary endpoint (prefer dedicated proxy to avoid WebView/CORS failures)
       const cacheBust = `_t=${Date.now()}`;
-      const primaryEndpoint = POLY_PROXY
-        ? `${POLY_PROXY.replace(/\/$/, "")}/markets?active=true&closed=false&limit=100&${cacheBust}`
-        : `${GAMMA_API}/markets?active=true&closed=false&limit=100&${cacheBust}`;
-      const response = await fetch(primaryEndpoint, { cache: "no-store" });
-      const data = await response.json();
-      let list: Market[] = Array.isArray(data) ? data : Array.isArray((data as { data?: Market[] })?.data) ? (data as { data: Market[] }).data : [];
-      let usedEndpoint = primaryEndpoint;
+      const base = POLY_PROXY ? POLY_PROXY.replace(/\/$/, "") : GAMMA_API;
 
-      // Fallback endpoint (events -> markets)
-      if (!list.length) {
-        const fallbackEndpoint = POLY_PROXY
-          ? `${POLY_PROXY.replace(/\/$/, "")}/events?active=true&closed=false&limit=100&${cacheBust}`
-          : `${GAMMA_API}/events?active=true&closed=false&limit=100&${cacheBust}`;
-        const fallbackRes = await fetch(fallbackEndpoint, { cache: "no-store" });
-        const fallbackData = await fallbackRes.json();
-        const events = Array.isArray(fallbackData) ? fallbackData : Array.isArray((fallbackData as { data?: unknown[] })?.data) ? (fallbackData as { data: unknown[] }).data : [];
-        list = events.flatMap((e: unknown) => {
-          const eventObj = e as { markets?: Market[] };
-          return Array.isArray(eventObj?.markets) ? eventObj.markets : [];
+      // Fetch in parallel: top by volume (liquid) + newest by start_date for variety
+      const [volRes, newRes] = await Promise.all([
+        fetch(`${base}/markets?active=true&closed=false&limit=80&order=volume&ascending=false&${cacheBust}`, { cache: "no-store" }),
+        fetch(`${base}/events?active=true&closed=false&limit=80&order=start_date&ascending=false&${cacheBust}`, { cache: "no-store" }),
+      ]);
+
+      const volData = await volRes.json();
+      const newData = await newRes.json();
+
+      const volList: Market[] = Array.isArray(volData) ? volData : Array.isArray((volData as { data?: Market[] })?.data) ? (volData as { data: Market[] }).data : [];
+      let newList: Market[] = [];
+      if (Array.isArray(newData)) {
+        newList = newData.flatMap((e: unknown) => {
+          const ev = e as { markets?: Market[] };
+          return Array.isArray(ev?.markets) ? ev.markets : [];
         });
-        usedEndpoint = fallbackEndpoint;
+      } else if (Array.isArray((newData as { data?: unknown[] })?.data)) {
+        const events = (newData as { data: unknown[] }).data;
+        newList = events.flatMap((e: unknown) => {
+          const ev = e as { markets?: Market[] };
+          return Array.isArray(ev?.markets) ? ev.markets : [];
+        });
       }
 
-      // Normalize shape
-      const normalized = list.map(normalizeMarket).filter((m): m is Market => !!m);
+      // Merge and dedupe by id
+      const seen = new Set<string>();
+      const merged: Market[] = [];
+      for (const m of [...volList, ...newList]) {
+        const id = (m as Market).id || (m as Market).conditionId || "";
+        if (id && !seen.has(id)) {
+          seen.add(id);
+          merged.push(m as Market);
+        }
+      }
 
-      // Prefer currently tradable markets (accepting orders, active, not closed, not expired)
+      const normalized = merged.map(normalizeMarket).filter((m): m is Market => !!m);
+
       const now = Date.now();
       const tradable = normalized.filter((m) => {
         const endTs = m.endDate ? Date.parse(m.endDate) : Number.NaN;
@@ -303,27 +316,25 @@ export default function PolymarketModal({
         return m.active && !m.closed && m.accepting_orders === true && notExpired;
       });
 
-      // Liquid-only filter
-      const minLiquidity = 5_000; // USD
-      const minVolume = 500; // USD
+      const minLiquidity = 5_000;
+      const minVolume = 500;
       const liquidTradable = tradable.filter((m) => {
         const liq = Number(m.liquidity || "0");
         const vol = Number(m.volume || "0");
         return Number.isFinite(liq) && Number.isFinite(vol) && liq >= minLiquidity && vol >= minVolume;
       });
 
-      // Fallbacks
       const openMarkets = normalized.filter((m) => m.active && !m.closed);
       const finalMarkets = liquidTradable.length > 0 ? liquidTradable : (tradable.length > 0 ? tradable : openMarkets);
 
       setDebugInfo({
-        endpoint: usedEndpoint,
+        endpoint: `${base}/markets + events`,
         rawCount: normalized.length,
         openCount: openMarkets.length,
         finalCount: finalMarkets.length,
       });
 
-      console.log("[Polymarket] Loaded markets:", finalMarkets.length, "(liquid:", liquidTradable.length, ", tradable:", tradable.length, ")");
+      console.log("[Polymarket] Loaded markets:", finalMarkets.length, "(liquid:", liquidTradable.length, ")");
       setAllMarkets(finalMarkets);
     } catch (err) {
       console.error("[Polymarket] Failed to fetch markets:", err);
@@ -336,6 +347,44 @@ export default function PolymarketModal({
     }
   }, []);
 
+  // API search: Polymarket public-search finds markets across full catalog
+  const fetchSearch = useCallback(async (q: string) => {
+    const trimmed = q.trim();
+    if (!trimmed) {
+      setSearchResults(null);
+      return;
+    }
+    setIsSearching(true);
+    try {
+      const enc = encodeURIComponent(trimmed);
+      const cacheBust = `_t=${Date.now()}`;
+      const base = POLY_PROXY ? POLY_PROXY.replace(/\/$/, "") : GAMMA_API;
+      const url = `${base}/public-search?q=${enc}&limit_per_type=50&${cacheBust}`;
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error(`Search API ${res.status}`);
+      const data = await res.json();
+      const events = (data?.events ?? data) as Array<{ markets?: Market[] }>;
+      const list = Array.isArray(events)
+        ? events.flatMap((e) => Array.isArray(e?.markets) ? e.markets : [])
+        : [];
+      const normalized = list.map(normalizeMarket).filter((m): m is Market => !!m);
+      const minLiq = 1000;
+      const liquid = normalized.filter((m) => Number(m.liquidity || "0") >= minLiq && Number(m.volume || "0") >= 500);
+      setSearchResults(liquid.length > 0 ? liquid : normalized);
+    } catch (err) {
+      console.error("[Polymarket] Search failed, falling back to local filter:", err);
+      // Fallback: client-side filter on allMarkets when API unavailable
+      const qLower = trimmed.toLowerCase();
+      const local = allMarkets.filter((m) =>
+        (m.question || "").toLowerCase().includes(qLower) ||
+        (m.slug || "").toLowerCase().includes(qLower)
+      );
+      setSearchResults(local);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [allMarkets]);
+
   // Infer category from market question/slug
   const inferCategory = useCallback((m: Market): string => {
     const q = ((m.question || "") + " " + (m.slug || "")).toLowerCase();
@@ -347,25 +396,29 @@ export default function PolymarketModal({
     return "other";
   }, []);
 
-  // Filter markets by category and search
+  // When searching: use API results. Otherwise: filter allMarkets by category
   const filteredMarkets = useMemo(() => {
+    if (searchQuery.trim()) {
+      return searchResults ?? [];
+    }
     let list = allMarkets;
     if (categoryFilter !== "all") {
       list = list.filter((m) => inferCategory(m) === categoryFilter);
     }
-    if (searchQuery.trim()) {
-      const q = searchQuery.trim().toLowerCase();
-      list = list.filter((m) =>
-        (m.question || "").toLowerCase().includes(q) ||
-        (m.slug || "").toLowerCase().includes(q)
-      );
-    }
     return list;
-  }, [allMarkets, categoryFilter, searchQuery, inferCategory]);
+  }, [allMarkets, categoryFilter, searchQuery, searchResults, inferCategory]);
 
+  // Debounced search: trigger API when user types
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchMarkets = useCallback((query: string) => {
     setSearchQuery(query);
-  }, []);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    if (!query.trim()) {
+      setSearchResults(null);
+      return;
+    }
+    searchDebounceRef.current = setTimeout(() => fetchSearch(query), 400);
+  }, [fetchSearch]);
 
   const CATEGORIES = [
     { id: "all", label: "All", icon: "◆" },
@@ -380,6 +433,9 @@ export default function PolymarketModal({
   useEffect(() => {
     if (isOpen) {
       fetchMarkets();
+    } else {
+      setSearchQuery("");
+      setSearchResults(null);
     }
   }, [isOpen, fetchMarkets]);
 
@@ -1101,7 +1157,7 @@ export default function PolymarketModal({
             <RotateCw className={`w-5 h-5 text-gray-400 ${isLoadingMarkets ? "animate-spin" : ""}`} />
           </button>
           <h2 className="text-white text-2xl font-bold flex items-center gap-2.5">
-            <span className="text-2xl">🔮</span>
+            <img src="https://polymarket.com/favicon.ico" alt="" className="w-8 h-8 rounded-lg" />
             <span>Prediction Markets</span>
           </h2>
           <button
@@ -1116,16 +1172,19 @@ export default function PolymarketModal({
         <div className="px-4 space-y-4">
           {!selectedMarket ? (
             <>
-              {/* Search */}
+              {/* Search - uses Polymarket API for real search */}
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Search markets..."
+                  placeholder="Search Polymarket (e.g. Bitcoin, Trump)..."
                   value={searchQuery}
                   onChange={(e) => searchMarkets(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-white placeholder-gray-400"
+                  className="w-full pl-10 pr-10 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-white placeholder-gray-400"
                 />
+                {isSearching && (
+                  <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 animate-spin" />
+                )}
               </div>
 
               {/* Category pills - Rainbow-style */}
