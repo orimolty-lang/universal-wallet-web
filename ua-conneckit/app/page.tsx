@@ -5298,9 +5298,7 @@ const HomeTab = ({
         >
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-xl bg-accent-dynamic-20 flex items-center justify-center">
-              <svg className="w-6 h-6 text-accent-dynamic" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-              </svg>
+              <span className="text-2xl">📈</span>
             </div>
             <div className="text-left">
               <div className="text-white font-semibold">Earn</div>

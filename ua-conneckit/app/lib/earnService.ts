@@ -102,8 +102,10 @@ async function fetchMorphoVaults(): Promise<EarnMarket[]> {
       const chainId = parseInt(String(item.chain?.id ?? 0), 10);
       if (!chainId) continue;
       const asset = item.asset ?? {};
+      const decimals = parseInt(String(asset.decimals ?? 6), 10);
+      const rawTvl = parseFloat(item.totalSupply ?? item.totalAssets ?? 0);
+      const tvlUsd = rawTvl / Math.pow(10, decimals); // assume ~$1 for USDC
       const apy = parseFloat(item.supplyApy ?? item.avgApy ?? 0) * 100;
-      const tvl = parseFloat(item.totalSupply ?? item.totalAssets ?? 0);
       out.push({
         id: `morpho-${chainId}-${(item.address ?? "").toLowerCase()}`,
         protocol: "morpho",
@@ -117,7 +119,7 @@ async function fetchMorphoVaults(): Promise<EarnMarket[]> {
         assetSymbol: (asset.symbol || "USDC").toUpperCase(),
         assetDecimals: parseInt(String(asset.decimals ?? 6), 10),
         apy,
-        tvl,
+        tvl: tvlUsd,
       });
     }
     if (out.length > 0) return out;
@@ -148,14 +150,51 @@ async function fetchMorphoVaults(): Promise<EarnMarket[]> {
   return out;
 }
 
+const AAVE_NETWORK_TO_CHAIN_ID: Record<string, number> = {
+  ethereum: 1,
+  base: 8453,
+  arbitrum: 42161,
+  optimism: 10,
+  polygon: 137,
+  avalanche: 43114,
+  bnb: 56,
+};
+
 /**
- * Build Aave supply markets from config.
+ * Fetch Aave USDC supply APY from aave-v3-data (free, no key).
  */
-function buildAaveMarkets(): EarnMarket[] {
+async function fetchAaveUsdcApy(): Promise<Record<number, number>> {
+  const out: Record<number, number> = {};
+  try {
+    const res = await fetch("https://th3nolo.github.io/aave-v3-data/aave_v3_data.json", {
+      cache: "no-store",
+    });
+    const data = await res.json();
+    const networks = data?.networks ?? {};
+    for (const [netName, reserves] of Object.entries(networks)) {
+      if (!Array.isArray(reserves)) continue;
+      const usdc = reserves.find(
+        (r: { symbol?: string }) => (r?.symbol || "").toUpperCase() === "USDC"
+      );
+      if (!usdc?.current_liquidity_rate) continue;
+      const chainId = AAVE_NETWORK_TO_CHAIN_ID[netName.toLowerCase()];
+      if (chainId) out[chainId] = parseFloat(String(usdc.current_liquidity_rate)) * 100;
+    }
+  } catch (err) {
+    console.error("[Earn] Aave APY fetch failed:", err);
+  }
+  return out;
+}
+
+/**
+ * Build Aave supply markets from config. Enriches with APY from aave-v3-data.
+ */
+async function buildAaveMarkets(): Promise<EarnMarket[]> {
+  const [aaveApy] = await Promise.all([fetchAaveUsdcApy()]);
   const out: EarnMarket[] = [];
   const chainIdToUa = getChainIdToUaMap();
   const aaveMarkets: Array<{ chainId: number; pool: string; usdc: string; name: string }> = [
-    { chainId: 1, pool: "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2", usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", name: "Aave V3" },
+    { chainId: 1, pool: "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2", usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", name: "Aave V3 USDC" },
     { chainId: 8453, pool: "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5", usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", name: "Aave V3 USDC" },
     { chainId: 42161, pool: "0x794a61358D6845594F94dc1DB02A252b5b4814aD", usdc: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", name: "Aave V3 USDC" },
     { chainId: 10, pool: "0x794a61358D6845594F94dc1DB02A252b5b4814aD", usdc: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", name: "Aave V3 USDC" },
@@ -179,7 +218,7 @@ function buildAaveMarkets(): EarnMarket[] {
       assetAddress: m.usdc,
       assetSymbol: "USDC",
       assetDecimals: 6,
-      apy: 0,
+      apy: aaveApy[m.chainId] ?? 0,
       tvl: 0,
     });
   }
@@ -194,7 +233,7 @@ function getChainIdToUaMap(): Record<number, number> {
  * Fetch all earn markets (Morpho + Aave).
  */
 export async function fetchEarnMarkets(): Promise<EarnMarket[]> {
-  const [morpho, aave] = await Promise.all([fetchMorphoVaults(), Promise.resolve(buildAaveMarkets())]);
+  const [morpho, aave] = await Promise.all([fetchMorphoVaults(), buildAaveMarkets()]);
   return [...morpho, ...aave];
 }
 
@@ -248,3 +287,12 @@ export function buildAaveSupplyTx(
 }
 
 export { EARN_CHAINS };
+
+/** Format TVL for display (e.g. $1.2M, $450K). */
+export function formatTvl(usd: number): string {
+  if (usd >= 1e9) return `$${(usd / 1e9).toFixed(1)}B`;
+  if (usd >= 1e6) return `$${(usd / 1e6).toFixed(1)}M`;
+  if (usd >= 1e3) return `$${(usd / 1e3).toFixed(1)}K`;
+  if (usd > 0) return `$${usd.toFixed(0)}`;
+  return "—";
+}

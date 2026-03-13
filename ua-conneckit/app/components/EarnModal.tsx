@@ -11,6 +11,7 @@ import {
   fetchEarnMarkets,
   buildMorphoDepositTx,
   buildAaveSupplyTx,
+  formatTvl,
   type EarnMarket,
 } from "../lib/earnService";
 
@@ -94,6 +95,7 @@ export default function EarnModal({
   const [error, setError] = useState<string | null>(null);
   const [txResult, setTxResult] = useState<{ txId: string } | null>(null);
   const [chainFilter, setChainFilter] = useState<number | "all">("all");
+  const [protocolFilter, setProtocolFilter] = useState<"all" | "morpho" | "aave">("all");
 
   const fetchMarkets = useCallback(async () => {
     setIsLoadingMarkets(true);
@@ -112,39 +114,51 @@ export default function EarnModal({
     if (isOpen) fetchMarkets();
   }, [isOpen, fetchMarkets]);
 
-  // UA unified balance: prefer primaryAssets (UA source of truth), fallback to combined
-  const userUsdcBalance = (() => {
-    const src = primaryAssets ?? assets;
-    if (!src?.assets) return 0;
-    const list = src.assets as Array<{
-      tokenType?: string;
-      symbol?: string;
-      amount?: number | string;
-      balance?: number | string;
-      chainAggregation?: Array<{ amount?: number | string }>;
-    }>;
-    const usdc = list.find(
-      (a) =>
-        (a.tokenType || "").toLowerCase() === "usdc" ||
-        (a.symbol || "").toUpperCase() === "USDC"
-    );
-    if (!usdc) return 0;
-    let amt = typeof usdc.amount === "string" ? parseFloat(usdc.amount || "0") : (usdc.amount ?? 0);
-    if (typeof usdc.balance === "number") amt = usdc.balance;
-    else if (typeof usdc.balance === "string") amt = parseFloat(usdc.balance || "0");
-    if (amt <= 0 && usdc.chainAggregation?.length) {
-      amt = usdc.chainAggregation.reduce((sum, c) => {
-        const v = typeof c.amount === "string" ? parseFloat(c.amount || "0") : (c.amount || 0);
-        return sum + v;
-      }, 0);
-    }
-    return amt;
+  // Total portfolio: use assets (combined) to match main page; fallback to primaryAssets
+  const totalPortfolioUsd = (() => {
+    const src = assets ?? primaryAssets;
+    const total = (src as { totalAmountInUSD?: number })?.totalAmountInUSD;
+    return typeof total === "number" ? total : 0;
   })();
 
-  const filteredMarkets =
-    chainFilter === "all"
-      ? markets
-      : markets.filter((m) => m.chainId === chainFilter);
+  // USDC for deposit: try primaryAssets first (UA), then assets (combined)
+  const userUsdcBalance = (() => {
+    const sources = [primaryAssets, assets].filter(Boolean);
+    for (const src of sources) {
+      if (!src?.assets) continue;
+      const list = src.assets as Array<{
+        tokenType?: string;
+        symbol?: string;
+        amount?: number | string;
+        balance?: number | string;
+        amountInUSD?: number;
+        chainAggregation?: Array<{ amount?: number | string; token?: { chainId?: number } }>;
+      }>;
+      const usdc = list.find(
+        (a) =>
+          (a.tokenType || "").toLowerCase() === "usdc" ||
+          (a.symbol || "").toUpperCase() === "USDC"
+      );
+      if (!usdc) continue;
+      let amt = typeof usdc.amount === "string" ? parseFloat(usdc.amount || "0") : (usdc.amount ?? 0);
+      if (typeof usdc.balance === "number") amt = usdc.balance;
+      else if (typeof usdc.balance === "string") amt = parseFloat(usdc.balance || "0");
+      if (amt <= 0 && usdc.chainAggregation?.length) {
+        amt = usdc.chainAggregation.reduce((sum, c) => {
+          const v = typeof c.amount === "string" ? parseFloat(c.amount || "0") : (c.amount || 0);
+          return sum + v;
+        }, 0);
+      }
+      if (amt > 0) return amt;
+    }
+    return 0;
+  })();
+
+  const filteredMarkets = markets.filter((m) => {
+    if (chainFilter !== "all" && m.chainId !== chainFilter) return false;
+    if (protocolFilter !== "all" && m.protocol !== protocolFilter) return false;
+    return true;
+  });
 
   const amountNum = parseFloat(amount || "0");
   const receiver = smartAccountAddress || (address as string);
@@ -243,9 +257,15 @@ export default function EarnModal({
           Deposit USDC into yield vaults. Earn interest on supported chains.
         </p>
 
-        <div className="bg-zinc-900 rounded-xl px-3 py-2 mb-4 border border-zinc-800">
-          <div className="text-gray-400 text-xs mb-0.5">Unified balance</div>
-          <div className="text-white font-semibold">{userUsdcBalance.toFixed(2)} USDC</div>
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          <div className="bg-zinc-900 rounded-xl px-3 py-2 border border-zinc-800">
+            <div className="text-gray-400 text-xs mb-0.5">Total portfolio</div>
+            <div className="text-white font-semibold">${totalPortfolioUsd.toFixed(2)}</div>
+          </div>
+          <div className="bg-zinc-900 rounded-xl px-3 py-2 border border-zinc-800">
+            <div className="text-gray-400 text-xs mb-0.5">USDC (for deposit)</div>
+            <div className="text-white font-semibold">{userUsdcBalance.toFixed(2)}</div>
+          </div>
         </div>
 
         {txResult ? (
@@ -280,11 +300,26 @@ export default function EarnModal({
             <div className="bg-zinc-900 rounded-xl p-4 border border-zinc-800">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-white font-medium">{selectedMarket.name}</span>
-                <span className="text-gray-400 text-xs">{selectedMarket.chainName} · {selectedMarket.protocol}</span>
+                <span className="text-gray-400 text-xs capitalize">{selectedMarket.chainName} · {selectedMarket.protocol}</span>
               </div>
-              {selectedMarket.apy > 0 && (
-                <p className="text-green-400 text-sm">APY: {selectedMarket.apy.toFixed(2)}%</p>
-              )}
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                {selectedMarket.apy > 0 && (
+                  <div>
+                    <div className="text-gray-500 text-xs">APY</div>
+                    <div className="text-green-400 font-medium">{selectedMarket.apy.toFixed(2)}%</div>
+                  </div>
+                )}
+                {selectedMarket.tvl > 0 && (
+                  <div>
+                    <div className="text-gray-500 text-xs">TVL</div>
+                    <div className="text-gray-300 text-sm">{formatTvl(selectedMarket.tvl)}</div>
+                  </div>
+                )}
+                <div>
+                  <div className="text-gray-500 text-xs">Asset</div>
+                  <div className="text-gray-300 text-sm">{selectedMarket.assetSymbol}</div>
+                </div>
+              </div>
             </div>
 
             {error && (
@@ -324,7 +359,7 @@ export default function EarnModal({
           </div>
         ) : (
             <>
-            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide mb-3">
+            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide mb-2">
               <button
                 onClick={() => setChainFilter("all")}
                 className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm ${
@@ -349,6 +384,38 @@ export default function EarnModal({
                 </button>
               ))}
             </div>
+            <div className="flex gap-2 mb-3">
+              <button
+                onClick={() => setProtocolFilter("all")}
+                className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm ${
+                  protocolFilter === "all"
+                    ? "bg-accent-dynamic text-white"
+                    : "bg-zinc-800 text-gray-400"
+                }`}
+              >
+                All protocols
+              </button>
+              <button
+                onClick={() => setProtocolFilter("morpho")}
+                className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm ${
+                  protocolFilter === "morpho"
+                    ? "bg-accent-dynamic text-white"
+                    : "bg-zinc-800 text-gray-400"
+                }`}
+              >
+                Morpho
+              </button>
+              <button
+                onClick={() => setProtocolFilter("aave")}
+                className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm ${
+                  protocolFilter === "aave"
+                    ? "bg-accent-dynamic text-white"
+                    : "bg-zinc-800 text-gray-400"
+                }`}
+              >
+                Aave
+              </button>
+            </div>
 
             {isLoadingMarkets ? (
               <div className="flex justify-center py-12">
@@ -367,13 +434,18 @@ export default function EarnModal({
                     <div className="flex justify-between items-start">
                       <div>
                         <div className="text-white font-medium">{m.name}</div>
-                        <div className="text-gray-400 text-xs mt-0.5">{m.chainName} · {m.protocol}</div>
+                        <div className="text-gray-400 text-xs mt-0.5 capitalize">{m.chainName} · {m.protocol}</div>
+                        {m.tvl > 0 && (
+                          <div className="text-gray-500 text-xs mt-1">TVL {formatTvl(m.tvl)}</div>
+                        )}
                       </div>
                       <div className="text-right">
-                        {m.apy > 0 && (
+                        {m.apy > 0 ? (
                           <div className="text-green-400 text-sm font-medium">{m.apy.toFixed(2)}% APY</div>
+                        ) : (
+                          <div className="text-gray-500 text-sm">—</div>
                         )}
-                        <div className="text-gray-500 text-xs">{m.chainName} · {m.protocol}</div>
+                        <div className="text-gray-500 text-xs mt-0.5">{m.assetSymbol}</div>
                       </div>
                     </div>
                   </button>
