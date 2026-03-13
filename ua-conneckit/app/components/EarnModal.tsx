@@ -121,13 +121,16 @@ export default function EarnModal({
   }, [isOpen, fetchMarkets]);
 
   const loadPositions = useCallback(async () => {
-    if (!smartAccountAddress) {
+    if (!smartAccountAddress && !address) {
       setPositions([]);
       return;
     }
     setIsLoadingPositions(true);
     try {
-      const pos = await fetchUserPositions(smartAccountAddress);
+      const pos = await fetchUserPositions(
+        smartAccountAddress || (address as string),
+        address as string
+      );
       setPositions(pos);
     } catch (err) {
       console.error("[Earn] Fetch positions failed:", err);
@@ -135,7 +138,7 @@ export default function EarnModal({
     } finally {
       setIsLoadingPositions(false);
     }
-  }, [smartAccountAddress]);
+  }, [smartAccountAddress, address]);
 
   useEffect(() => {
     if (isOpen) loadPositions();
