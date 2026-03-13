@@ -114,41 +114,44 @@ export default function EarnModal({
     if (isOpen) fetchMarkets();
   }, [isOpen, fetchMarkets]);
 
-  // Total portfolio (matches main page) - from totalAmountInUSD
+  // Total portfolio: use assets (combined) to match main page; fallback to primaryAssets
   const totalPortfolioUsd = (() => {
-    const src = primaryAssets ?? assets;
+    const src = assets ?? primaryAssets;
     const total = (src as { totalAmountInUSD?: number })?.totalAmountInUSD;
     return typeof total === "number" ? total : 0;
   })();
 
-  // USDC for deposit: sum from tokenType/symbol match + chainAggregation
+  // USDC for deposit: try primaryAssets first (UA), then assets (combined)
   const userUsdcBalance = (() => {
-    const src = primaryAssets ?? assets;
-    if (!src?.assets) return 0;
-    const list = src.assets as Array<{
-      tokenType?: string;
-      symbol?: string;
-      amount?: number | string;
-      balance?: number | string;
-      amountInUSD?: number;
-      chainAggregation?: Array<{ amount?: number | string }>;
-    }>;
-    const usdc = list.find(
-      (a) =>
-        (a.tokenType || "").toLowerCase() === "usdc" ||
-        (a.symbol || "").toUpperCase() === "USDC"
-    );
-    if (!usdc) return 0;
-    let amt = typeof usdc.amount === "string" ? parseFloat(usdc.amount || "0") : (usdc.amount ?? 0);
-    if (typeof usdc.balance === "number") amt = usdc.balance;
-    else if (typeof usdc.balance === "string") amt = parseFloat(usdc.balance || "0");
-    if (amt <= 0 && usdc.chainAggregation?.length) {
-      amt = usdc.chainAggregation.reduce((sum, c) => {
-        const v = typeof c.amount === "string" ? parseFloat(c.amount || "0") : (c.amount || 0);
-        return sum + v;
-      }, 0);
+    const sources = [primaryAssets, assets].filter(Boolean);
+    for (const src of sources) {
+      if (!src?.assets) continue;
+      const list = src.assets as Array<{
+        tokenType?: string;
+        symbol?: string;
+        amount?: number | string;
+        balance?: number | string;
+        amountInUSD?: number;
+        chainAggregation?: Array<{ amount?: number | string; token?: { chainId?: number } }>;
+      }>;
+      const usdc = list.find(
+        (a) =>
+          (a.tokenType || "").toLowerCase() === "usdc" ||
+          (a.symbol || "").toUpperCase() === "USDC"
+      );
+      if (!usdc) continue;
+      let amt = typeof usdc.amount === "string" ? parseFloat(usdc.amount || "0") : (usdc.amount ?? 0);
+      if (typeof usdc.balance === "number") amt = usdc.balance;
+      else if (typeof usdc.balance === "string") amt = parseFloat(usdc.balance || "0");
+      if (amt <= 0 && usdc.chainAggregation?.length) {
+        amt = usdc.chainAggregation.reduce((sum, c) => {
+          const v = typeof c.amount === "string" ? parseFloat(c.amount || "0") : (c.amount || 0);
+          return sum + v;
+        }, 0);
+      }
+      if (amt > 0) return amt;
     }
-    return amt;
+    return 0;
   })();
 
   const filteredMarkets = markets.filter((m) => {
