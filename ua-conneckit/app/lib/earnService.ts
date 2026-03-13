@@ -7,6 +7,14 @@ import { CHAIN_ID } from "@particle-network/universal-account-sdk";
 import { encodeFunctionData, parseUnits } from "viem";
 import { EARN_CHAINS } from "./earnConfig";
 
+const CHAIN_RPC: Record<number, string> = {
+  1: "https://eth.llamarpc.com",
+  8453: "https://mainnet.base.org",
+  42161: "https://arb1.arbitrum.io/rpc",
+  10: "https://mainnet.optimism.io",
+  137: "https://polygon-bor-rpc.publicnode.com",
+};
+
 const CHAIN_ID_MAP: Record<number, number> = {
   1: CHAIN_ID.ETHEREUM_MAINNET,
   8453: CHAIN_ID.BASE_MAINNET,
@@ -307,65 +315,66 @@ export interface EarnPosition {
   assetsApprox: number;
 }
 
-/**
- * Fetch user's positions via Morpho GraphQL API (vaultPositions).
- * Per docs.morpho.org - uses the official API for user vault positions.
- */
-export async function fetchUserPositions(uaAddress: string): Promise<EarnPosition[]> {
-  const chainIdToUa = getChainIdToUaMap();
-  const positions: EarnPosition[] = [];
+/** Call balanceOf(account) on vault via RPC. Returns shares (ERC-4626). */
+async function vaultBalanceOf(
+  chainId: number,
+  vaultAddress: string,
+  account: string
+): Promise<bigint> {
+  const rpc = CHAIN_RPC[chainId];
+  if (!rpc) return BigInt(0);
+  const data = encodeFunctionData({
+    abi: ERC4626_ABI,
+    functionName: "balanceOf",
+    args: [account as `0x${string}`],
+  });
   try {
-    const res = await fetch("https://api.morpho.org/graphql", {
+    const res = await fetch(rpc, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        query: `query($user: [String!]!) {
-          vaultPositions(first: 100, where: { userAddress_in: $user, chainId_in: [1, 8453, 42161, 10, 137] }) {
-            items {
-              id
-              vault {
-                address
-                name
-                chain { id network }
-                asset { address symbol decimals }
-              }
-              state { shares assets }
-            }
-          }
-        }`,
-        variables: { user: [uaAddress] },
+        jsonrpc: "2.0",
+        id: 1,
+        method: "eth_call",
+        params: [{ to: vaultAddress as `0x${string}`, data }, "latest"],
       }),
       cache: "no-store",
     });
-    const data = await res.json();
-    const items = data?.data?.vaultPositions?.items ?? [];
-    for (const item of items) {
-      const vault = item.vault ?? {};
-      const state = item.state ?? {};
-      const sharesStr = String(state.shares ?? "0");
-      const sharesRaw = BigInt(sharesStr);
-      if (sharesRaw <= BigInt(0)) continue;
-      const decimals = parseInt(String(vault.asset?.decimals ?? 6), 10);
-      const assetsRaw = Number(state.assets ?? 0);
-      const assetsApprox = assetsRaw > 0 ? assetsRaw / Math.pow(10, decimals) : Number(sharesRaw) / 1e18;
-      const chainId = parseInt(String(vault.chain?.id ?? 0), 10);
-      if (!chainId || !vault.address) continue;
-      const market: EarnMarket = {
-        id: `morpho-${chainId}-${(vault.address ?? "").toLowerCase()}`,
-        protocol: "morpho",
-        chainId,
-        chainName: vault.chain?.network || `Chain ${chainId}`,
-        uaChainId: chainIdToUa[chainId] ?? chainId,
-        address: vault.address,
-        name: vault.name || "Vault",
-        symbol: "vault",
-        assetAddress: vault.asset?.address ?? "",
-        assetSymbol: (vault.asset?.symbol || "USDC").toUpperCase(),
-        assetDecimals: decimals,
-        apy: 0,
-        tvl: 0,
-      };
-      positions.push({ market, sharesRaw, assetsApprox });
+    const json = await res.json();
+    const hex = json?.result;
+    if (typeof hex !== "string" || hex === "0x") return BigInt(0);
+    return BigInt(hex);
+  } catch {
+    return BigInt(0);
+  }
+}
+
+/**
+ * Fetch user's positions via direct RPC balanceOf on each Morpho vault.
+ * ERC-4626 vaults expose balanceOf(account) = shares. Most reliable method.
+ */
+export async function fetchUserPositions(uaAddress: string): Promise<EarnPosition[]> {
+  const positions: EarnPosition[] = [];
+
+  try {
+    const markets = await fetchEarnMarkets();
+    const morphoMarkets = markets.filter((m) => m.protocol === "morpho");
+    if (morphoMarkets.length === 0) return positions;
+
+    const checks = morphoMarkets.map(async (market) => {
+      const sharesRaw = await vaultBalanceOf(
+        market.chainId,
+        market.address,
+        uaAddress
+      );
+      if (sharesRaw <= BigInt(0)) return null;
+      const assetsApprox = Number(sharesRaw) / 1e18;
+      return { market, sharesRaw, assetsApprox };
+    });
+
+    const results = await Promise.all(checks);
+    for (const r of results) {
+      if (r) positions.push(r);
     }
   } catch (err) {
     console.error("[Earn] Fetch positions failed:", err);
