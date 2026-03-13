@@ -18,6 +18,7 @@ import {
   type AccountInfo as ParticleAccountInfo,
 } from "@particle-network/rn-connect";
 import Constants from "expo-constants";
+import * as SecureStore from "expo-secure-store";
 import { Buffer } from "buffer";
 
 interface AccountInfo {
@@ -60,7 +61,7 @@ interface UniversalAccountContextType {
   combinedAssets: any[];
   isLoading: boolean;
   profile: ProfileInfo;
-  updateProfile: (updates: Partial<ProfileInfo>) => void;
+  updateProfile: (profile: ProfileInfo) => void;
   fetchAssets: () => Promise<void>;
   fetchMobulaAssets: () => Promise<void>;
   signUATransaction: (rootHash: string) => Promise<string>;
@@ -103,7 +104,7 @@ export const UniversalAccountProvider: React.FC<{
   );
   const [mobulaAssets, setMobulaAssets] = useState<MobulaAsset[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [profile, setProfile] = useState<ProfileInfo>(DEFAULT_PROFILE);
+  const [profile, setProfileState] = useState<ProfileInfo>(DEFAULT_PROFILE);
   const [showDepositModal, setShowDepositModal] = useState(false);
   const [showAssetBreakdown, setShowAssetBreakdown] = useState(false);
   const [showTxHistory, setShowTxHistory] = useState(false);
@@ -111,6 +112,22 @@ export const UniversalAccountProvider: React.FC<{
 
   const address = connectedAccount?.publicAddress;
   const extra = Constants.expoConfig?.extra;
+
+  // Load persisted profile on mount
+  useEffect(() => {
+    SecureStore.getItemAsync("walletProfile").then((saved) => {
+      if (saved) {
+        try {
+          setProfileState({ ...DEFAULT_PROFILE, ...JSON.parse(saved) });
+        } catch {}
+      }
+    });
+  }, []);
+
+  const updateProfile = useCallback((p: ProfileInfo) => {
+    setProfileState(p);
+    SecureStore.setItemAsync("walletProfile", JSON.stringify(p)).catch(() => {});
+  }, []);
 
   const universalAccountConfig = useMemo((): IUniversalAccountConfig | null => {
     if (!address || !extra?.particleProjectId) return null;
@@ -237,17 +254,22 @@ export const UniversalAccountProvider: React.FC<{
     return merged;
   }, [primaryAssets, mobulaAssets]);
 
-  const updateProfile = useCallback((updates: Partial<ProfileInfo>) => {
-    setProfile((prev) => ({ ...prev, ...updates }));
-  }, []);
-
   const signUATransaction = useCallback(
-    async (rootHash: string): Promise<string> => {
+    async (rootHash: string | Uint8Array): Promise<string> => {
       if (!address) throw new Error("No wallet connected");
 
-      const hexMessage = rootHash.startsWith("0x")
-        ? rootHash
-        : "0x" + Buffer.from(rootHash).toString("hex");
+      let hexMessage: string;
+      if (typeof rootHash === "string") {
+        hexMessage = rootHash.startsWith("0x")
+          ? rootHash
+          : "0x" + Buffer.from(rootHash).toString("hex");
+      } else {
+        hexMessage = "0x" + Buffer.from(rootHash).toString("hex");
+      }
+
+      // Uses personal_sign via Particle's native signMessage
+      // This matches the webapp's signUniversalRootHash which also uses personal_sign
+      // (both blind-sign and non-blind-sign paths produce the same EIP-191 signature)
       const signature = await particleConnect.signMessage(
         WalletType.AuthCore,
         address,
