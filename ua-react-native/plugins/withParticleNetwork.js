@@ -1,7 +1,7 @@
 const {
   withXcodeProject,
   withInfoPlist,
-  IOSConfig,
+  withDangerousMod,
 } = require("expo/config-plugins");
 const fs = require("fs");
 const path = require("path");
@@ -76,9 +76,70 @@ function withParticleURLScheme(config) {
   });
 }
 
+function withParticlePodfile(config) {
+  return withDangerousMod(config, [
+    "ios",
+    async (config) => {
+      const podfilePath = path.join(
+        config.modRequest.projectRoot,
+        "ios",
+        "Podfile"
+      );
+
+      if (fs.existsSync(podfilePath)) {
+        let podfile = fs.readFileSync(podfilePath, "utf8");
+
+        // Ensure platform is 15.1
+        podfile = podfile.replace(
+          /platform :ios, ['"]?\d+\.\d+['"]?/,
+          "platform :ios, '15.1'"
+        );
+
+        // Add BUILD_LIBRARY_FOR_DISTRIBUTION for Swift compatibility with Xcode 16+
+        if (!podfile.includes("BUILD_LIBRARY_FOR_DISTRIBUTION")) {
+          const postInstallHook = `
+  # Fix Swift toolchain compatibility for Particle Network pods (Xcode 16 / Swift 6)
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['BUILD_LIBRARY_FOR_DISTRIBUTION'] = 'YES'
+    end
+  end`;
+
+          if (podfile.includes("post_install do |installer|")) {
+            podfile = podfile.replace(
+              "post_install do |installer|",
+              `post_install do |installer|${postInstallHook}`
+            );
+          } else {
+            podfile += `\npost_install do |installer|${postInstallHook}\nend\n`;
+          }
+        }
+
+        // Add Particle's custom pod sources for SkeletonView/SwiftyUserDefaults if needed
+        if (!podfile.includes("SwiftyUserDefaults")) {
+          const particlePods = `
+  # Particle Network dependency overrides for Xcode 16 compatibility
+  pod 'SwiftyUserDefaults', :git => 'https://github.com/SunZhiC/SwiftyUserDefaults.git', :branch => 'master'
+  pod 'SkeletonView', :git => 'https://github.com/SunZhiC/SkeletonView.git', :branch => 'main'`;
+
+          podfile = podfile.replace(
+            /target ['"][^'"]+['"] do/,
+            (match) => `${match}${particlePods}`
+          );
+        }
+
+        fs.writeFileSync(podfilePath, podfile);
+      }
+
+      return config;
+    },
+  ]);
+}
+
 function withParticleNetwork(config) {
   config = withParticleNetworkPlist(config);
   config = withParticleURLScheme(config);
+  config = withParticlePodfile(config);
   return config;
 }
 

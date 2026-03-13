@@ -11,17 +11,19 @@ import { UniversalAccountProvider } from "../context/UniversalAccountContext";
 export default function RootLayout() {
   useEffect(() => {
     const extra = Constants.expoConfig?.extra;
-    const wcProjectId = extra?.walletConnectProjectId || "";
 
     particleBase.init(ArbitrumOne, Env.Production);
 
     particleConnect.init(ArbitrumOne, Env.Production, {
-      walletConnectProjectId: wcProjectId,
-      name: "OMNI - Universal Wallet",
+      name: "OMNI Wallet",
       icon: "https://connect.particle.network/icons/512.png",
       url: "https://particle.network",
       description: "OMNI - Universal Wallet powered by Particle Network",
     });
+
+    if (extra?.walletConnectProjectId) {
+      particleConnect.setWalletConnectProjectId(extra.walletConnectProjectId);
+    }
   }, []);
 
   return (

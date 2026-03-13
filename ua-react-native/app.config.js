@@ -1,19 +1,19 @@
 export default {
   expo: {
-    name: "Universal Wallet",
-    slug: "universal-wallet-rn",
+    name: "OMNI Wallet",
+    slug: "omni-wallet-rn",
     version: "1.0.0",
     orientation: "portrait",
     icon: "./assets/icon.png",
-    scheme: "universalwallet",
+    scheme: "omniwallet",
     userInterfaceStyle: "dark",
     splash: {
       backgroundColor: "#000000",
     },
     ios: {
       supportsTablet: false,
-      bundleIdentifier: "com.universalwallet.app",
-      deploymentTarget: "14.0",
+      bundleIdentifier: "com.orimolty.omniwallet",
+      deploymentTarget: "15.1",
       infoPlist: {
         LSApplicationQueriesSchemes: [
           "metamask",
@@ -31,7 +31,7 @@ export default {
       adaptiveIcon: {
         backgroundColor: "#000000",
       },
-      package: "com.universalwallet.app",
+      package: "com.orimolty.omniwallet",
     },
     plugins: [
       "expo-router",
@@ -42,7 +42,8 @@ export default {
         "expo-build-properties",
         {
           ios: {
-            deploymentTarget: "14.0",
+            deploymentTarget: "15.1",
+            useFrameworks: "static",
           },
           android: {
             minSdkVersion: 23,
