@@ -114,44 +114,11 @@ export default function EarnModal({
     if (isOpen) fetchMarkets();
   }, [isOpen, fetchMarkets]);
 
-  // Total portfolio: use assets (combined) to match main page; fallback to primaryAssets
-  const totalPortfolioUsd = (() => {
+  // UA Balance: unified balance (token/chain agnostic). createUniversalTransaction sources USDC from this.
+  const uaBalanceUsd = (() => {
     const src = assets ?? primaryAssets;
     const total = (src as { totalAmountInUSD?: number })?.totalAmountInUSD;
     return typeof total === "number" ? total : 0;
-  })();
-
-  // USDC for deposit: try primaryAssets first (UA), then assets (combined)
-  const userUsdcBalance = (() => {
-    const sources = [primaryAssets, assets].filter(Boolean);
-    for (const src of sources) {
-      if (!src?.assets) continue;
-      const list = src.assets as Array<{
-        tokenType?: string;
-        symbol?: string;
-        amount?: number | string;
-        balance?: number | string;
-        amountInUSD?: number;
-        chainAggregation?: Array<{ amount?: number | string; token?: { chainId?: number } }>;
-      }>;
-      const usdc = list.find(
-        (a) =>
-          (a.tokenType || "").toLowerCase() === "usdc" ||
-          (a.symbol || "").toUpperCase() === "USDC"
-      );
-      if (!usdc) continue;
-      let amt = typeof usdc.amount === "string" ? parseFloat(usdc.amount || "0") : (usdc.amount ?? 0);
-      if (typeof usdc.balance === "number") amt = usdc.balance;
-      else if (typeof usdc.balance === "string") amt = parseFloat(usdc.balance || "0");
-      if (amt <= 0 && usdc.chainAggregation?.length) {
-        amt = usdc.chainAggregation.reduce((sum, c) => {
-          const v = typeof c.amount === "string" ? parseFloat(c.amount || "0") : (c.amount || 0);
-          return sum + v;
-        }, 0);
-      }
-      if (amt > 0) return amt;
-    }
-    return 0;
   })();
 
   const filteredMarkets = markets.filter((m) => {
@@ -165,7 +132,7 @@ export default function EarnModal({
   const canDeposit =
     selectedMarket &&
     amountNum > 0 &&
-    amountNum <= userUsdcBalance &&
+    amountNum <= uaBalanceUsd &&
     universalAccount &&
     primaryWallet &&
     address &&
@@ -254,18 +221,12 @@ export default function EarnModal({
         </div>
 
         <p className="text-gray-400 text-sm mb-3">
-          Deposit USDC into yield vaults. Earn interest on supported chains.
+          Deposit USDC into yield vaults. UA sources from your unified balance across chains.
         </p>
 
-        <div className="grid grid-cols-2 gap-2 mb-4">
-          <div className="bg-zinc-900 rounded-xl px-3 py-2 border border-zinc-800">
-            <div className="text-gray-400 text-xs mb-0.5">Total portfolio</div>
-            <div className="text-white font-semibold">${totalPortfolioUsd.toFixed(2)}</div>
-          </div>
-          <div className="bg-zinc-900 rounded-xl px-3 py-2 border border-zinc-800">
-            <div className="text-gray-400 text-xs mb-0.5">USDC (for deposit)</div>
-            <div className="text-white font-semibold">{userUsdcBalance.toFixed(2)}</div>
-          </div>
+        <div className="bg-zinc-900 rounded-xl px-4 py-3 border border-zinc-800 mb-4">
+          <div className="text-gray-400 text-xs mb-0.5">UA Balance</div>
+          <div className="text-white font-semibold text-lg">${uaBalanceUsd.toFixed(2)}</div>
         </div>
 
         {txResult ? (
@@ -338,10 +299,10 @@ export default function EarnModal({
                 className="w-full bg-zinc-950 rounded-xl px-3 py-2 text-white outline-none border border-zinc-800"
               />
               <div className="flex justify-between mt-1">
-                <span className="text-gray-500 text-xs">Balance: {userUsdcBalance.toFixed(2)} USDC</span>
+                <span className="text-gray-500 text-xs">UA Balance: ${uaBalanceUsd.toFixed(2)}</span>
                 <button
                   type="button"
-                  onClick={() => setAmount(userUsdcBalance.toString())}
+                  onClick={() => setAmount(uaBalanceUsd.toString())}
                   className="text-accent-dynamic text-xs"
                 >
                   Max

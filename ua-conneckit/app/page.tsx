@@ -5280,7 +5280,7 @@ const HomeTab = ({
               <img src="https://polymarket.com/favicon.ico" alt="" className="w-8 h-8" />
             </div>
             <div className="text-left">
-              <div className="text-white font-semibold">Prediction Markets</div>
+              <div className="text-white font-semibold">Predictions</div>
               <div className="text-gray-500 text-sm">Bet on real-world events</div>
             </div>
           </div>

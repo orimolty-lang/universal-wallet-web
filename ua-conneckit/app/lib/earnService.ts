@@ -91,7 +91,7 @@ async function fetchMorphoVaults(): Promise<EarnMarket[]> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        query: `query { vaultV2s(first: 200, where: { chainId_in: [1, 8453, 42161, 10, 137] }) { items { address symbol name chain { id network } asset { address decimals symbol } supplyApy avgApy totalSupply totalAssets } } }`,
+        query: `query { vaultV2s(first: 200, where: { chainId_in: [1, 8453, 42161, 10, 137] }) { items { address symbol name chain { id network } asset { address decimals symbol } avgApy avgNetApy totalSupply totalAssets } } }`,
       }),
       cache: "no-store",
     });
@@ -105,7 +105,8 @@ async function fetchMorphoVaults(): Promise<EarnMarket[]> {
       const decimals = parseInt(String(asset.decimals ?? 6), 10);
       const rawTvl = parseFloat(item.totalSupply ?? item.totalAssets ?? 0);
       const tvlUsd = rawTvl / Math.pow(10, decimals); // assume ~$1 for USDC
-      const apy = parseFloat(item.supplyApy ?? item.avgApy ?? 0) * 100;
+      const apyRaw = parseFloat(item.avgNetApy ?? item.avgApy ?? 0);
+      const apy = apyRaw <= 1 && apyRaw > 0 ? apyRaw * 100 : apyRaw;
       out.push({
         id: `morpho-${chainId}-${(item.address ?? "").toLowerCase()}`,
         protocol: "morpho",
