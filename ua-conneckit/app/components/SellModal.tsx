@@ -100,7 +100,7 @@ export const SellModal = ({
       <div className="fixed inset-0 bg-black/70 z-50" onClick={onClose} />
 
       {/* Modal */}
-      <div className="fixed inset-x-0 bottom-0 z-50 bg-[#0d1b2a] rounded-t-3xl overflow-hidden flex flex-col max-h-[90vh] animate-slide-up">
+      <div className="fixed inset-x-0 bottom-0 z-50 bg-[#0d1b2a] rounded-t-3xl overflow-hidden flex flex-col max-h-[90vh] animate-slide-up" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
           <button 

@@ -1061,7 +1061,7 @@ export default function PolymarketModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" style={{ paddingTop: 'max(env(safe-area-inset-top), 16px)', paddingBottom: 'max(env(safe-area-inset-bottom), 16px)' }}>
       <div className="bg-[#0a0a0a] rounded-3xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col border border-zinc-800">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10">

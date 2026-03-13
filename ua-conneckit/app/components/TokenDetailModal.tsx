@@ -319,7 +319,7 @@ export const TokenDetailModal = ({
       <div 
         ref={modalRef}
         className="fixed inset-x-0 bottom-0 z-50 max-h-[90vh] bg-[#0a0a0a] rounded-t-3xl overflow-hidden flex flex-col animate-slide-up border-t border-white/10"
-        style={{ touchAction: 'pan-y' }}
+        style={{ touchAction: 'pan-y', paddingTop: 'env(safe-area-inset-top)' }}
       >
         {/* Drag Handle - with touch events */}
         <div 

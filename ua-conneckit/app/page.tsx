@@ -818,7 +818,8 @@ const BottomSheet = ({
         className={`relative bg-[#1a1a1a] ${fullScreen ? 'h-full' : 'max-h-[90vh]'} w-full max-w-md rounded-t-3xl overflow-hidden touch-auto`}
         style={{ 
           transform: isAnimating ? 'translateY(0)' : 'translateY(100%)',
-          transition: 'transform 0.5s cubic-bezier(0.32, 0.72, 0, 1)'
+          transition: 'transform 0.5s cubic-bezier(0.32, 0.72, 0, 1)',
+          paddingTop: 'env(safe-area-inset-top)',
         }}
         onClick={e => e.stopPropagation()}
       >
