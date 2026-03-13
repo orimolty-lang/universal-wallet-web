@@ -1,142 +1,142 @@
-# Universal Wallet - React Native (iOS)
+# OMNI - Universal Wallet (React Native / iOS)
 
-A React Native port of the Universal Wallet webapp, powered by **Particle Network Universal Accounts SDK** with native **Particle Connect** for social login authentication.
+A React Native port of the OMNI Universal Wallet webapp (gh-pages branch), powered by **Particle Network Universal Accounts SDK** with native **Particle Connect** for social login authentication.
 
-This is a 100% feature port of the Next.js webapp (`ua-conneckit/`) into a native iOS app using Expo and Particle's React Native SDKs.
+This is a 100% feature port of the Next.js webapp into a native iOS app using Expo and Particle's React Native SDKs.
+
+## Features
+
+### Core Wallet
+- **Social Login**: Google, Apple, Twitter, GitHub, Discord, Email, Phone via Particle ConnectKit
+- **Universal Balance**: Aggregated balance across all chains (EVM + Solana)
+- **Receive/Deposit**: EVM and Solana UA addresses with supported chains
+- **Send**: Cross-chain transfers (EVM + Solana) via UA SDK
+- **Convert**: Cross-chain token conversion (USDC, USDT, ETH, SOL, BNB)
+- **Real-time Updates**: WebSocket connection for live balance and transaction updates
+- **External Tokens**: Mobula API integration for non-primary token balances
+
+### Trading
+- **Swap**: Token swaps via LiFi aggregator through UA
+- **Perpetuals**: Long/Short trading with up to 150x leverage via Avantis on Base
+  - Crypto pairs (BTC, ETH, SOL, DOGE, etc.)
+  - Forex pairs (EUR/USD, GBP/USD, etc.)
+  - Commodities (Gold, Silver, Oil)
+  - Live prices via WebSocket
+- **Polymarket**: Prediction market browsing and betting
+- **Sell**: Token selling (reverse swap)
+
+### DeFi
+- **Earn**: Morpho vault deposits with APY display
+  - Vault browser with TVL and APY sorting
+  - Deposit and withdraw flows
+  - User positions tracking
+
+### Other
+- **Token Search**: Mobula-powered token search with price, market cap, volume
+- **Token Details**: Price, 24h change, market data, contracts, links
+- **DApp Browser**: Quick access to UniversalX, Uniswap, Aave, OpenSea, Jupiter, Raydium
+- **Activity**: Transaction history with details and explorer links
+- **AI Agent**: Chat interface placeholder
+- **Profile**: Customizable emoji, background color, display name
+- **Settings**: Blind signing toggle, account security, app lock (PIN)
+- **Points**: Rewards system placeholder
+- **Splash Screen**: Animated OMNI branding
 
 ## Architecture
 
 ### Auth: Particle Connect (same as webapp)
 
-The webapp uses `@particle-network/connectkit` for social logins. The React Native app uses `@particle-network/rn-connect` which provides the **identical ConnectKit experience** natively:
+Uses `@particle-network/rn-connect` with `connectWithConnectKitConfig()` providing the same social login UI natively:
 
-- Social logins: Google, Apple, Twitter, GitHub, Facebook, Microsoft, LinkedIn, Discord, Twitch
-- Email and phone login
-- External wallets: MetaMask (via WalletConnect)
+| Webapp | React Native |
+|--------|-------------|
+| `@particle-network/connectkit` | `@particle-network/rn-connect` |
+| `ConnectButton` | `connectWithConnectKitConfig()` |
+| `useAccount().address` | `particleConnect.getAccounts()` |
+| `walletClient.signMessage()` | `particleConnect.signMessage()` |
 
 ### Universal Accounts: Same SDK
 
-Both the webapp and this RN app use the exact same `@particle-network/universal-account-sdk` JavaScript package. The UA SDK is a pure JS/TS library that works in React Native with polyfills (confirmed by Particle Network's dev team).
+The `@particle-network/universal-account-sdk` is a pure JS/TS package that works identically in React Native with polyfills.
 
-### Signing Flow
+### Signing
 
-| Step | Webapp | React Native |
-|------|--------|-------------|
-| **Auth** | `@particle-network/connectkit` | `@particle-network/rn-connect` |
-| **Get address** | `useAccount().address` | `particleConnect.getAccounts()` |
-| **Init UA** | `new UniversalAccount(config)` | `new UniversalAccount(config)` (identical) |
-| **Sign message** | `walletClient.signMessage({ message: { raw: rootHash } })` | `particleConnect.signMessage(WalletType.AuthCore, address, hexMessage)` |
-| **Send tx** | `universalAccount.sendTransaction(tx, sig)` | `universalAccount.sendTransaction(tx, sig)` (identical) |
+```
+Web:  walletClient.signMessage({ message: { raw: rootHash } })
+RN:   particleConnect.signMessage(WalletType.AuthCore, address, '0x' + hex(rootHash))
+```
 
-## Features Ported
-
-- Login screen with Particle ConnectKit (social + wallet)
-- Home tab: Universal balance, Receive, Send, EVM & Solana UA addresses, asset list
-- Search tab (placeholder)
-- Agent tab (placeholder)
-- Activity tab (placeholder)
-- Deposit modal with supported chains and copy-to-clipboard
-- Asset breakdown modal (by asset / by chain) with expandable chain distribution
-- SendFunds: USDC transfer on Arbitrum via `createTransferTransaction`
-- UniversalTransfer: USDC to EOA via `createUniversalTransaction`
-- SendSolana: Native SOL transfer via `createUniversalTransaction` + `serializeInstruction`
-- UniversalTransferSolana: USDC transfer on Solana via SPL token instructions
-- ContractInteraction: NFT mint on Polygon via `createUniversalTransaction`
-- Conversions: Cross-chain conversion to USDC via `createConvertTransaction`
-- TxHistoryModal and TxDetailsModal for transaction history display
+Both produce the same EIP-191 `personal_sign` signature.
 
 ## Project Structure
 
 ```
 ua-react-native/
 ├── app/
-│   ├── _layout.tsx              # Root layout: Particle init + providers
+│   ├── _layout.tsx              # Particle SDK init + providers
 │   ├── index.tsx                # Auth check → redirect
-│   ├── login.tsx                # Login screen with ConnectKit
+│   ├── login.tsx                # OMNI login with ConnectKit
 │   └── (tabs)/
-│       ├── _layout.tsx          # Bottom tab navigator
-│       ├── index.tsx            # Home tab
-│       ├── search.tsx           # Search tab
+│       ├── _layout.tsx          # Tab navigator (Home/Search/Browser/Points)
+│       ├── index.tsx            # Home: balance, actions, tokens
+│       ├── search.tsx           # Token search via Mobula
+│       ├── browser.tsx          # DApp browser
 │       ├── agent.tsx            # Agent tab
-│       └── activity.tsx         # Activity tab
+│       └── points.tsx           # Points/rewards
 ├── components/
-│   ├── DepositModal.tsx         # Deposit addresses & chains
-│   ├── AssetBreakdownModal.tsx  # Asset/chain breakdown
-│   ├── SendFunds.tsx            # USDC transfer (Arbitrum)
-│   ├── SendSolana.tsx           # SOL transfer (Solana)
-│   ├── UniversalTransfer.tsx    # USDC to EOA
-│   ├── UniversalTransferSolana.tsx  # USDC on Solana
-│   ├── ContractInteraction.tsx  # NFT mint (Polygon)
-│   ├── Conversions.tsx          # Cross-chain conversion
-│   ├── TxHistoryModal.tsx       # Transaction history list
-│   └── TxDetailsModal.tsx       # Transaction details view
+│   ├── ReceiveModal.tsx         # Deposit addresses
+│   ├── SendModal.tsx            # Cross-chain send
+│   ├── ConvertModal.tsx         # Token conversion
+│   ├── SwapModal.tsx            # LiFi swap
+│   ├── PerpsModal.tsx           # Avantis perpetuals
+│   ├── PolymarketModal.tsx      # Prediction markets
+│   ├── EarnModal.tsx            # Morpho vaults
+│   ├── TokenDetailModal.tsx     # Token info + chart
+│   ├── ActivityModal.tsx        # Transaction history
+│   ├── ProfilePickerModal.tsx   # Profile customization
+│   ├── SettingsModal.tsx        # App settings
+│   ├── AppLockModal.tsx         # PIN security
+│   ├── AgentModal.tsx           # AI assistant
+│   ├── BuyModal.tsx             # Buy crypto
+│   ├── SellModal.tsx            # Sell crypto
+│   ├── SplashScreen.tsx         # Animated splash
+│   └── ...legacy components
 ├── context/
-│   └── UniversalAccountContext.tsx  # UA state management
+│   └── UniversalAccountContext.tsx  # Full app state
+├── hooks/
+│   └── useUniversalAccountWS.ts    # Real-time WebSocket
 ├── lib/
-│   ├── chains.ts                # Supported chains
-│   ├── contracts.ts             # Contract interaction helpers
-│   ├── deposit.ts               # Deposit helpers
-│   ├── tokens.ts                # Token metadata
-│   └── utils.ts                 # Formatting utilities
+│   ├── chains.ts, tokens.ts       # Chain/token config
+│   ├── contracts.ts, deposit.ts   # Contract helpers
+│   ├── utils.ts                   # Formatting utilities
+│   ├── swapService.ts             # LiFi swap integration
+│   ├── earnService.ts             # Morpho vault integration
+│   ├── earnConfig.ts              # Earn configuration
+│   └── perpsConfig.ts             # Avantis ABIs + markets
 ├── types/
-│   └── transaction-history.ts   # TX history types
+│   └── transaction-history.ts
 ├── plugins/
-│   └── withParticleNetwork.js   # Expo config plugin for Particle iOS setup
+│   └── withParticleNetwork.js     # Expo config plugin
 ├── package.json
 ├── app.config.js
-├── entrypoint.js                # Polyfills for RN
-├── babel.config.js
+├── entrypoint.js                  # RN polyfills
 └── tsconfig.json
 ```
 
 ## Setup
 
 ### Prerequisites
-
 - Node.js 18+
-- Xcode 15+ (for iOS builds)
+- Xcode 15+ (for iOS)
 - CocoaPods
-- Particle Network dashboard credentials (same as webapp)
 
-### 1. Install dependencies
-
+### Install & Run
 ```bash
 cd ua-react-native
 npm install
-```
-
-### 2. Configure environment
-
-Create a `.env` file from the example (uses the **same credentials** as the webapp):
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` with your Particle Network project credentials:
-
-```
-NEXT_PUBLIC_PROJECT_ID=your_project_id
-NEXT_PUBLIC_CLIENT_KEY=your_client_key
-NEXT_PUBLIC_APP_ID=your_app_id
-```
-
-### 3. Generate native iOS project
-
-```bash
+cp .env.example .env   # Same Particle credentials as webapp
 npx expo prebuild --platform ios
-```
-
-### 4. Run on iOS
-
-```bash
 npx expo run:ios
 ```
 
-> **Note**: This app requires a development build (not Expo Go) because it uses native Particle SDK modules.
-
-## How the UA SDK Works in React Native
-
-The `@particle-network/universal-account-sdk` is a pure JavaScript/TypeScript package. It communicates with Particle's backend APIs over HTTP and doesn't depend on any browser-specific APIs. With the polyfills in `entrypoint.js` (`crypto`, `Buffer`, `TextEncoder`, `URL`), it works identically in React Native.
-
-The only platform-specific part is **message signing**. The webapp uses viem's `walletClient.signMessage()`, while the RN app uses Particle's native `signMessage()` from `@particle-network/rn-connect`. Both produce the same `personal_sign` EIP-191 signature that the UA SDK requires.
+> Requires a development build (not Expo Go) due to native Particle SDK modules.
