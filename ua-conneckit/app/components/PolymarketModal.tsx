@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { X, TrendingUp, TrendingDown, Loader2, ExternalLink, Search } from "lucide-react";
+import { X, TrendingUp, TrendingDown, Loader2, ExternalLink, Search, RotateCw } from "lucide-react";
+import BottomSheet from "../../components/BottomSheet";
 import type { UniversalAccount } from "@particle-network/universal-account-sdk";
 import { CHAIN_ID, SUPPORTED_TOKEN_TYPE } from "@particle-network/universal-account-sdk";
 import { Contract, Interface, JsonRpcProvider } from "ethers";
@@ -267,10 +268,11 @@ export default function PolymarketModal({
     setError(null);
     try {
       // Primary endpoint (prefer dedicated proxy to avoid WebView/CORS failures)
+      const cacheBust = `_t=${Date.now()}`;
       const primaryEndpoint = POLY_PROXY
-        ? `${POLY_PROXY.replace(/\/$/, "")}/markets?active=true&closed=false&limit=100`
-        : `${GAMMA_API}/markets?active=true&closed=false&limit=100`;
-      const response = await fetch(primaryEndpoint);
+        ? `${POLY_PROXY.replace(/\/$/, "")}/markets?active=true&closed=false&limit=100&${cacheBust}`
+        : `${GAMMA_API}/markets?active=true&closed=false&limit=100&${cacheBust}`;
+      const response = await fetch(primaryEndpoint, { cache: "no-store" });
       const data = await response.json();
       let list: Market[] = Array.isArray(data) ? data : Array.isArray((data as { data?: Market[] })?.data) ? (data as { data: Market[] }).data : [];
       let usedEndpoint = primaryEndpoint;
@@ -278,9 +280,9 @@ export default function PolymarketModal({
       // Fallback endpoint (events -> markets)
       if (!list.length) {
         const fallbackEndpoint = POLY_PROXY
-          ? `${POLY_PROXY.replace(/\/$/, "")}/events?active=true&closed=false&limit=100`
-          : `${GAMMA_API}/events?active=true&closed=false&limit=100`;
-        const fallbackRes = await fetch(fallbackEndpoint);
+          ? `${POLY_PROXY.replace(/\/$/, "")}/events?active=true&closed=false&limit=100&${cacheBust}`
+          : `${GAMMA_API}/events?active=true&closed=false&limit=100&${cacheBust}`;
+        const fallbackRes = await fetch(fallbackEndpoint, { cache: "no-store" });
         const fallbackData = await fallbackRes.json();
         const events = Array.isArray(fallbackData) ? fallbackData : Array.isArray((fallbackData as { data?: unknown[] })?.data) ? (fallbackData as { data: unknown[] }).data : [];
         list = events.flatMap((e: unknown) => {
@@ -1061,21 +1063,32 @@ export default function PolymarketModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" style={{ paddingTop: 'max(env(safe-area-inset-top), 16px)', paddingBottom: 'max(env(safe-area-inset-bottom), 16px)' }}>
-      <div className="bg-[#0a0a0a] rounded-3xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col border border-zinc-800">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-white/10">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">📊</span>
-            <h2 className="text-lg font-bold text-white">Prediction Markets</h2>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">
-            <X className="w-5 h-5" />
+    <BottomSheet isOpen={isOpen} onClose={onClose}>
+      <div className="pb-8 max-h-[85vh] overflow-y-auto">
+        {/* Header - matches Perps style */}
+        <div className="flex items-center justify-between px-4 mb-3">
+          <button
+            onClick={() => fetchMarkets()}
+            disabled={isLoadingMarkets}
+            className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center disabled:opacity-50"
+            title="Refresh markets"
+          >
+            <RotateCw className={`w-5 h-5 text-gray-400 ${isLoadingMarkets ? "animate-spin" : ""}`} />
+          </button>
+          <h2 className="text-white text-2xl font-bold flex items-center gap-2.5">
+            <span className="text-2xl">🔮</span>
+            <span>Prediction Markets</span>
+          </h2>
+          <button
+            onClick={onClose}
+            className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center"
+          >
+            <X className="w-5 h-5 text-gray-400" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="px-4 space-y-4">
           {!selectedMarket ? (
             <>
               {/* Search */}
@@ -1412,6 +1425,6 @@ export default function PolymarketModal({
           )}
         </div>
       </div>
-    </div>
+    </BottomSheet>
   );
 }
