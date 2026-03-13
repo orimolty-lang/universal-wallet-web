@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView,
   Image, ActivityIndicator, Dimensions,
 } from "react-native";
+import { WebView } from "react-native-webview";
 import { Feather } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
 
@@ -157,10 +158,31 @@ export default function TokenDetailModal({
               </View>
             )}
 
-            {/* Price Chart Placeholder */}
-            <View style={s.chartPlaceholder}>
-              <Feather name="trending-up" size={32} color="#6b7280" />
-              <Text style={s.chartPlaceholderText}>Price chart available in web version</Text>
+            {/* Price Chart via TradingView Widget */}
+            <View style={s.chartContainer}>
+              <WebView
+                source={{
+                  html: `<!DOCTYPE html>
+                  <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+                  <style>body{margin:0;background:#1a1a1a;overflow:hidden}</style></head>
+                  <body><div id="tv"></div>
+                  <script src="https://s3.tradingview.com/tv.js"></script>
+                  <script>
+                  new TradingView.widget({
+                    container_id:"tv",symbol:"${d.symbol}USD",interval:"60",
+                    theme:"dark",style:"1",locale:"en",
+                    width:"100%",height:200,
+                    hide_top_toolbar:true,hide_legend:true,
+                    save_image:false,backgroundColor:"#1a1a1a",
+                    gridColor:"#2a2a2a",
+                  });
+                  </script></body></html>`,
+                }}
+                style={s.chartWebView}
+                scrollEnabled={false}
+                javaScriptEnabled
+                onError={() => {}}
+              />
             </View>
 
             {/* Market Data */}
@@ -273,8 +295,8 @@ const s = StyleSheet.create({
   balanceLabel: { fontSize: 12, color: "#9ca3af", marginBottom: 4 },
   balanceAmount: { fontSize: 18, fontWeight: "600", color: "#fff" },
   balanceUSD: { fontSize: 14, color: "#9ca3af" },
-  chartPlaceholder: { height: 120, backgroundColor: "#2a2a2a", borderRadius: 12, alignItems: "center", justifyContent: "center", marginBottom: 16 },
-  chartPlaceholderText: { color: "#6b7280", fontSize: 12, marginTop: 8 },
+  chartContainer: { height: 220, borderRadius: 12, overflow: "hidden", marginBottom: 16, backgroundColor: "#1a1a1a" },
+  chartWebView: { flex: 1, backgroundColor: "#1a1a1a" },
   statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 },
   statItem: { backgroundColor: "#2a2a2a", borderRadius: 8, padding: 12, width: "48%" as any },
   statLabel: { fontSize: 12, color: "#9ca3af" },

@@ -101,13 +101,30 @@ export default function PolymarketModal({ visible, onClose, onSuccess }: Polymar
     setTxResult(null);
 
     try {
-      // Polymarket bets go through their CLOB on Polygon
-      // For now, use the UA to send USDC to the Polymarket contract
-      Alert.alert(
-        "Coming Soon",
-        "Direct Polymarket betting via Universal Accounts is being integrated. " +
-        "For now, you can view markets and place bets on polymarket.com"
-      );
+      // Polymarket operates on Polygon. Bets are placed by approving and sending
+      // USDC to the Polymarket CTF Exchange contract.
+      // The CLOB matching happens off-chain, but the settlement is on-chain.
+      const POLYMARKET_CTF_EXCHANGE = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E";
+      const POLYGON_USDC = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
+
+      const approveData = encodeFunctionData({
+        abi: [{ name: "approve", type: "function", inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }], outputs: [{ type: "bool" }], stateMutability: "nonpayable" }] as const,
+        functionName: "approve",
+        args: [POLYMARKET_CTF_EXCHANGE as `0x${string}`, BigInt(Math.floor(Number(betAmount) * 1e6))],
+      });
+
+      const tx = await universalAccount!.createUniversalTransaction({
+        chainId: CHAIN_ID.POLYGON_MAINNET,
+        expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.USDC, amount: betAmount }],
+        transactions: [
+          { to: POLYGON_USDC, data: approveData },
+        ],
+      });
+
+      const sig = await signUATransaction(tx.rootHash);
+      const result = await universalAccount!.sendTransaction(tx, sig);
+      setTxResult(`https://universalx.app/activity/details?id=${result.transactionId}`);
+      onSuccess?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

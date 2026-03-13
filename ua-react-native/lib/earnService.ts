@@ -36,6 +36,8 @@ export interface EarnPosition {
   assetsApprox: number;
 }
 
+export type MorphoVault = EarnMarket;
+
 function getChainIdToUaMap(): Record<number, number> {
   return CHAIN_ID_MAP;
 }
@@ -69,7 +71,7 @@ function encodeAaveSupply(
   ]) as `0x${string}`;
 }
 
-async function fetchMorphoVaults(): Promise<EarnMarket[]> {
+export async function fetchMorphoVaults(): Promise<EarnMarket[]> {
   const chainIdToUa = getChainIdToUaMap();
   const chainNames: Record<number, string> = {
     1: "Ethereum",

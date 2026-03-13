@@ -15,6 +15,26 @@ import {
   AVANTIS_SOCKET_API_URL, type PerpsMarket,
 } from "../lib/perpsConfig";
 
+interface OpenPosition {
+  id: string;
+  pairName: string;
+  symbol: string;
+  pairIndex: number;
+  positionIndex: number;
+  isLong: boolean;
+  collateralUsd: number;
+  sizeUsd: number;
+  leverage: number;
+  entryPrice: number;
+  markPrice: number;
+  pnlUsd: number;
+  pnlPercent: number;
+  liquidationPrice: number;
+  tpPrice: number;
+  slPrice: number;
+  timestamp: number;
+}
+
 interface PerpsModalProps {
   visible: boolean;
   onClose: () => void;
@@ -24,6 +44,20 @@ interface PerpsModalProps {
 type ViewMode = "markets" | "trade" | "positions";
 type TradeDirection = "long" | "short";
 type MarketGroup = "crypto" | "forex" | "commodities" | "equity" | "all";
+
+const BASE_RPC = "https://mainnet.base.org";
+
+async function baseRpcCall(method: string, params: unknown[]): Promise<string | null> {
+  try {
+    const res = await fetch(BASE_RPC, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    });
+    const json = await res.json();
+    return json.result || null;
+  } catch { return null; }
+}
 
 export default function PerpsModal({ visible, onClose, onSuccess }: PerpsModalProps) {
   const { universalAccount, accountInfo, signUATransaction } = useUniversalAccount();
@@ -40,6 +74,10 @@ export default function PerpsModal({ visible, onClose, onSuccess }: PerpsModalPr
   const [txResult, setTxResult] = useState<string | null>(null);
   const [livePrices, setLivePrices] = useState<Record<string, number>>({});
   const [marketGroup, setMarketGroup] = useState<MarketGroup>("all");
+  const [openPositions, setOpenPositions] = useState<OpenPosition[]>([]);
+  const [positionsLoading, setPositionsLoading] = useState(false);
+  const [closingPositionId, setClosingPositionId] = useState<string | null>(null);
+  const livePricesRef = useRef<Record<string, number>>({});
   const wsRef = useRef<WebSocket | null>(null);
 
   // Live prices from Avantis WebSocket
@@ -67,6 +105,144 @@ export default function PerpsModal({ visible, onClose, onSuccess }: PerpsModalPr
       wsRef.current = null;
     };
   }, [visible]);
+
+  // Keep ref in sync for position PnL calculation
+  useEffect(() => { livePricesRef.current = livePrices; }, [livePrices]);
+
+  // Fetch open positions from Avantis contract via Base RPC
+  const fetchOpenPositions = useCallback(async () => {
+    const trader = accountInfo?.evmSmartAccount;
+    if (!trader) return;
+
+    setPositionsLoading(true);
+    try {
+      const positions: OpenPosition[] = [];
+
+      for (const market of PERPS_MARKETS) {
+        const countCallData = encodeFunctionData({
+          abi: AVANTIS_TRADING_STORAGE_ABI,
+          functionName: "openTradesCount",
+          args: [trader as `0x${string}`, BigInt(market.index)],
+        });
+        const countHex = await baseRpcCall("eth_call", [
+          { to: AVANTIS_TRADING_STORAGE_ADDRESS, data: countCallData },
+          "latest",
+        ]);
+        const openCount = countHex ? Number(BigInt(countHex)) : 0;
+        if (openCount <= 0) continue;
+
+        const scanLimit = Math.min(60, Math.max(20, openCount * 3));
+        for (let i = 0; i < scanLimit; i++) {
+          const tradeCallData = encodeFunctionData({
+            abi: AVANTIS_TRADING_STORAGE_ABI,
+            functionName: "openTrades",
+            args: [trader as `0x${string}`, BigInt(market.index), BigInt(i)],
+          });
+          const tradeHex = await baseRpcCall("eth_call", [
+            { to: AVANTIS_TRADING_STORAGE_ADDRESS, data: tradeCallData },
+            "latest",
+          ]);
+          if (!tradeHex) continue;
+
+          const trade = decodeFunctionResult({
+            abi: AVANTIS_TRADING_STORAGE_ABI,
+            functionName: "openTrades",
+            data: tradeHex as `0x${string}`,
+          }) as any;
+          if (!trade || trade.trader?.toLowerCase() === "0x0000000000000000000000000000000000000000") continue;
+
+          const positionIndex = Number(trade.index);
+          const leverageNum = Number(trade.leverage) / 1e10;
+          const initialCollateral = Number(trade.initialPosToken) / 1e6;
+          const rawPosition = Number(trade.positionSizeUSDC) / 1e6;
+          const collateralUsd = initialCollateral > 0 ? initialCollateral : leverageNum > 0 ? rawPosition / leverageNum : rawPosition;
+          if (collateralUsd <= 0) continue;
+
+          const sizeUsd = collateralUsd * Math.max(leverageNum, 0);
+          const entryPrice = Number(trade.openPrice) / 1e10;
+          const markPrice = livePricesRef.current[market.pairName] || livePricesRef.current[market.symbol] || entryPrice;
+          const pnlUsd = trade.buy
+            ? ((markPrice - entryPrice) / Math.max(entryPrice, 1e-9)) * sizeUsd
+            : ((entryPrice - markPrice) / Math.max(entryPrice, 1e-9)) * sizeUsd;
+          const pnlPercent = collateralUsd > 0 ? (pnlUsd / collateralUsd) * 100 : 0;
+          const liqDistance = (entryPrice / Math.max(leverageNum, 1e-9)) * 0.9;
+          const liquidationPrice = trade.buy ? entryPrice - liqDistance : entryPrice + liqDistance;
+
+          positions.push({
+            id: `${market.index}-${positionIndex}`,
+            pairName: market.pairName,
+            symbol: market.symbol,
+            pairIndex: market.index,
+            positionIndex,
+            isLong: trade.buy,
+            collateralUsd,
+            sizeUsd,
+            leverage: leverageNum,
+            entryPrice,
+            markPrice,
+            pnlUsd,
+            pnlPercent,
+            liquidationPrice,
+            tpPrice: Number(trade.tp) > 0 ? Number(trade.tp) / 1e10 : 0,
+            slPrice: Number(trade.sl) > 0 ? Number(trade.sl) / 1e10 : 0,
+            timestamp: Number(trade.timestamp),
+          });
+          if (positions.filter((p) => p.pairIndex === market.index).length >= openCount) break;
+        }
+      }
+
+      positions.sort((a, b) => b.timestamp - a.timestamp);
+      setOpenPositions(positions);
+    } catch (err) {
+      console.error("Failed to fetch positions:", err);
+    } finally {
+      setPositionsLoading(false);
+    }
+  }, [accountInfo?.evmSmartAccount]);
+
+  // Auto-fetch positions on open and every 20s
+  useEffect(() => {
+    if (!visible || !accountInfo?.evmSmartAccount) return;
+    fetchOpenPositions();
+    const interval = setInterval(fetchOpenPositions, 20000);
+    return () => clearInterval(interval);
+  }, [visible, accountInfo?.evmSmartAccount, fetchOpenPositions]);
+
+  // Close position via UA (sends closeTradeMarket to Avantis)
+  const handleClosePosition = async (position: OpenPosition) => {
+    if (!universalAccount) return;
+    setClosingPositionId(position.id);
+    setError(null);
+
+    try {
+      const collateralToClose = BigInt(Math.max(1, Math.floor(position.collateralUsd * 1e6)));
+      const closeCalldata = encodeFunctionData({
+        abi: AVANTIS_TRADING_ABI,
+        functionName: "closeTradeMarket",
+        args: [
+          BigInt(position.pairIndex),
+          BigInt(position.positionIndex),
+          collateralToClose,
+        ],
+      });
+
+      const tx = await universalAccount.createUniversalTransaction({
+        chainId: CHAIN_ID.BASE_MAINNET,
+        expectTokens: [],
+        transactions: [{ to: AVANTIS_TRADING_ADDRESS, data: closeCalldata }],
+      });
+
+      const sig = await signUATransaction(tx.rootHash);
+      const result = await universalAccount.sendTransaction(tx, sig);
+      setTxResult(`https://universalx.app/activity/details?id=${result.transactionId}`);
+      onSuccess?.();
+      setTimeout(fetchOpenPositions, 5000);
+    } catch (err) {
+      setError(`Close failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setClosingPositionId(null);
+    }
+  };
 
   const filteredMarkets = PERPS_MARKETS.filter(
     (m) => marketGroup === "all" || m.group === marketGroup
@@ -165,9 +341,19 @@ export default function PerpsModal({ visible, onClose, onSuccess }: PerpsModalPr
             <Text style={s.title}>
               {viewMode === "markets" ? "Perpetuals" : viewMode === "trade" ? selectedMarket?.symbol || "Trade" : "Positions"}
             </Text>
-            <TouchableOpacity onPress={onClose}>
-              <Feather name="x" size={24} color="#9ca3af" />
-            </TouchableOpacity>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              {viewMode === "markets" && (
+                <TouchableOpacity onPress={() => setViewMode("positions")} style={s.positionsBtn}>
+                  <Feather name="layers" size={16} color="#f97316" />
+                  {openPositions.length > 0 && (
+                    <View style={s.badge}><Text style={s.badgeText}>{openPositions.length}</Text></View>
+                  )}
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity onPress={onClose}>
+                <Feather name="x" size={24} color="#9ca3af" />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Market Groups */}
@@ -345,6 +531,75 @@ export default function PerpsModal({ visible, onClose, onSuccess }: PerpsModalPr
                 </Text>
               </View>
             )}
+
+            {/* Positions View */}
+            {viewMode === "positions" && (
+              <View style={{ gap: 8 }}>
+                {positionsLoading && openPositions.length === 0 ? (
+                  <ActivityIndicator size="large" color="#f97316" style={{ marginTop: 40 }} />
+                ) : openPositions.length === 0 ? (
+                  <View style={{ alignItems: "center", paddingVertical: 40 }}>
+                    <Feather name="inbox" size={40} color="#6b7280" />
+                    <Text style={{ color: "#6b7280", marginTop: 12, fontSize: 16 }}>No open positions</Text>
+                  </View>
+                ) : (
+                  openPositions.map((pos) => (
+                    <View key={pos.id} style={s.positionCard}>
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                          <View style={[s.dirChip, pos.isLong ? s.longChip : s.shortChip]}>
+                            <Text style={s.dirChipText}>{pos.isLong ? "LONG" : "SHORT"}</Text>
+                          </View>
+                          <Text style={{ color: "#fff", fontWeight: "600", fontSize: 16 }}>{pos.symbol}/USD</Text>
+                          <Text style={{ color: "#9ca3af", fontSize: 13 }}>{pos.leverage.toFixed(0)}x</Text>
+                        </View>
+                        <Text style={[{ fontWeight: "bold", fontSize: 16 }, pos.pnlUsd >= 0 ? { color: "#22c55e" } : { color: "#ef4444" }]}>
+                          {pos.pnlUsd >= 0 ? "+" : ""}${pos.pnlUsd.toFixed(2)}
+                        </Text>
+                      </View>
+
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 8 }}>
+                        <View>
+                          <Text style={{ color: "#6b7280", fontSize: 12 }}>Entry</Text>
+                          <Text style={{ color: "#d1d5db", fontSize: 14 }}>${pos.entryPrice.toLocaleString()}</Text>
+                        </View>
+                        <View>
+                          <Text style={{ color: "#6b7280", fontSize: 12 }}>Mark</Text>
+                          <Text style={{ color: "#d1d5db", fontSize: 14 }}>${pos.markPrice.toLocaleString()}</Text>
+                        </View>
+                        <View>
+                          <Text style={{ color: "#6b7280", fontSize: 12 }}>Size</Text>
+                          <Text style={{ color: "#d1d5db", fontSize: 14 }}>${pos.sizeUsd.toFixed(0)}</Text>
+                        </View>
+                        <View>
+                          <Text style={{ color: "#6b7280", fontSize: 12 }}>Liq</Text>
+                          <Text style={{ color: "#f87171", fontSize: 14 }}>${pos.liquidationPrice.toFixed(2)}</Text>
+                        </View>
+                      </View>
+
+                      {(pos.tpPrice > 0 || pos.slPrice > 0) && (
+                        <View style={{ flexDirection: "row", gap: 16, marginTop: 6 }}>
+                          {pos.tpPrice > 0 && <Text style={{ color: "#22c55e", fontSize: 12 }}>TP: ${pos.tpPrice.toFixed(2)}</Text>}
+                          {pos.slPrice > 0 && <Text style={{ color: "#ef4444", fontSize: 12 }}>SL: ${pos.slPrice.toFixed(2)}</Text>}
+                        </View>
+                      )}
+
+                      <TouchableOpacity
+                        style={[s.closeBtn, closingPositionId === pos.id && { opacity: 0.5 }]}
+                        onPress={() => handleClosePosition(pos)}
+                        disabled={closingPositionId === pos.id}
+                      >
+                        {closingPositionId === pos.id ? (
+                          <ActivityIndicator color="#fff" size="small" />
+                        ) : (
+                          <Text style={s.closeBtnText}>Close Position</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  ))
+                )}
+              </View>
+            )}
           </ScrollView>
         </View>
       </View>
@@ -401,4 +656,14 @@ const s = StyleSheet.create({
   buttonDisabled: { opacity: 0.5 },
   tradeButtonText: { color: "#fff", fontSize: 18, fontWeight: "bold" },
   disclaimer: { fontSize: 11, color: "#6b7280", textAlign: "center", marginTop: 8, marginBottom: 32 },
+  positionsBtn: { flexDirection: "row", alignItems: "center", gap: 2, padding: 4 },
+  badge: { backgroundColor: "#f97316", borderRadius: 8, minWidth: 16, height: 16, alignItems: "center", justifyContent: "center", paddingHorizontal: 4 },
+  badgeText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
+  positionCard: { backgroundColor: "#2a2a2a", borderRadius: 12, padding: 14, borderWidth: 1, borderColor: "#333", marginBottom: 6 },
+  dirChip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
+  longChip: { backgroundColor: "#166534" },
+  shortChip: { backgroundColor: "#7f1d1d" },
+  dirChipText: { color: "#fff", fontSize: 11, fontWeight: "bold" },
+  closeBtn: { backgroundColor: "#ef4444", borderRadius: 8, paddingVertical: 10, alignItems: "center", marginTop: 10 },
+  closeBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" },
 });

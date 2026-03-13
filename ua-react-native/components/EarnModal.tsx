@@ -6,7 +6,7 @@ import {
 import { Feather } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
 import { useUniversalAccount } from "../context/UniversalAccountContext";
-import { fetchMorphoVaults, type MorphoVault } from "../lib/earnService";
+import { fetchMorphoVaults, fetchUserPositions, type MorphoVault, type EarnPosition } from "../lib/earnService";
 
 interface EarnModalProps {
   visible: boolean;
@@ -29,10 +29,28 @@ export default function EarnModal({ visible, onClose, onSuccess }: EarnModalProp
   const [error, setError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<"apy" | "tvl">("tvl");
   const [chainFilter, setChainFilter] = useState<string>("all");
+  const [userPositions, setUserPositions] = useState<EarnPosition[]>([]);
+  const [positionsLoading, setPositionsLoading] = useState(false);
 
   useEffect(() => {
-    if (visible) loadVaults();
+    if (visible) {
+      loadVaults();
+      loadPositions();
+    }
   }, [visible]);
+
+  const loadPositions = async () => {
+    if (!accountInfo?.evmSmartAccount) return;
+    setPositionsLoading(true);
+    try {
+      const positions = await fetchUserPositions(accountInfo.evmSmartAccount, vaults);
+      setUserPositions(positions);
+    } catch (err) {
+      console.error("Failed to load positions:", err);
+    } finally {
+      setPositionsLoading(false);
+    }
+  };
 
   const loadVaults = async () => {
     setLoading(true);
@@ -111,19 +129,21 @@ export default function EarnModal({ visible, onClose, onSuccess }: EarnModalProp
           </View>
 
           {/* Tab Bar */}
-          {viewMode === "vaults" && (
+          {(viewMode === "vaults" || viewMode === "positions") && (
             <View style={s.tabBar}>
               <TouchableOpacity
-                style={[s.tab, sortBy === "tvl" && s.tabActive]}
-                onPress={() => setSortBy("tvl")}
+                style={[s.tab, viewMode === "vaults" && s.tabActive]}
+                onPress={() => setViewMode("vaults")}
               >
-                <Text style={[s.tabText, sortBy === "tvl" && s.tabTextActive]}>By TVL</Text>
+                <Text style={[s.tabText, viewMode === "vaults" && s.tabTextActive]}>Vaults</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[s.tab, sortBy === "apy" && s.tabActive]}
-                onPress={() => setSortBy("apy")}
+                style={[s.tab, viewMode === "positions" && s.tabActive]}
+                onPress={() => setViewMode("positions")}
               >
-                <Text style={[s.tabText, sortBy === "apy" && s.tabTextActive]}>By APY</Text>
+                <Text style={[s.tabText, viewMode === "positions" && s.tabTextActive]}>
+                  Positions {userPositions.length > 0 ? `(${userPositions.length})` : ""}
+                </Text>
               </TouchableOpacity>
             </View>
           )}
@@ -154,6 +174,43 @@ export default function EarnModal({ visible, onClose, onSuccess }: EarnModalProp
                     </View>
                     <Text style={s.vaultAsset}>{vault.asset}</Text>
                   </TouchableOpacity>
+                ))
+              )
+            )}
+
+            {viewMode === "positions" && (
+              positionsLoading ? (
+                <ActivityIndicator size="large" color="#f97316" style={{ marginTop: 40 }} />
+              ) : userPositions.length === 0 ? (
+                <View style={{ alignItems: "center", paddingVertical: 40 }}>
+                  <Feather name="inbox" size={40} color="#6b7280" />
+                  <Text style={{ color: "#6b7280", marginTop: 12, fontSize: 16 }}>No active positions</Text>
+                  <TouchableOpacity onPress={() => setViewMode("vaults")} style={{ marginTop: 16 }}>
+                    <Text style={{ color: "#f97316", fontSize: 14 }}>Browse vaults to deposit</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                userPositions.map((pos) => (
+                  <View key={pos.market.id} style={s.vaultCard}>
+                    <View style={s.vaultHeader}>
+                      <Text style={s.vaultName} numberOfLines={1}>{pos.market.name}</Text>
+                      <Text style={{ color: "#22c55e", fontWeight: "bold", fontSize: 16 }}>
+                        {pos.market.apy.toFixed(2)}% APY
+                      </Text>
+                    </View>
+                    <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 8 }}>
+                      <View>
+                        <Text style={{ color: "#6b7280", fontSize: 12 }}>Deposited</Text>
+                        <Text style={{ color: "#fff", fontSize: 16, fontWeight: "600" }}>
+                          {pos.assetsApprox.toFixed(4)} {pos.market.assetSymbol}
+                        </Text>
+                      </View>
+                      <View style={{ alignItems: "flex-end" }}>
+                        <Text style={{ color: "#6b7280", fontSize: 12 }}>Chain</Text>
+                        <Text style={{ color: "#9ca3af", fontSize: 14 }}>{pos.market.chainName}</Text>
+                      </View>
+                    </View>
+                  </View>
                 ))
               )
             )}
