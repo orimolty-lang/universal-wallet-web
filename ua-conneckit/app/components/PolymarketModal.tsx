@@ -316,8 +316,8 @@ export default function PolymarketModal({
         return m.active && !m.closed && m.accepting_orders === true && notExpired;
       });
 
-      const minLiquidity = 5_000;
-      const minVolume = 500;
+      const minLiquidity = 10_000;
+      const minVolume = 10_000;
       const liquidTradable = tradable.filter((m) => {
         const liq = Number(m.liquidity || "0");
         const vol = Number(m.volume || "0");
@@ -368,8 +368,9 @@ export default function PolymarketModal({
         ? events.flatMap((e) => Array.isArray(e?.markets) ? e.markets : [])
         : [];
       const normalized = list.map(normalizeMarket).filter((m): m is Market => !!m);
-      const minLiq = 1000;
-      const liquid = normalized.filter((m) => Number(m.liquidity || "0") >= minLiq && Number(m.volume || "0") >= 500);
+      const minLiq = 10_000;
+      const minVol = 10_000;
+      const liquid = normalized.filter((m) => Number(m.liquidity || "0") >= minLiq && Number(m.volume || "0") >= minVol);
       setSearchResults(liquid.length > 0 ? liquid : normalized);
     } catch (err) {
       console.error("[Polymarket] Search failed, falling back to local filter:", err);
@@ -1158,7 +1159,7 @@ export default function PolymarketModal({
           </button>
           <h2 className="text-white text-2xl font-bold flex items-center gap-2.5">
             <img src="https://polymarket.com/favicon.ico" alt="" className="w-8 h-8 rounded-lg" />
-            <span>Prediction Markets</span>
+            <span>Predictions</span>
           </h2>
           <button
             onClick={onClose}
