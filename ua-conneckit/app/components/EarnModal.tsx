@@ -8,9 +8,11 @@ import { CHAIN_ID, SUPPORTED_TOKEN_TYPE } from "@particle-network/universal-acco
 import type { IAssetsResponse } from "@particle-network/universal-account-sdk";
 import { useWallets, useAccount } from "@particle-network/connectkit";
 import {
-  fetchEarnVaults,
+  fetchEarnMarkets,
   buildMorphoDepositTx,
-  type EarnVaultWithApy,
+  buildAaveSupplyTx,
+  type EarnMarket,
+  type EarnProtocol,
 } from "../lib/earnService";
 
 type WalletClientLike = {
@@ -67,6 +69,7 @@ interface EarnModalProps {
   onClose: () => void;
   assets: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
+  smartAccountAddress?: string;
   blindSigningEnabled: boolean;
   onSuccess?: () => void;
 }
@@ -76,82 +79,111 @@ export default function EarnModal({
   onClose,
   assets,
   universalAccount,
+  smartAccountAddress,
   blindSigningEnabled,
   onSuccess,
 }: EarnModalProps) {
   const [primaryWallet] = useWallets();
   const { address } = useAccount();
-  const [vaults, setVaults] = useState<EarnVaultWithApy[]>([]);
-  const [isLoadingVaults, setIsLoadingVaults] = useState(false);
-  const [selectedVault, setSelectedVault] = useState<EarnVaultWithApy | null>(null);
+  const [markets, setMarkets] = useState<EarnMarket[]>([]);
+  const [isLoadingMarkets, setIsLoadingMarkets] = useState(false);
+  const [selectedMarket, setSelectedMarket] = useState<EarnMarket | null>(null);
   const [amount, setAmount] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [txResult, setTxResult] = useState<{ txId: string } | null>(null);
   const [chainFilter, setChainFilter] = useState<number | "all">("all");
+  const [protocolFilter, setProtocolFilter] = useState<EarnProtocol | "both">("both");
 
-  const fetchVaults = useCallback(async () => {
-    setIsLoadingVaults(true);
+  const fetchMarkets = useCallback(async () => {
+    setIsLoadingMarkets(true);
     try {
-      const list = await fetchEarnVaults();
-      setVaults(list);
+      const filter = protocolFilter === "both" ? undefined : protocolFilter;
+      const list = await fetchEarnMarkets(filter);
+      setMarkets(list);
     } catch (err) {
-      console.error("[Earn] Fetch vaults failed:", err);
-      setVaults([]);
+      console.error("[Earn] Fetch markets failed:", err);
+      setMarkets([]);
     } finally {
-      setIsLoadingVaults(false);
+      setIsLoadingMarkets(false);
     }
-  }, []);
+  }, [protocolFilter]);
 
   useEffect(() => {
-    if (isOpen) fetchVaults();
-  }, [isOpen, fetchVaults]);
+    if (isOpen) fetchMarkets();
+  }, [isOpen, fetchMarkets]);
 
-  const filteredVaults =
-    chainFilter === "all"
-      ? vaults
-      : vaults.filter((v) => v.chainId === chainFilter);
-
+  // UA unified balance: match USDC by tokenType or symbol; sum chainAggregation if amount missing
   const userUsdcBalance = (() => {
     if (!assets?.assets) return 0;
-    const list = assets.assets as Array<{ symbol?: string; amount?: number | string }>;
-    const usdc = list.find((a) => (a.symbol || "").toUpperCase() === "USDC");
+    const list = assets.assets as Array<{
+      tokenType?: string;
+      symbol?: string;
+      amount?: number | string;
+      chainAggregation?: Array<{ amount?: number | string }>;
+    }>;
+    const usdc = list.find(
+      (a) =>
+        (a.tokenType || "").toLowerCase() === "usdc" ||
+        (a.symbol || "").toUpperCase() === "USDC"
+    );
     if (!usdc) return 0;
-    return typeof usdc.amount === "string"
-      ? parseFloat(usdc.amount || "0")
-      : (usdc.amount || 0);
+    let amt = typeof usdc.amount === "string" ? parseFloat(usdc.amount || "0") : (usdc.amount || 0);
+    if (amt <= 0 && usdc.chainAggregation?.length) {
+      amt = usdc.chainAggregation.reduce((sum, c) => {
+        const v = typeof c.amount === "string" ? parseFloat(c.amount || "0") : (c.amount || 0);
+        return sum + v;
+      }, 0);
+    }
+    return amt;
   })();
 
+  const filteredMarkets =
+    chainFilter === "all"
+      ? markets
+      : markets.filter((m) => m.chainId === chainFilter);
+
   const amountNum = parseFloat(amount || "0");
+  const receiver = smartAccountAddress || (address as string);
   const canDeposit =
-    selectedVault &&
+    selectedMarket &&
     amountNum > 0 &&
     amountNum <= userUsdcBalance &&
     universalAccount &&
     primaryWallet &&
-    address;
+    address &&
+    receiver;
 
   const handleDeposit = async () => {
-    if (!canDeposit || !selectedVault || !universalAccount) return;
+    if (!canDeposit || !selectedMarket || !universalAccount || !receiver) return;
     setError(null);
     setIsLoading(true);
     try {
-      const receiver = address as string;
-      const { approve, deposit } = buildMorphoDepositTx(
-        selectedVault,
-        amount,
-        receiver
-      );
+      const uaChainId = CHAIN_ID_MAP[selectedMarket.chainId] ?? selectedMarket.uaChainId;
+      const tokenType = ASSET_TO_TOKEN_TYPE[selectedMarket.assetSymbol] ?? SUPPORTED_TOKEN_TYPE.USDC;
 
-      const uaChainId = CHAIN_ID_MAP[selectedVault.chainId] ?? selectedVault.uaChainId;
-      const tokenType = ASSET_TO_TOKEN_TYPE[selectedVault.assetSymbol] ?? SUPPORTED_TOKEN_TYPE.USDC;
+      let approve: `0x${string}`;
+      let action: `0x${string}`;
+      let actionTo: string;
+
+      if (selectedMarket.protocol === "morpho") {
+        const built = buildMorphoDepositTx(selectedMarket, amount, receiver);
+        approve = built.approve;
+        action = built.deposit;
+        actionTo = selectedMarket.address;
+      } else {
+        const built = buildAaveSupplyTx(selectedMarket, amount, receiver);
+        approve = built.approve;
+        action = built.supply;
+        actionTo = selectedMarket.address;
+      }
 
       const tx = await universalAccount.createUniversalTransaction({
         chainId: uaChainId,
         expectTokens: [{ type: tokenType, amount }],
         transactions: [
-          { to: selectedVault.assetAddress as `0x${string}`, data: approve },
-          { to: selectedVault.address as `0x${string}`, data: deposit },
+          { to: selectedMarket.assetAddress as `0x${string}`, data: approve },
+          { to: actionTo as `0x${string}`, data: action },
         ],
       });
 
@@ -176,10 +208,16 @@ export default function EarnModal({
   };
 
   const resetFlow = () => {
-    setSelectedVault(null);
+    setSelectedMarket(null);
     setAmount("");
     setTxResult(null);
     setError(null);
+  };
+
+  const chainIds = Array.from(new Set(markets.map((m) => m.chainId))).sort((a, b) => a - b);
+  const chainNames: Record<number, string> = {
+    1: "Ethereum", 8453: "Base", 42161: "Arbitrum", 10: "Optimism",
+    137: "Polygon", 43114: "Avalanche", 56: "BNB",
   };
 
   return (
@@ -198,9 +236,14 @@ export default function EarnModal({
           </button>
         </div>
 
-        <p className="text-gray-400 text-sm mb-4">
+        <p className="text-gray-400 text-sm mb-3">
           Deposit USDC into yield vaults. Earn interest on supported chains.
         </p>
+
+        <div className="bg-zinc-900 rounded-xl px-3 py-2 mb-4 border border-zinc-800">
+          <div className="text-gray-400 text-xs mb-0.5">Unified balance</div>
+          <div className="text-white font-semibold">{userUsdcBalance.toFixed(2)} USDC</div>
+        </div>
 
         {txResult ? (
           <div className="space-y-4">
@@ -222,22 +265,22 @@ export default function EarnModal({
               Deposit more
             </button>
           </div>
-        ) : selectedVault ? (
+        ) : selectedMarket ? (
           <div className="space-y-4">
             <button
               onClick={resetFlow}
               className="text-sm text-accent-dynamic hover:brightness-110"
             >
-              ← Back to vaults
+              ← Back to markets
             </button>
 
             <div className="bg-zinc-900 rounded-xl p-4 border border-zinc-800">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-white font-medium">{selectedVault.name}</span>
-                <span className="text-gray-400 text-xs">{selectedVault.chainName}</span>
+                <span className="text-white font-medium">{selectedMarket.name}</span>
+                <span className="text-gray-400 text-xs">{selectedMarket.chainName} · {selectedMarket.protocol}</span>
               </div>
-              {selectedVault.apy > 0 && (
-                <p className="text-green-400 text-sm">APY: {selectedVault.apy.toFixed(2)}%</p>
+              {selectedMarket.apy > 0 && (
+                <p className="text-green-400 text-sm">APY: {selectedMarket.apy.toFixed(2)}%</p>
               )}
             </div>
 
@@ -278,6 +321,22 @@ export default function EarnModal({
           </div>
         ) : (
           <>
+            <div className="flex gap-2 mb-3">
+              {(["both", "morpho", "aave"] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setProtocolFilter(p)}
+                  className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium ${
+                    protocolFilter === p
+                      ? "bg-accent-dynamic text-white"
+                      : "bg-zinc-800 text-gray-400 hover:bg-zinc-700"
+                  }`}
+                >
+                  {p === "both" ? "Both" : p === "morpho" ? "Morpho" : "Aave"}
+                </button>
+              ))}
+            </div>
+
             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide mb-3">
               <button
                 onClick={() => setChainFilter("all")}
@@ -289,51 +348,46 @@ export default function EarnModal({
               >
                 All
               </button>
-              {[1, 8453, 42161, 10, 137, 43114, 56].map((cid) => {
-                const name =
-                  cid === 1 ? "Ethereum" : cid === 8453 ? "Base" : cid === 42161 ? "Arbitrum" : cid === 10 ? "Optimism" : cid === 137 ? "Polygon" : cid === 43114 ? "Avalanche" : "BNB";
-                const hasVaults = vaults.some((v) => v.chainId === cid);
-                if (!hasVaults) return null;
-                return (
-                  <button
-                    key={cid}
-                    onClick={() => setChainFilter(cid)}
-                    className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm ${
-                      chainFilter === cid
-                        ? "bg-accent-dynamic text-white"
-                        : "bg-zinc-800 text-gray-400"
-                    }`}
-                  >
-                    {name}
-                  </button>
-                );
-              })}
+              {chainIds.map((cid) => (
+                <button
+                  key={cid}
+                  onClick={() => setChainFilter(cid)}
+                  className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm ${
+                    chainFilter === cid
+                      ? "bg-accent-dynamic text-white"
+                      : "bg-zinc-800 text-gray-400"
+                  }`}
+                >
+                  {chainNames[cid] || `Chain ${cid}`}
+                </button>
+              ))}
             </div>
 
-            {isLoadingVaults ? (
+            {isLoadingMarkets ? (
               <div className="flex justify-center py-12">
                 <Loader2 className="w-8 h-8 animate-spin text-accent-dynamic" />
               </div>
-            ) : filteredVaults.length === 0 ? (
-              <p className="text-center text-gray-400 py-8">No vaults on this chain</p>
+            ) : filteredMarkets.length === 0 ? (
+              <p className="text-center text-gray-400 py-8">No markets on this chain</p>
             ) : (
               <div className="space-y-2">
-                {filteredVaults.map((v) => (
+                {filteredMarkets.map((m) => (
                   <button
-                    key={v.id}
-                    onClick={() => setSelectedVault(v)}
+                    key={m.id}
+                    onClick={() => setSelectedMarket(m)}
                     className="w-full p-4 bg-zinc-900 hover:bg-zinc-800 rounded-xl text-left border border-zinc-800 hover:border-accent-dynamic/40 transition-colors"
                   >
                     <div className="flex justify-between items-start">
                       <div>
-                        <div className="text-white font-medium">{v.name}</div>
-                        <div className="text-gray-400 text-xs mt-0.5">{v.chainName}</div>
+                        <div className="text-white font-medium">{m.name}</div>
+                        <div className="text-gray-400 text-xs mt-0.5">{m.chainName} · {m.protocol}</div>
                       </div>
                       <div className="text-right">
-                        {v.apy > 0 && (
-                          <div className="text-green-400 text-sm font-medium">{v.apy.toFixed(2)}% APY</div>
+                        {m.apy > 0 && (
+                          <div className="text-green-400 text-sm font-medium">{m.apy.toFixed(2)}% APY</div>
                         )}
-                        <div className="text-gray-500 text-xs">{v.assetSymbol}</div>
+                        <div className="text-gray-500 text-xs">{m.assetSymbol}</div>
+                        <div className="text-white/70 text-xs mt-0.5">{userUsdcBalance.toFixed(2)} USDC</div>
                       </div>
                     </div>
                   </button>
