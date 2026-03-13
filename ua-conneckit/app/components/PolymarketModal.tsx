@@ -110,6 +110,12 @@ const CTF_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045";
 const NEG_RISK_EXCHANGE = "0xC5d563A36AE78145C45a50134d48A1215220f80a";
 const CTF_EXCHANGE = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E";
 
+function isTestMarket(m: { question?: string; slug?: string }): boolean {
+  const q = (m.question || "").toLowerCase();
+  const s = (m.slug || "").toLowerCase();
+  return /test|testnet|sandbox/i.test(q) || /test|testnet|sandbox/i.test(s) || s.endsWith("test") || q.endsWith("test");
+}
+
 interface Market {
   id: string;
   question: string;
@@ -318,11 +324,6 @@ export default function PolymarketModal({
 
       const minLiquidity = 10_000;
       const minVolume = 10_000;
-      const isTestMarket = (m: Market) => {
-        const q = (m.question || "").toLowerCase();
-        const s = (m.slug || "").toLowerCase();
-        return /test|testnet|sandbox/.test(q) || /test|testnet|sandbox/.test(s);
-      };
       const liquidTradable = tradable.filter((m) => {
         if (isTestMarket(m)) return false;
         const liq = Number(m.liquidity || "0");
@@ -331,7 +332,9 @@ export default function PolymarketModal({
       });
 
       const openMarkets = normalized.filter((m) => m.active && !m.closed);
-      const finalMarkets = liquidTradable.length > 0 ? liquidTradable : (tradable.length > 0 ? tradable : openMarkets);
+      const filteredTradable = tradable.filter((m) => !isTestMarket(m));
+      const filteredOpen = openMarkets.filter((m) => !isTestMarket(m));
+      const finalMarkets = liquidTradable.length > 0 ? liquidTradable : (filteredTradable.length > 0 ? filteredTradable : filteredOpen);
 
       setDebugInfo({
         endpoint: `${base}/markets + events`,
@@ -376,11 +379,6 @@ export default function PolymarketModal({
       const normalized = list.map(normalizeMarket).filter((m): m is Market => !!m);
       const minLiq = 10_000;
       const minVol = 10_000;
-      const isTestMarket = (m: Market) => {
-        const q = (m.question || "").toLowerCase();
-        const s = (m.slug || "").toLowerCase();
-        return /test|testnet|sandbox/.test(q) || /test|testnet|sandbox/.test(s);
-      };
       const liquid = normalized.filter((m) => {
         if (isTestMarket(m)) return false;
         return Number(m.liquidity || "0") >= minLiq && Number(m.volume || "0") >= minVol;
@@ -390,10 +388,12 @@ export default function PolymarketModal({
       console.error("[Polymarket] Search failed, falling back to local filter:", err);
       // Fallback: client-side filter on allMarkets when API unavailable
       const qLower = trimmed.toLowerCase();
-      const local = allMarkets.filter((m) =>
-        (m.question || "").toLowerCase().includes(qLower) ||
-        (m.slug || "").toLowerCase().includes(qLower)
-      );
+      const local = allMarkets
+        .filter((m) =>
+          (m.question || "").toLowerCase().includes(qLower) ||
+          (m.slug || "").toLowerCase().includes(qLower)
+        )
+        .filter((m) => !isTestMarket(m));
       setSearchResults(local);
     } finally {
       setIsSearching(false);

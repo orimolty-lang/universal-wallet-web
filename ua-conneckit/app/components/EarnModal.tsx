@@ -9,10 +9,13 @@ import type { IAssetsResponse } from "@particle-network/universal-account-sdk";
 import { useWallets, useAccount } from "@particle-network/connectkit";
 import {
   fetchEarnMarkets,
+  fetchUserPositions,
   buildMorphoDepositTx,
+  buildMorphoRedeemTx,
   buildAaveSupplyTx,
   formatTvl,
   type EarnMarket,
+  type EarnPosition,
 } from "../lib/earnService";
 
 type WalletClientLike = {
@@ -96,6 +99,9 @@ export default function EarnModal({
   const [txResult, setTxResult] = useState<{ txId: string } | null>(null);
   const [chainFilter, setChainFilter] = useState<number | "all">("all");
   const [protocolFilter, setProtocolFilter] = useState<"all" | "morpho" | "aave">("all");
+  const [positions, setPositions] = useState<EarnPosition[]>([]);
+  const [isLoadingPositions, setIsLoadingPositions] = useState(false);
+  const [withdrawingPosition, setWithdrawingPosition] = useState<EarnPosition | null>(null);
 
   const fetchMarkets = useCallback(async () => {
     setIsLoadingMarkets(true);
@@ -113,6 +119,28 @@ export default function EarnModal({
   useEffect(() => {
     if (isOpen) fetchMarkets();
   }, [isOpen, fetchMarkets]);
+
+  const loadPositions = useCallback(async () => {
+    if (!smartAccountAddress || markets.length === 0) {
+      setPositions([]);
+      return;
+    }
+    setIsLoadingPositions(true);
+    try {
+      const morphoMarkets = markets.filter((m) => m.protocol === "morpho");
+      const pos = await fetchUserPositions(smartAccountAddress, morphoMarkets);
+      setPositions(pos);
+    } catch (err) {
+      console.error("[Earn] Fetch positions failed:", err);
+      setPositions([]);
+    } finally {
+      setIsLoadingPositions(false);
+    }
+  }, [smartAccountAddress, markets]);
+
+  useEffect(() => {
+    if (isOpen && markets.length > 0) loadPositions();
+  }, [isOpen, markets.length, loadPositions]);
 
   // UA Balance: unified balance (token/chain agnostic). createUniversalTransaction sources USDC from this.
   const uaBalanceUsd = (() => {
@@ -183,6 +211,7 @@ export default function EarnModal({
 
       const result = await universalAccount.sendTransaction(tx, signature);
       setTxResult({ txId: result.transactionId });
+      loadPositions();
       onSuccess?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Deposit failed");
@@ -196,6 +225,36 @@ export default function EarnModal({
     setAmount("");
     setTxResult(null);
     setError(null);
+  };
+
+  const handleWithdraw = async (pos: EarnPosition) => {
+    if (!universalAccount || !primaryWallet || !receiver) return;
+    setError(null);
+    setWithdrawingPosition(pos);
+    try {
+      const uaChainId = CHAIN_ID_MAP[pos.market.chainId] ?? pos.market.uaChainId;
+      const { redeem } = buildMorphoRedeemTx(pos.market, pos.sharesRaw, receiver);
+      const tx = await universalAccount.createUniversalTransaction({
+        chainId: uaChainId,
+        expectTokens: [],
+        transactions: [{ to: pos.market.address as `0x${string}`, data: redeem }],
+      });
+      const walletClient = primaryWallet.getWalletClient();
+      if (!walletClient) throw new Error("Wallet not connected");
+      const signature = await signUniversalRootHash(
+        walletClient as unknown as WalletClientLike,
+        (tx as { rootHash: string }).rootHash as `0x${string}`,
+        walletClient.account?.address as `0x${string}` | undefined,
+        blindSigningEnabled
+      );
+      await universalAccount.sendTransaction(tx, signature);
+      loadPositions();
+      onSuccess?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Withdraw failed");
+    } finally {
+      setWithdrawingPosition(null);
+    }
   };
 
   const chainIds = Array.from(new Set(markets.map((m) => m.chainId))).sort((a, b) => a - b);
@@ -341,6 +400,31 @@ export default function EarnModal({
           </div>
         ) : (
             <>
+            {(positions.length > 0 || (isLoadingPositions && markets.length > 0)) && (
+              <div className="mb-4">
+                <div className="text-gray-400 text-xs uppercase tracking-wide mb-2">Active Positions</div>
+                <div className="space-y-2">
+                  {isLoadingPositions && positions.length === 0 && (
+                    <div className="text-gray-500 text-sm py-2">Loading...</div>
+                  )}
+                  {positions.map((pos) => (
+                    <div key={pos.market.id} className="bg-zinc-900 rounded-xl p-3 border border-zinc-800 flex items-center justify-between">
+                      <div>
+                        <div className="text-white font-medium text-sm">{pos.market.name}</div>
+                        <div className="text-gray-500 text-xs">{pos.market.chainName} · ~{pos.assetsApprox.toFixed(2)} {pos.market.assetSymbol}</div>
+                      </div>
+                      <button
+                        onClick={() => handleWithdraw(pos)}
+                        disabled={!!withdrawingPosition}
+                        className="px-3 py-1.5 rounded-lg bg-zinc-700 text-white text-xs font-medium hover:bg-zinc-600 disabled:opacity-50"
+                      >
+                        {withdrawingPosition?.market.id === pos.market.id ? "..." : "Withdraw"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="flex gap-2 mb-3">
               <div className="relative flex-1" ref={chainDropdownRef}>
                 <button
