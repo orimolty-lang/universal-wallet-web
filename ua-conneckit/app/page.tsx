@@ -906,9 +906,17 @@ const ReceiveModal = ({
       <div className="px-5 pb-8">
         <h2 className="text-white text-xl font-bold mb-2">Receive</h2>
         
-        <p className="text-gray-400 text-sm mb-5">
-          Deposit any token on supported networks. All EVM chains share the same address.
+        <p className="text-gray-400 text-sm mb-3">
+          Deposit any token on supported networks. You may use the following tokens for trading/gas:
         </p>
+        <div className="flex flex-wrap gap-2 mb-4">
+          {["USDC", "USDT", "ETH", "SOL", "BNB"].map((sym) => (
+            <div key={sym} className="flex items-center gap-1.5 bg-zinc-800/80 rounded-lg px-2 py-1">
+              <img src={TOKEN_LOGOS[sym] || TOKEN_LOGOS.ETH} alt="" className="w-5 h-5 rounded-full" />
+              <span className="text-white text-xs font-medium">{sym}</span>
+            </div>
+          ))}
+        </div>
 
         <p className="text-gray-500 text-xs mb-3 uppercase tracking-wide">Your receive address</p>
 
@@ -977,77 +985,234 @@ const ReceiveModal = ({
   );
 };
 
-// Send Modal
+const CHAIN_ID_TO_NAME_SEND: Record<number, string> = {
+  1: "Ethereum", 8453: "Base", 42161: "Arbitrum", 10: "Optimism",
+  137: "Polygon", 56: "BNB Chain", 101: "Solana", 43114: "Avalanche",
+};
+
+// Map numeric chainId to UA SDK CHAIN_ID
+const CHAIN_ID_MAP: Record<number, number> = {
+  1: CHAIN_ID.ETHEREUM_MAINNET,
+  8453: CHAIN_ID.BASE_MAINNET,
+  42161: CHAIN_ID.ARBITRUM_MAINNET_ONE,
+  10: CHAIN_ID.OPTIMISM_MAINNET,
+  137: CHAIN_ID.POLYGON_MAINNET,
+  56: CHAIN_ID.BSC_MAINNET,
+  101: CHAIN_ID.SOLANA_MAINNET,
+  43114: CHAIN_ID.AVALANCHE_MAINNET,
+};
+
+// Detect if address is EVM (0x...) or Solana (base58)
+function isEvmAddress(addr: string): boolean {
+  return /^0x[a-fA-F0-9]{40}$/.test(addr.trim());
+}
+function isSolanaAddress(addr: string): boolean {
+  const a = addr.trim();
+  return a.length >= 32 && a.length <= 44 && !a.startsWith("0x");
+}
+
+// Send Modal - wired transfer for UA primary assets
 const SendModal = ({
   isOpen,
   onClose,
   assets,
+  universalAccount,
+  blindSigningEnabled,
+  onSuccess,
 }: {
   isOpen: boolean;
   onClose: () => void;
   assets: IAssetsResponse | null;
+  universalAccount: UniversalAccount | null;
+  blindSigningEnabled: boolean;
+  onSuccess?: () => void;
 }) => {
+  const [primaryWallet] = useWallets();
+  const { address } = useAccount();
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
-  const [selectedToken, setSelectedToken] = useState<string | null>(null);
+  const [selectedOption, setSelectedOption] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [txResult, setTxResult] = useState<{ txId: string } | null>(null);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tokens = assets?.assets?.filter((a: any) => {
-    const bal = typeof a.balance === 'string' ? parseFloat(a.balance) : (a.balance || 0);
-    return bal > 0.0001;
-  }) || [];
+  // Flatten assets to (symbol, chainId, address, balance) for transfer
+  const transferOptions = useMemo(() => {
+    if (!assets?.assets) return [];
+    const out: Array<{ key: string; symbol: string; chainId: number; address: string; balance: number }> = [];
+    for (const a of assets.assets) {
+      const asset = a as { tokenType?: string; chainAggregation?: Array<{ token?: { chainId?: number; address?: string }; amount?: number }> };
+      const chainAgg = asset.chainAggregation;
+      if (!chainAgg?.length) continue;
+      for (const c of chainAgg) {
+        const chainId = Number(c.token?.chainId);
+        const tokenAddr = c.token?.address || "";
+        const bal = Number(c.amount || 0);
+        if (bal < 0.0001 || !chainId) continue;
+        const key = `${asset.tokenType}-${chainId}`;
+        out.push({
+          key,
+          symbol: asset.tokenType?.toUpperCase() || "?",
+          chainId,
+          address: tokenAddr,
+          balance: bal,
+        });
+      }
+    }
+    return out;
+  }, [assets]);
+
+  const selected = transferOptions.find((o) => o.key === selectedOption);
+  const canSend = selected && recipient.trim() && amount && parseFloat(amount) > 0 && parseFloat(amount) <= (selected?.balance ?? 0);
+
+  const handleSend = async () => {
+    if (!universalAccount || !primaryWallet || !address || !selected || !canSend) return;
+    setError(null);
+    setIsLoading(true);
+    try {
+      const rec = recipient.trim();
+      const isEVM = isEvmAddress(rec);
+      const isSOL = isSolanaAddress(rec);
+      if (!isEVM && !isSOL) {
+        setError("Invalid address. Use 0x... for EVM or base58 for Solana.");
+        return;
+      }
+      if (selected.chainId === 101 && !isSOL) {
+        setError("Solana asset must be sent to a Solana address.");
+        return;
+      }
+      if (selected.chainId !== 101 && !isEVM) {
+        setError("EVM asset must be sent to an EVM (0x...) address.");
+        return;
+      }
+
+      const uaChainId = CHAIN_ID_MAP[selected.chainId] ?? selected.chainId;
+      // Native tokens on EVM use 0xEee...; use token address from chainAggregation when present
+      const tokenAddr = selected.address || "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+
+      const tx = await universalAccount.createTransferTransaction({
+        token: { chainId: uaChainId, address: tokenAddr },
+        amount: amount,
+        receiver: rec,
+      });
+
+      const walletClient = primaryWallet.getWalletClient();
+      const signature = await signUniversalRootHash({
+        walletClient: walletClient as unknown as WalletClientLike,
+        rootHash: tx.rootHash as `0x${string}`,
+        signerAddress: walletClient?.account?.address as `0x${string}` | undefined,
+        blindSigningEnabled,
+      });
+      if (!signature) throw new Error("Failed to sign");
+
+      const result = await universalAccount.sendTransaction(tx, signature as string);
+      setTxResult({ txId: result.transactionId });
+      onSuccess?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Transfer failed");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const resetForm = () => {
+    setTxResult(null);
+    setRecipient("");
+    setAmount("");
+    setSelectedOption("");
+    setError(null);
+  };
 
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose}>
       <div className="px-5 pb-8">
         <h2 className="text-white text-xl font-bold mb-2">Send</h2>
         <p className="text-gray-400 text-sm mb-5">
-          Send tokens from your Universal Account to another wallet.
+          Transfer UA primary assets or ERC20/SPL tokens to another EVM or Solana wallet.
         </p>
 
-        {/* Token Selection */}
-        <div className="mb-3 bg-zinc-900 rounded-xl p-3 border border-zinc-800">
-          <label className="text-gray-400 text-sm mb-2 block">Token</label>
-          <select
-            value={selectedToken || ""}
-            onChange={(e) => setSelectedToken(e.target.value)}
-            className="w-full bg-zinc-950 rounded-xl px-3 py-2 text-white outline-none border border-zinc-800"
-          >
-            <option value="">Select a token</option>
-            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-            {tokens.map((t: any, i: number) => (
-              <option key={i} value={t.symbol}>{t.symbol} - {t.name}</option>
-            ))}
-          </select>
-        </div>
+        {txResult ? (
+          <div className="space-y-4">
+            <div className="bg-green-900/30 border border-green-500/50 rounded-xl p-4 text-center">
+              <p className="text-green-400 font-medium">Transfer sent!</p>
+              <a
+                href={`https://universalx.app/activity/details?id=${txResult.txId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent-dynamic text-sm underline mt-2 block"
+              >
+                View transaction
+              </a>
+            </div>
+            <button onClick={resetForm} className="w-full bg-zinc-700 text-white py-3 rounded-full">
+              Send another
+            </button>
+          </div>
+        ) : (
+          <>
+            {error && (
+              <div className="mb-3 bg-red-900/30 border border-red-500/50 rounded-lg p-2 text-red-300 text-xs">
+                {error}
+              </div>
+            )}
 
-        {/* Recipient */}
-        <div className="mb-3 bg-zinc-900 rounded-xl p-3 border border-zinc-800">
-          <label className="text-gray-400 text-sm mb-2 block">Recipient Address</label>
-          <input
-            type="text"
-            value={recipient}
-            onChange={(e) => setRecipient(e.target.value)}
-            placeholder="0x... or .eth"
-            className="w-full bg-zinc-950 rounded-xl px-3 py-2 text-white outline-none border border-zinc-800"
-          />
-        </div>
+            {/* Token + Chain Selection */}
+            <div className="mb-3 bg-zinc-900 rounded-xl p-3 border border-zinc-800">
+              <label className="text-gray-400 text-sm mb-2 block">Token & Network</label>
+              <select
+                value={selectedOption}
+                onChange={(e) => setSelectedOption(e.target.value)}
+                className="w-full bg-zinc-950 rounded-xl px-3 py-2 text-white outline-none border border-zinc-800"
+              >
+                <option value="">Select token and chain</option>
+                {transferOptions.map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {o.symbol} on {CHAIN_ID_TO_NAME_SEND[o.chainId] || `Chain ${o.chainId}`} — {o.balance.toFixed(4)}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        {/* Amount */}
-        <div className="mb-6 bg-zinc-900 rounded-xl p-3 border border-zinc-800">
-          <label className="text-gray-400 text-sm mb-2 block">Amount</label>
-          <input
-            type="number"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="0.00"
-            className="w-full bg-zinc-950 rounded-xl px-3 py-2 text-white outline-none border border-zinc-800"
-          />
-        </div>
+            <div className="mb-3 bg-zinc-900 rounded-xl p-3 border border-zinc-800">
+              <label className="text-gray-400 text-sm mb-2 block">Recipient Address</label>
+              <input
+                type="text"
+                value={recipient}
+                onChange={(e) => setRecipient(e.target.value)}
+                placeholder="0x... (EVM) or base58 (Solana)"
+                className="w-full bg-zinc-950 rounded-xl px-3 py-2 text-white outline-none border border-zinc-800"
+              />
+            </div>
 
-        <button className="w-full bg-accent-dynamic text-white font-bold py-4 rounded-full hover:opacity-90 transition-opacity">
-          Review Send
-        </button>
+            <div className="mb-6 bg-zinc-900 rounded-xl p-3 border border-zinc-800">
+              <label className="text-gray-400 text-sm mb-2 block">Amount</label>
+              <input
+                type="number"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0.00"
+                className="w-full bg-zinc-950 rounded-xl px-3 py-2 text-white outline-none border border-zinc-800"
+              />
+              {selected && (
+                <button
+                  type="button"
+                  onClick={() => setAmount(selected.balance.toString())}
+                  className="text-accent-dynamic text-xs mt-1"
+                >
+                  Max
+                </button>
+              )}
+            </div>
+
+            <button
+              onClick={handleSend}
+              disabled={!canSend || isLoading}
+              className="w-full bg-accent-dynamic text-white font-bold py-4 rounded-full hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isLoading ? "Sending..." : "Send"}
+            </button>
+          </>
+        )}
       </div>
     </BottomSheet>
   );
@@ -1443,7 +1608,7 @@ const ConvertModal = ({
       <div className="px-5 pb-8">
         <h2 className="text-white text-xl font-bold mb-2">Convert</h2>
         <p className="text-gray-400 text-sm mb-4">
-          Move value between chains and primary assets in your Universal Account.
+          Convert primary assets between chains.
         </p>
 
         {error && (
@@ -4904,7 +5069,7 @@ const HomeTab = ({
           onMouseLeave={handleActionBarTouchEnd}
         >
           {[
-            { icon: "💳", label: "Buy", action: onBuy },
+            { icon: "$", label: "Buy", action: onBuy },
             { icon: "↓", label: "Receive", action: onReceive },
             { icon: "↑", label: "Send", action: onSend },
             { icon: "⇄", label: "Convert", action: onConvert },
@@ -7104,6 +7269,12 @@ const App = () => {
         isOpen={showSendModal}
         onClose={() => setShowSendModal(false)}
         assets={primaryAssets}
+        universalAccount={universalAccountInstance}
+        blindSigningEnabled={profile.blindSigningEnabled}
+        onSuccess={() => {
+          fetchAssets();
+          fetchMobulaAssets();
+        }}
       />
       
       <ConvertModal
