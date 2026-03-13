@@ -39,6 +39,12 @@ const CHAIN_LOGOS: Record<number, string> = {
   101: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png",
 };
 
+const SLIPPAGE_STORAGE_KEY = "omni_swap_slippage_pct_v1";
+const DEFAULT_SLIPPAGE_PCT = 1;
+const MIN_SLIPPAGE_PCT = 0.1;
+const MAX_SLIPPAGE_PCT = 10;
+const PRESET_SLIPPAGE_PCTS = [0.5, 1, 2, 3, 5];
+
 // Helper functions
 const formatTokenAmount = (amount: number, decimals: number = 6): string => {
   if (amount === 0) return "0";
@@ -47,6 +53,11 @@ const formatTokenAmount = (amount: number, decimals: number = 6): string => {
   if (amount < 1000) return amount.toFixed(4);
   if (amount < 1000000) return amount.toLocaleString(undefined, { maximumFractionDigits: 2 });
   return amount.toLocaleString(undefined, { maximumFractionDigits: 0 });
+};
+
+const clampSlippagePct = (value: number): number => {
+  if (!Number.isFinite(value)) return DEFAULT_SLIPPAGE_PCT;
+  return Math.max(MIN_SLIPPAGE_PCT, Math.min(MAX_SLIPPAGE_PCT, Number(value.toFixed(2))));
 };
 
 // Token logo with chain badge component
@@ -101,12 +112,28 @@ export const SwapModal = ({
     status: "pending" | "completed" | "failed";
   } | null>(null);
   const [isTyping, setIsTyping] = useState(false); // Track manual input to prevent slider override
+  const [showSlippageSettings, setShowSlippageSettings] = useState(false);
+  const [slippagePct, setSlippagePct] = useState<number>(DEFAULT_SLIPPAGE_PCT);
+  const [customSlippageInput, setCustomSlippageInput] = useState<string>(DEFAULT_SLIPPAGE_PCT.toString());
 
   // Get total unified balance (UA aggregates across all chains)
   const totalBalance = primaryAssets?.totalAmountInUSD || 0;
   
   const amountNum = parseFloat(amount) || 0;
   const amountUsd = amountNum;
+  const slippageBps = Math.round(slippagePct * 100);
+  const slippageLabel = Number(slippagePct.toFixed(2)).toString();
+
+  const applySlippagePct = useCallback((nextValue: number) => {
+    const safe = clampSlippagePct(nextValue);
+    setSlippagePct(safe);
+    setCustomSlippageInput(Number(safe.toFixed(2)).toString());
+    try {
+      window.localStorage.setItem(SLIPPAGE_STORAGE_KEY, safe.toString());
+    } catch {
+      // no-op (private mode or blocked storage)
+    }
+  }, []);
 
   // Calculate output amount based on target token price
   const outputAmount = targetToken?.price ? amountUsd / targetToken.price : 0;
@@ -121,6 +148,22 @@ export const SwapModal = ({
       setTxResult(null);
       setDirection("buy"); // Default to buy mode
       setIsTyping(false); // Reset typing state
+      setShowSlippageSettings(false);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    try {
+      const raw = window.localStorage.getItem(SLIPPAGE_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed)) return;
+      const safe = clampSlippagePct(parsed);
+      setSlippagePct(safe);
+      setCustomSlippageInput(Number(safe.toFixed(2)).toString());
+    } catch {
+      // no-op (private mode or blocked storage)
     }
   }, [isOpen]);
 
@@ -136,6 +179,7 @@ export const SwapModal = ({
   }, [primaryAssets, targetToken]);
 
   const tokenBalance = getTokenBalance();
+  const sellPreviewAmount = tokenBalance * sliderValue / 100 * (targetToken?.price || 0) * Math.max(0, 1 - slippagePct / 100);
 
   // Update amount based on slider - ONLY when user drags slider, not when typing
   useEffect(() => {
@@ -324,7 +368,7 @@ export const SwapModal = ({
           toTokenAddress: address,
           toTokenChainId: targetChainId,
           amountUsd: amountUsd,
-          slippageBps: 100,
+          slippageBps,
         });
       } else {
         // SELL: Token → USD
@@ -346,7 +390,7 @@ export const SwapModal = ({
           tokenAddress: address,
           tokenChainId: targetChainId,
           amountRaw: amountRaw,
-          slippagePct: 5,
+          slippagePct,
         });
       }
 
@@ -454,10 +498,61 @@ export const SwapModal = ({
             <span className="text-lg">✕</span>
           </button>
           <span className="text-white font-bold text-lg">Swap</span>
-          <button className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center">
+          <button
+            onClick={() => setShowSlippageSettings((prev) => !prev)}
+            className={`w-10 h-10 rounded-full flex items-center justify-center ${
+              showSlippageSettings ? "bg-accent-dynamic/30 border border-accent-dynamic/50" : "bg-gray-800"
+            }`}
+            title="Swap settings"
+          >
             <span className="text-sm">⚙️</span>
           </button>
         </div>
+
+        {!txResult && showSlippageSettings && (
+          <div className="px-5 pb-3">
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-white font-medium">Slippage tolerance</span>
+                <span className="text-accent-dynamic text-sm">{slippageLabel}%</span>
+              </div>
+              <div className="grid grid-cols-5 gap-2 mb-3">
+                {PRESET_SLIPPAGE_PCTS.map((preset) => (
+                  <button
+                    key={preset}
+                    onClick={() => applySlippagePct(preset)}
+                    className={`rounded-lg py-1.5 text-xs ${
+                      Math.abs(slippagePct - preset) < 0.001
+                        ? "bg-accent-dynamic text-white"
+                        : "bg-white/10 text-gray-300"
+                    }`}
+                  >
+                    {preset}%
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={MIN_SLIPPAGE_PCT}
+                  max={MAX_SLIPPAGE_PCT}
+                  step="0.1"
+                  value={customSlippageInput}
+                  onChange={(e) => setCustomSlippageInput(e.target.value)}
+                  onBlur={() => applySlippagePct(Number(customSlippageInput))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") applySlippagePct(Number(customSlippageInput));
+                  }}
+                  className="w-24 rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-white outline-none"
+                />
+                <span className="text-gray-400 text-sm">% (0.1 - 10)</span>
+              </div>
+              <p className="text-[11px] text-gray-500 mt-2">
+                Applied to Li.Fi quotes for both buy and sell swaps.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Success/Pending State */}
         {txResult && (
@@ -625,7 +720,7 @@ export const SwapModal = ({
                         <img src={USDC_LOGO} alt="USDC" className="w-10 h-10 rounded-full" />
                         <div className="flex items-center gap-1">
                           <span className="text-gray-400 text-2xl">$</span>
-                          <span className="text-white text-3xl font-bold">{(tokenBalance * sliderValue / 100 * (targetToken?.price || 0) * 0.995).toFixed(2)}</span>
+                          <span className="text-white text-3xl font-bold">{sellPreviewAmount.toFixed(2)}</span>
                         </div>
                       </>
                     )}
@@ -647,6 +742,7 @@ export const SwapModal = ({
                     : `1 ${targetToken?.symbol} ≈ $${(targetToken?.price || 0).toFixed(6)}`
                   }
                 </span>
+                <div className="text-[11px] text-gray-500 mt-1">Max slippage: {slippageLabel}%</div>
               </div>
 
               {/* Slider */}
@@ -696,9 +792,10 @@ export const SwapModal = ({
                   <span className="text-accent-dynamic">⛽</span>
                   <span className="text-white font-medium">Fast</span>
                 </div>
-                <span className="text-gray-400 text-sm">
-                  Gas: &lt;$0.01
-                </span>
+                <div className="text-right">
+                  <div className="text-gray-400 text-sm">Gas: &lt;$0.01</div>
+                  <div className="text-gray-500 text-xs">Slippage: {slippageLabel}%</div>
+                </div>
               </div>
               
               <button

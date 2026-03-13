@@ -45,6 +45,9 @@ const USDC_ADDRESSES: Record<number, string> = {
 // Native ETH placeholder
 const NATIVE_ETH = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 
+const MIN_SLIPPAGE_BPS = 1; // 0.01%
+const MAX_SLIPPAGE_BPS = 5000; // 50%
+
 // Chain explorer URLs
 const CHAIN_EXPLORERS: Record<number, string> = {
   1: "https://etherscan.io",
@@ -310,6 +313,12 @@ interface SellParams {
   slippagePct?: number;
 }
 
+function normalizeSlippageBps(value?: number, fallback: number = 100): number {
+  if (!Number.isFinite(value)) return fallback;
+  const rounded = Math.round(value as number);
+  return Math.max(MIN_SLIPPAGE_BPS, Math.min(MAX_SLIPPAGE_BPS, rounded));
+}
+
 // ============ LI.FI API FUNCTIONS ============
 
 /**
@@ -326,7 +335,8 @@ export async function getLifiSwapQuote(
   slippageBps: number = 100
 ): Promise<SwapQuote> {
   try {
-    const slippage = slippageBps / 10000;
+    const safeSlippageBps = normalizeSlippageBps(slippageBps, 100);
+    const slippage = safeSlippageBps / 10000;
     
     const url = new URL(`${LIFI_API_BASE}/quote`);
     url.searchParams.set("fromChain", String(fromChainId));
@@ -642,6 +652,7 @@ export async function prepareRelaySwap(
  */
 export async function executeSwap(params: SwapParams): Promise<SwapResult> {
   const { ua, fromToken, toTokenAddress, toTokenChainId, amountUsd, slippageBps = 100 } = params;
+  const safeSlippageBps = normalizeSlippageBps(slippageBps, 100);
 
   console.log("[Swap] Starting swap:", { fromToken, toTokenAddress, toTokenChainId, amountUsd });
 
@@ -683,7 +694,7 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
         RELAY_CHAIN_IDS.BASE, // Source from Base
         toTokenAddress,
         usdcAmount,
-        slippageBps
+        safeSlippageBps
       );
 
       if (!relayResult.success || !relayResult.transactions) {
@@ -750,7 +761,7 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
           sellToken,
           toTokenAddress,
           sellAmount,
-          slippageBps
+          safeSlippageBps
         );
       } catch (e) {
         console.error("[Swap] Li.Fi quote failed:", e);
@@ -872,6 +883,7 @@ export function getChainIdFromBlockchain(blockchain: string): number {
  */
 export async function executeSell(params: SellParams): Promise<SwapResult> {
   const { ua, tokenAddress, tokenChainId, amountRaw, slippagePct = 5 } = params;
+  const safeSlippageBps = normalizeSlippageBps(slippagePct * 100, 500);
 
   console.log("[Sell] Starting sell:", { tokenAddress, tokenChainId, amountRaw });
 
@@ -900,7 +912,7 @@ export async function executeSell(params: SellParams): Promise<SwapResult> {
       tokenAddress,        // Sell this token
       usdcAddress,         // Buy USDC
       amountRaw,           // Amount to sell
-      slippagePct * 100    // Convert to bps
+      safeSlippageBps
     );
 
     if (!quote.success || !quote.transaction) {
