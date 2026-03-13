@@ -318,7 +318,13 @@ export default function PolymarketModal({
 
       const minLiquidity = 10_000;
       const minVolume = 10_000;
+      const isTestMarket = (m: Market) => {
+        const q = (m.question || "").toLowerCase();
+        const s = (m.slug || "").toLowerCase();
+        return /test|testnet|sandbox/.test(q) || /test|testnet|sandbox/.test(s);
+      };
       const liquidTradable = tradable.filter((m) => {
+        if (isTestMarket(m)) return false;
         const liq = Number(m.liquidity || "0");
         const vol = Number(m.volume || "0");
         return Number.isFinite(liq) && Number.isFinite(vol) && liq >= minLiquidity && vol >= minVolume;
@@ -370,7 +376,15 @@ export default function PolymarketModal({
       const normalized = list.map(normalizeMarket).filter((m): m is Market => !!m);
       const minLiq = 10_000;
       const minVol = 10_000;
-      const liquid = normalized.filter((m) => Number(m.liquidity || "0") >= minLiq && Number(m.volume || "0") >= minVol);
+      const isTestMarket = (m: Market) => {
+        const q = (m.question || "").toLowerCase();
+        const s = (m.slug || "").toLowerCase();
+        return /test|testnet|sandbox/.test(q) || /test|testnet|sandbox/.test(s);
+      };
+      const liquid = normalized.filter((m) => {
+        if (isTestMarket(m)) return false;
+        return Number(m.liquidity || "0") >= minLiq && Number(m.volume || "0") >= minVol;
+      });
       setSearchResults(liquid.length > 0 ? liquid : normalized);
     } catch (err) {
       console.error("[Polymarket] Search failed, falling back to local filter:", err);

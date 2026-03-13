@@ -2254,15 +2254,19 @@ const PerpsModal = ({
   assets,
   universalAccount,
   blindSigningEnabled,
+  smartAccountAddress,
+  onSuccess,
 }: {
   isOpen: boolean;
   onClose: () => void;
   assets: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
   blindSigningEnabled: boolean;
+  smartAccountAddress?: string;
+  onSuccess?: () => void;
 }) => {
   const [primaryWallet] = useWallets();
-  const [view, setView] = useState<'markets' | 'trade' | 'deposit'>('markets');
+  const [view, setView] = useState<'markets' | 'trade' | 'deposit' | 'withdraw'>('markets');
   const [selectedMarket, setSelectedMarket] = useState(PERPS_MARKETS[0]);
   const [selectedPair, setSelectedPair] = useState(AVANTIS_PAIRS[0]);
   const [isLong, setIsLong] = useState(true);
@@ -2281,6 +2285,7 @@ const PerpsModal = ({
   const [depositStage, setDepositStage] = useState<'idle' | 'usdc' | 'gas'>('idle');
   const [depositAmount, setDepositAmount] = useState<string>('');
   const [gasTopUpAmount, setGasTopUpAmount] = useState('0.0007');
+  const [withdrawAmount, setWithdrawAmount] = useState<string>('');
   const [ownerEOA, setOwnerEOA] = useState<string>("");
   const [eoaUsdcBalance, setEoaUsdcBalance] = useState<number>(0);
   const [eoaEthBalance, setEoaEthBalance] = useState<number>(0);
@@ -3229,6 +3234,59 @@ const PerpsModal = ({
     }
   };
 
+  const handleWithdrawToUA = async () => {
+    if (!primaryWallet || !ownerEOA || !smartAccountAddress) {
+      setError('Connect wallet and ensure UA is ready');
+      return;
+    }
+    const amt = parseFloat(withdrawAmount.trim());
+    if (!Number.isFinite(amt) || amt <= 0 || amt > eoaUsdcBalance) {
+      setError('Enter a valid amount within your EOA balance');
+      return;
+    }
+    setIsLoading(true);
+    setError(null);
+    setLoadingStatus('Switching to Base...');
+    try {
+      const walletClient = primaryWallet.getWalletClient();
+      if (!walletClient) throw new Error('Wallet not connected');
+      try {
+        await walletClient.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x2105' }] });
+      } catch {
+        addDebug('Chain switch skipped (may already be on Base)');
+      }
+      setLoadingStatus('Sending USDC to UA...');
+      const amountWei = BigInt(Math.floor(amt * 1e6));
+      const transferData = encodeFunctionData({
+        abi: [{ name: 'transfer', type: 'function', inputs: [{ name: 'to', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ type: 'bool' }] }] as const,
+        functionName: 'transfer',
+        args: [smartAccountAddress as `0x${string}`, amountWei],
+      });
+      const txHash = await walletClient.request({
+        method: 'eth_sendTransaction',
+        params: [{
+          from: ownerEOA as `0x${string}`,
+          to: BASE_USDC_ADDRESS as `0x${string}`,
+          data: transferData,
+        }],
+      });
+      addDebug(`Withdraw tx: ${txHash}`);
+      setLoadingStatus('Confirming...');
+      await waitForBaseReceipt(txHash as string);
+      await refreshOwnerBalances();
+      setWithdrawAmount('');
+      setView('markets');
+      onSuccess?.();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Withdraw failed';
+      setError(msg);
+      addDebug(`Withdraw error: ${msg}`);
+    } finally {
+      setIsLoading(false);
+      setLoadingStatus('');
+    }
+  };
+
   const handleOpenPosition = async () => {
     if (!universalAccount || !collateral) {
       setError('Please enter collateral amount');
@@ -4038,12 +4096,20 @@ const PerpsModal = ({
                     <div className="text-2xl font-bold text-white">${eoaUsdcBalance.toFixed(2)}</div>
                   </div>
                 </div>
-                <button
-                  onClick={() => setView('deposit')}
-                  className="px-5 py-2.5 rounded-xl bg-accent-dynamic text-black font-bold text-sm"
-                >
-                  Deposit
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setView('deposit')}
+                    className="px-4 py-2.5 rounded-xl bg-accent-dynamic text-black font-bold text-sm"
+                  >
+                    Deposit
+                  </button>
+                  <button
+                    onClick={() => setView('withdraw')}
+                    className="px-4 py-2.5 rounded-xl bg-zinc-700 text-white font-bold text-sm hover:bg-zinc-600"
+                  >
+                    Withdraw
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -4415,6 +4481,39 @@ const PerpsModal = ({
                 </div>
               )}
             </div>
+          </div>
+        ) : view === 'withdraw' ? (
+          <div className="px-5 pb-8">
+            <div className="flex items-center gap-3 mb-3">
+              <button onClick={() => setView('markets')} className="w-9 h-9 rounded-full bg-gray-800 flex items-center justify-center">
+                <span className="text-white">←</span>
+              </button>
+              <h2 className="text-white text-xl font-bold">Withdraw</h2>
+            </div>
+            <p className="text-gray-400 text-sm mb-5">Transfer USDC from your EOA to your Universal Account.</p>
+            {error && (
+              <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-3 mb-4 text-red-300 text-sm">{error}</div>
+            )}
+            <div className="bg-[#252525] rounded-xl px-3 py-3 mb-5">
+              <div className="text-gray-400 text-xs uppercase tracking-wide mb-2">Withdraw Amount</div>
+              <div className="flex items-center gap-2">
+                <input type="number" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} placeholder="0.00" min="0" step="0.01" className="flex-1 bg-gray-800 rounded-lg px-3 py-2 text-white outline-none" />
+                <span className="text-sm text-gray-300">USDC</span>
+              </div>
+              <div className="text-[11px] text-gray-500 mt-2">EOA Balance: ${eoaUsdcBalance.toFixed(2)} USDC on Base</div>
+              <button type="button" onClick={() => setWithdrawAmount(eoaUsdcBalance.toString())} className="text-accent-dynamic text-xs mt-1">Max</button>
+            </div>
+            <div className="bg-[#252525] rounded-xl px-3 py-3 mb-5">
+              <div className="text-gray-400 text-xs uppercase tracking-wide mb-2">To (UA EVM)</div>
+              <div className="text-white text-sm font-mono break-all">{smartAccountAddress || "Not available"}</div>
+            </div>
+            <button
+              onClick={handleWithdrawToUA}
+              disabled={isLoading || !smartAccountAddress || !withdrawAmount || parseFloat(withdrawAmount) <= 0 || parseFloat(withdrawAmount) > eoaUsdcBalance}
+              className="w-full bg-accent-dynamic text-black font-bold py-4 rounded-2xl disabled:bg-gray-700 disabled:text-gray-400"
+            >
+              {isLoading ? (loadingStatus || "Withdrawing...") : "Withdraw to UA"}
+            </button>
           </div>
         ) : (
           /* ========== TRADE VIEW ========== */
@@ -7325,6 +7424,11 @@ const App = () => {
         assets={combinedAssets as IAssetsResponse | null}
         universalAccount={universalAccountInstance}
         blindSigningEnabled={profile.blindSigningEnabled}
+        smartAccountAddress={accountInfo?.evmSmartAccount}
+        onSuccess={() => {
+          fetchAssets();
+          fetchMobulaAssets();
+        }}
       />
 
       <PolymarketModal

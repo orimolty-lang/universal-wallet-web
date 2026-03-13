@@ -103,10 +103,17 @@ async function fetchMorphoVaults(): Promise<EarnMarket[]> {
       if (!chainId) continue;
       const asset = item.asset ?? {};
       const decimals = parseInt(String(asset.decimals ?? 6), 10);
-      const rawTvl = parseFloat(item.totalSupply ?? item.totalAssets ?? 0);
-      const tvlUsd = rawTvl / Math.pow(10, decimals); // assume ~$1 for USDC
+      const rawAssets = parseFloat(item.totalAssets ?? 0);
+      const rawSupply = parseFloat(item.totalSupply ?? 0);
+      const rawTvl = rawAssets > 0 ? rawAssets : rawSupply;
+      let tvlUsd = rawTvl / Math.pow(10, decimals);
+      if (tvlUsd > 1e12 || tvlUsd < 0) tvlUsd = 0;
       const apyRaw = parseFloat(item.avgNetApy ?? item.avgApy ?? 0);
       const apy = apyRaw <= 1 && apyRaw > 0 ? apyRaw * 100 : apyRaw;
+      const name = item.name || item.symbol || "";
+      const isGenericVault = !name || /^vault$/i.test(name) || /^v\d*$/i.test(name);
+      const hasData = apy > 0 || tvlUsd > 0;
+      if (isGenericVault && !hasData) continue;
       out.push({
         id: `morpho-${chainId}-${(item.address ?? "").toLowerCase()}`,
         protocol: "morpho",
@@ -114,7 +121,7 @@ async function fetchMorphoVaults(): Promise<EarnMarket[]> {
         chainName: item.chain?.network || chainNames[chainId] || `Chain ${chainId}`,
         uaChainId: chainIdToUa[chainId] ?? chainId,
         address: item.address ?? "",
-        name: item.name || item.symbol || "Vault",
+        name: name || item.symbol || "Vault",
         symbol: item.symbol || "vault",
         assetAddress: asset.address ?? "",
         assetSymbol: (asset.symbol || "USDC").toUpperCase(),
@@ -289,11 +296,11 @@ export function buildAaveSupplyTx(
 
 export { EARN_CHAINS };
 
-/** Format TVL for display (e.g. $1.2M, $450K). */
+/** Format TVL for display (e.g. $1.2M, $450K). Sanity-cap to avoid garbage like $39B. */
 export function formatTvl(usd: number): string {
-  if (usd >= 1e9) return `$${(usd / 1e9).toFixed(1)}B`;
-  if (usd >= 1e6) return `$${(usd / 1e6).toFixed(1)}M`;
-  if (usd >= 1e3) return `$${(usd / 1e3).toFixed(1)}K`;
-  if (usd > 0) return `$${usd.toFixed(0)}`;
-  return "—";
+  if (!Number.isFinite(usd) || usd <= 0 || usd > 1e12) return "—";
+  if (usd >= 1e9) return `$${(usd / 1e9).toFixed(2)}B`;
+  if (usd >= 1e6) return `$${(usd / 1e6).toFixed(2)}M`;
+  if (usd >= 1e3) return `$${(usd / 1e3).toFixed(2)}K`;
+  return `$${usd.toFixed(2)}`;
 }

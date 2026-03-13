@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { X, Loader2, TrendingUp } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { X, Loader2, TrendingUp, ChevronDown } from "lucide-react";
 import BottomSheet from "../../components/BottomSheet";
 import type { UniversalAccount } from "@particle-network/universal-account-sdk";
 import { CHAIN_ID, SUPPORTED_TOKEN_TYPE } from "@particle-network/universal-account-sdk";
@@ -199,10 +199,31 @@ export default function EarnModal({
   };
 
   const chainIds = Array.from(new Set(markets.map((m) => m.chainId))).sort((a, b) => a - b);
-  const chainNames: Record<number, string> = {
-    1: "Ethereum", 8453: "Base", 42161: "Arbitrum", 10: "Optimism",
-    137: "Polygon", 43114: "Avalanche", 56: "BNB",
+  const chainMeta: Record<number, { name: string; logo: string }> = {
+    1: { name: "Ethereum", logo: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png" },
+    8453: { name: "Base", logo: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/info/logo.png" },
+    42161: { name: "Arbitrum", logo: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png" },
+    10: { name: "Optimism", logo: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/optimism/info/logo.png" },
+    137: { name: "Polygon", logo: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png" },
+    43114: { name: "Avalanche", logo: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/avalanchec/info/logo.png" },
+    56: { name: "BNB", logo: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/binance/info/logo.png" },
   };
+  const protocolMeta: Record<string, { name: string; logo: string }> = {
+    morpho: { name: "Morpho", logo: "https://morpho.org/favicon.ico" },
+    aave: { name: "Aave", logo: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9/logo.png" },
+  };
+  const [chainDropdownOpen, setChainDropdownOpen] = useState(false);
+  const [protocolDropdownOpen, setProtocolDropdownOpen] = useState(false);
+  const chainDropdownRef = useRef<HTMLDivElement>(null);
+  const protocolDropdownRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const close = (e: MouseEvent) => {
+      if (!chainDropdownRef.current?.contains(e.target as Node)) setChainDropdownOpen(false);
+      if (!protocolDropdownRef.current?.contains(e.target as Node)) setProtocolDropdownOpen(false);
+    };
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, []);
 
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose}>
@@ -320,62 +341,83 @@ export default function EarnModal({
           </div>
         ) : (
             <>
-            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide mb-2">
-              <button
-                onClick={() => setChainFilter("all")}
-                className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm ${
-                  chainFilter === "all"
-                    ? "bg-accent-dynamic text-white"
-                    : "bg-zinc-800 text-gray-400"
-                }`}
-              >
-                All
-              </button>
-              {chainIds.map((cid) => (
-                <button
-                  key={cid}
-                  onClick={() => setChainFilter(cid)}
-                  className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm ${
-                    chainFilter === cid
-                      ? "bg-accent-dynamic text-white"
-                      : "bg-zinc-800 text-gray-400"
-                  }`}
-                >
-                  {chainNames[cid] || `Chain ${cid}`}
-                </button>
-              ))}
-            </div>
             <div className="flex gap-2 mb-3">
-              <button
-                onClick={() => setProtocolFilter("all")}
-                className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm ${
-                  protocolFilter === "all"
-                    ? "bg-accent-dynamic text-white"
-                    : "bg-zinc-800 text-gray-400"
-                }`}
-              >
-                All protocols
-              </button>
-              <button
-                onClick={() => setProtocolFilter("morpho")}
-                className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm ${
-                  protocolFilter === "morpho"
-                    ? "bg-accent-dynamic text-white"
-                    : "bg-zinc-800 text-gray-400"
-                }`}
-              >
-                Morpho
-              </button>
-              <button
-                onClick={() => setProtocolFilter("aave")}
-                className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm ${
-                  protocolFilter === "aave"
-                    ? "bg-accent-dynamic text-white"
-                    : "bg-zinc-800 text-gray-400"
-                }`}
-              >
-                Aave
-              </button>
+              <div className="relative flex-1" ref={chainDropdownRef}>
+                <button
+                  onClick={() => setChainDropdownOpen((o) => !o)}
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-left"
+                >
+                  {chainFilter === "all" ? (
+                    <span className="text-gray-300 text-sm">All chains</span>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <img src={chainMeta[chainFilter]?.logo} alt="" className="w-5 h-5 rounded-full" />
+                      <span className="text-white text-sm">{chainMeta[chainFilter]?.name || `Chain ${chainFilter}`}</span>
+                    </div>
+                  )}
+                  <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${chainDropdownOpen ? "rotate-180" : ""}`} />
+                </button>
+                {chainDropdownOpen && (
+                  <div className="absolute top-full left-0 right-0 mt-1 py-1 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl z-20 max-h-48 overflow-y-auto">
+                    <button
+                      onClick={() => { setChainFilter("all"); setChainDropdownOpen(false); }}
+                      className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-zinc-800 flex items-center gap-2"
+                    >
+                      All chains
+                    </button>
+                    {chainIds.map((cid) => (
+                      <button
+                        key={cid}
+                        onClick={() => { setChainFilter(cid); setChainDropdownOpen(false); }}
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-800 flex items-center gap-2"
+                      >
+                        <img src={chainMeta[cid]?.logo} alt="" className="w-5 h-5 rounded-full" />
+                        <span className="text-white">{chainMeta[cid]?.name || `Chain ${cid}`}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="relative flex-1" ref={protocolDropdownRef}>
+                <button
+                  onClick={() => setProtocolDropdownOpen((o) => !o)}
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-left"
+                >
+                  {protocolFilter === "all" ? (
+                    <span className="text-gray-300 text-sm">All protocols</span>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <img src={protocolMeta[protocolFilter]?.logo} alt="" className="w-5 h-5 rounded" />
+                      <span className="text-white text-sm">{protocolMeta[protocolFilter]?.name}</span>
+                    </div>
+                  )}
+                  <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${protocolDropdownOpen ? "rotate-180" : ""}`} />
+                </button>
+                {protocolDropdownOpen && (
+                  <div className="absolute top-full left-0 right-0 mt-1 py-1 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl z-20">
+                    <button
+                      onClick={() => { setProtocolFilter("all"); setProtocolDropdownOpen(false); }}
+                      className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-zinc-800"
+                    >
+                      All protocols
+                    </button>
+                    <button
+                      onClick={() => { setProtocolFilter("morpho"); setProtocolDropdownOpen(false); }}
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-800 flex items-center gap-2"
+                    >
+                      <img src={protocolMeta.morpho.logo} alt="" className="w-5 h-5 rounded" />
+                      <span className="text-white">Morpho</span>
+                    </button>
+                    <button
+                      onClick={() => { setProtocolFilter("aave"); setProtocolDropdownOpen(false); }}
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-800 flex items-center gap-2"
+                    >
+                      <img src={protocolMeta.aave.logo} alt="" className="w-5 h-5 rounded" />
+                      <span className="text-white">Aave</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             {isLoadingMarkets ? (
