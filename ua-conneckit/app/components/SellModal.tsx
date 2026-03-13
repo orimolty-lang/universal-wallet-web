@@ -25,7 +25,7 @@ interface SellModalProps {
 
 const formatTokenAmount = (amount: number): string => {
   if (amount === 0) return "0";
-  if (amount < 0.000001) return amount.toExponential(2);
+  if (amount < 0.000001) return amount.toFixed(10).replace(/\.?0+$/, "");
   if (amount < 1) return amount.toFixed(6);
   if (amount < 1000) return amount.toFixed(4);
   return amount.toLocaleString(undefined, { maximumFractionDigits: 2 });

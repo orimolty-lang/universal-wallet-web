@@ -319,6 +319,13 @@ function normalizeSlippageBps(value?: number, fallback: number = 100): number {
   return Math.max(MIN_SLIPPAGE_BPS, Math.min(MAX_SLIPPAGE_BPS, rounded));
 }
 
+/** Normalize slippage percent (0.1-10) to bps for Li.Fi/Relay. Clamps invalid values. */
+function normalizeSlippagePct(value?: number, fallbackPct: number = 1): number {
+  if (!Number.isFinite(value)) return normalizeSlippageBps(fallbackPct * 100, 100);
+  const clamped = Math.max(0.1, Math.min(10, Number((value as number).toFixed(2))));
+  return normalizeSlippageBps(Math.round(clamped * 100), 100);
+}
+
 // ============ LI.FI API FUNCTIONS ============
 
 /**
@@ -882,8 +889,8 @@ export function getChainIdFromBlockchain(blockchain: string): number {
  * Same mechanism as buying, just reversed direction
  */
 export async function executeSell(params: SellParams): Promise<SwapResult> {
-  const { ua, tokenAddress, tokenChainId, amountRaw, slippagePct = 5 } = params;
-  const safeSlippageBps = normalizeSlippageBps(slippagePct * 100, 500);
+  const { ua, tokenAddress, tokenChainId, amountRaw, slippagePct = 1 } = params;
+  const safeSlippageBps = normalizeSlippagePct(slippagePct, 1);
 
   console.log("[Sell] Starting sell:", { tokenAddress, tokenChainId, amountRaw });
 

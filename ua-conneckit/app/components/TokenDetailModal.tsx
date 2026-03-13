@@ -85,23 +85,6 @@ const CHAIN_LOGOS: Record<string, string> = {
   "avalanche": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/avalanchec/info/logo.png",
 };
 
-// Chain badge component
-const ChainBadge = ({ blockchain }: { blockchain: string }) => {
-  const logo = CHAIN_LOGOS[blockchain.toLowerCase()];
-  const shortNames: Record<string, string> = {
-    ethereum: "ETH", base: "Base", arbitrum: "ARB", optimism: "OP",
-    polygon: "MATIC", bsc: "BSC", bnb: "BSC", solana: "SOL", avalanche: "AVAX",
-  };
-  const shortName = shortNames[blockchain.toLowerCase()] || blockchain;
-  
-  return (
-    <div className="flex items-center gap-1 bg-gray-800/80 rounded-full px-2 py-0.5">
-      {logo && <img src={logo} alt={blockchain} className="w-3.5 h-3.5 rounded-full" />}
-      <span className="text-gray-300 text-xs">{shortName}</span>
-    </div>
-  );
-};
-
 // Map blockchain names to DEXScreener/GeckoTerminal network slugs
 const NETWORK_SLUGS: Record<string, { dexscreener: string; geckoterminal: string }> = {
   "ethereum": { dexscreener: "ethereum", geckoterminal: "eth" },
@@ -140,8 +123,9 @@ const EmbeddedChart = ({
 }) => {
   const [loading, setLoading] = useState(true);
   
-  // Get network slug for GeckoTerminal
-  const networkSlug = blockchain ? NETWORK_SLUGS[blockchain.toLowerCase()] : null;
+  // Get network slug for GeckoTerminal (use normalized chain for BNB/BSC/ETH aliases)
+  const normalized = blockchain ? normalizeBlockchain(blockchain) : "";
+  const networkSlug = normalized ? NETWORK_SLUGS[normalized] : null;
   
   if (!tokenAddress || !networkSlug) {
     return (
@@ -366,28 +350,21 @@ export const TokenDetailModal = ({
                   {token.symbol.slice(0, 2)}
                 </div>
               )}
-              {/* Single chain badge on logo */}
-              {token.contracts && token.contracts.length > 0 && (
-                <img 
-                  src={CHAIN_LOGOS[token.contracts[0].blockchain.toLowerCase()]}
-                  alt=""
-                  className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[#0d1b2a]"
-                />
-              )}
+              {/* Single chain badge on logo only - no duplicate badges next to name */}
+              {token.contracts && token.contracts.length > 0 && (() => {
+                const normalized = normalizeBlockchain(token.contracts[0].blockchain);
+                const logoUrl = normalized ? CHAIN_LOGOS[normalized] : CHAIN_LOGOS[token.contracts[0].blockchain.toLowerCase()];
+                return logoUrl ? (
+                  <img 
+                    src={logoUrl}
+                    alt=""
+                    className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[#0d1b2a]"
+                  />
+                ) : null;
+              })()}
             </div>
             <div>
               <span className="text-accent-dynamic font-medium text-lg">{token.name}</span>
-              {/* Chain badges */}
-              {token.contracts && token.contracts.length > 0 && (
-                <div className="flex gap-1 mt-1">
-                  {token.contracts.slice(0, 3).map((c, i) => (
-                    <ChainBadge key={i} blockchain={c.blockchain} />
-                  ))}
-                  {token.contracts.length > 3 && (
-                    <span className="text-gray-500 text-xs">+{token.contracts.length - 3}</span>
-                  )}
-                </div>
-              )}
             </div>
           </div>
 

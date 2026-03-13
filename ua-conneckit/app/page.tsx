@@ -1111,12 +1111,12 @@ const SendModal = ({
         </p>
 
         {/* Token Selection */}
-        <div className="mb-3 bg-[#252525] rounded-xl p-3 border border-white/10">
+        <div className="mb-3 bg-zinc-900 rounded-xl p-3 border border-zinc-800">
           <label className="text-gray-400 text-sm mb-2 block">Token</label>
           <select
             value={selectedToken || ""}
             onChange={(e) => setSelectedToken(e.target.value)}
-            className="w-full bg-black/30 rounded-xl px-3 py-2 text-white outline-none border border-white/10"
+            className="w-full bg-zinc-950 rounded-xl px-3 py-2 text-white outline-none border border-zinc-800"
           >
             <option value="">Select a token</option>
             {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
@@ -1127,30 +1127,30 @@ const SendModal = ({
         </div>
 
         {/* Recipient */}
-        <div className="mb-3 bg-[#252525] rounded-xl p-3 border border-white/10">
+        <div className="mb-3 bg-zinc-900 rounded-xl p-3 border border-zinc-800">
           <label className="text-gray-400 text-sm mb-2 block">Recipient Address</label>
           <input
             type="text"
             value={recipient}
             onChange={(e) => setRecipient(e.target.value)}
             placeholder="0x... or .eth"
-            className="w-full bg-black/30 rounded-xl px-3 py-2 text-white outline-none border border-white/10"
+            className="w-full bg-zinc-950 rounded-xl px-3 py-2 text-white outline-none border border-zinc-800"
           />
         </div>
 
         {/* Amount */}
-        <div className="mb-6 bg-[#252525] rounded-xl p-3 border border-white/10">
+        <div className="mb-6 bg-zinc-900 rounded-xl p-3 border border-zinc-800">
           <label className="text-gray-400 text-sm mb-2 block">Amount</label>
           <input
             type="number"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder="0.00"
-            className="w-full bg-black/30 rounded-xl px-3 py-2 text-white outline-none border border-white/10"
+            className="w-full bg-zinc-950 rounded-xl px-3 py-2 text-white outline-none border border-zinc-800"
           />
         </div>
 
-        <button className="w-full bg-accent-dynamic text-white font-bold py-4 rounded-full">
+        <button className="w-full bg-accent-dynamic text-white font-bold py-4 rounded-full hover:opacity-90 transition-opacity">
           Review Send
         </button>
       </div>
@@ -1558,7 +1558,7 @@ const ConvertModal = ({
         )}
 
         {/* From Section - Compact */}
-        <div className="bg-[#252525] rounded-xl p-3 mb-1 border border-white/10">
+        <div className="bg-zinc-900 rounded-xl p-3 mb-1 border border-zinc-800">
           <div className="text-gray-400 text-xs mb-1">From</div>
           
           <div className="flex gap-2 mb-1">
@@ -1566,7 +1566,7 @@ const ConvertModal = ({
             <div className="flex-1 relative">
               <button
                 onClick={() => { setFromAssetOpen(!fromAssetOpen); setFromChainOpen(false); }}
-                className="w-full bg-black/30 rounded-lg px-2 py-1.5 text-white text-left flex items-center justify-between border border-white/10"
+                className="w-full bg-zinc-950 rounded-lg px-2 py-1.5 text-white text-left flex items-center justify-between border border-zinc-800"
               >
                 <div className="flex items-center gap-2">
                   {fromAsset ? (
@@ -1581,7 +1581,7 @@ const ConvertModal = ({
                 <span className="text-gray-400 text-xs">▼</span>
               </button>
               {fromAssetOpen && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-[#1d1d1d] rounded-xl border border-white/10 overflow-hidden z-20 max-h-40 overflow-y-auto">
+                <div className="absolute top-full left-0 right-0 mt-1 bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden z-20 max-h-40 overflow-y-auto">
                   {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                   {uaAssets.map((a: any, i: number) => (
                     <button
@@ -1602,7 +1602,7 @@ const ConvertModal = ({
             <div className="w-28 relative">
               <button
                 onClick={() => { if (fromAsset) { setFromChainOpen(!fromChainOpen); setFromAssetOpen(false); }}}
-                className={`w-full bg-black/30 rounded-lg px-2 py-1.5 text-left flex items-center justify-between border border-white/10 ${!fromAsset ? 'opacity-50' : ''}`}
+                className={`w-full bg-zinc-950 rounded-lg px-2 py-1.5 text-left flex items-center justify-between border border-zinc-800 ${!fromAsset ? 'opacity-50' : ''}`}
                 disabled={!fromAsset}
               >
                 <div className="flex items-center gap-1">
@@ -1618,7 +1618,7 @@ const ConvertModal = ({
                 <span className="text-gray-400 text-[10px]">▼</span>
               </button>
               {fromChainOpen && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-[#1d1d1d] rounded-xl border border-white/10 overflow-hidden z-20 max-h-40 overflow-y-auto">
+                <div className="absolute top-full left-0 right-0 mt-1 bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden z-20 max-h-40 overflow-y-auto">
                   {fromChains.map((c: { chainId: number; balance: number; balanceUSD: number }) => (
                     <button
                       key={c.chainId}
@@ -1637,17 +1637,17 @@ const ConvertModal = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
             <input
               type="number"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0.00"
-              className="flex-1 bg-black/30 rounded-lg px-2 py-1.5 text-white outline-none border border-white/10"
+              className="flex-1 bg-zinc-950 rounded-lg px-2 py-1.5 text-white outline-none border border-zinc-800"
             />
             <button 
               onClick={handleMax}
-              className="bg-black/30 px-2 py-1.5 rounded-lg text-accent-dynamic text-xs hover:bg-black/40 border border-white/10"
+              className="bg-zinc-950 px-2 py-1.5 rounded-lg text-accent-dynamic text-xs hover:bg-zinc-800 border border-zinc-800"
             >
               MAX
             </button>
@@ -1659,13 +1659,13 @@ const ConvertModal = ({
 
         {/* Swap Arrow */}
         <div className="flex justify-center -my-1 relative z-10">
-          <div className="w-8 h-8 rounded-full bg-[#1a1a1a] border-2 border-[#0a0a0a] flex items-center justify-center text-gray-400">
+          <div className="w-8 h-8 rounded-full bg-zinc-900 border-2 border-[#0a0a0a] flex items-center justify-center text-gray-400">
             ↓
           </div>
         </div>
 
         {/* To Section - Compact */}
-        <div className="bg-[#252525] rounded-xl p-3 mb-2 border border-white/10">
+        <div className="bg-zinc-900 rounded-xl p-3 mb-2 border border-zinc-800">
           <div className="text-gray-400 text-xs mb-1">To</div>
           
           <div className="flex gap-2">
@@ -1673,7 +1673,7 @@ const ConvertModal = ({
             <div className="flex-1 relative">
               <button
                 onClick={() => { setToAssetOpen(!toAssetOpen); setToChainOpen(false); }}
-                className="w-full bg-black/30 rounded-lg px-2 py-1.5 text-white text-left flex items-center justify-between border border-white/10"
+                className="w-full bg-zinc-950 rounded-lg px-2 py-1.5 text-white text-left flex items-center justify-between border border-zinc-800"
               >
                 <div className="flex items-center gap-2">
                   {toAsset ? (
@@ -1688,7 +1688,7 @@ const ConvertModal = ({
                 <span className="text-gray-400 text-xs">▼</span>
               </button>
               {toAssetOpen && (
-                <div className="absolute bottom-full left-0 right-0 mb-1 bg-[#1d1d1d] rounded-xl border border-white/10 overflow-hidden z-20 max-h-40 overflow-y-auto">
+                <div className="absolute bottom-full left-0 right-0 mb-1 bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden z-20 max-h-40 overflow-y-auto">
                   {UA_PRIMARY_ASSETS.map((a) => (
                     <button
                       key={a.symbol}
@@ -1707,7 +1707,7 @@ const ConvertModal = ({
             <div className="w-28 relative">
               <button
                 onClick={() => { if (toAsset) { setToChainOpen(!toChainOpen); setToAssetOpen(false); }}}
-                className={`w-full bg-black/30 rounded-lg px-2 py-1.5 text-left flex items-center justify-between border border-white/10 ${!toAsset ? 'opacity-50' : ''}`}
+                className={`w-full bg-zinc-950 rounded-lg px-2 py-1.5 text-left flex items-center justify-between border border-zinc-800 ${!toAsset ? 'opacity-50' : ''}`}
                 disabled={!toAsset}
               >
                 <div className="flex items-center gap-1">
@@ -1723,7 +1723,7 @@ const ConvertModal = ({
                 <span className="text-gray-400 text-[10px]">▼</span>
               </button>
               {toChainOpen && (
-                <div className="absolute bottom-full left-0 right-0 mb-1 bg-[#1d1d1d] rounded-xl border border-white/10 overflow-hidden z-20 max-h-40 overflow-y-auto">
+                <div className="absolute bottom-full left-0 right-0 mb-1 bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden z-20 max-h-40 overflow-y-auto">
                   {toChains.map((chainId: number) => (
                     <button
                       key={chainId}
@@ -1741,7 +1741,7 @@ const ConvertModal = ({
           
           {/* Estimated Output Box */}
           {estimatedOutput && (
-            <div className="mt-3 bg-[#0a0a0a] rounded-xl p-3 border border-white/10">
+            <div className="mt-3 bg-zinc-950 rounded-xl p-3 border border-zinc-800">
               <div className="flex items-center justify-between">
                 <span className="text-gray-400 text-xs">Est. Receive</span>
                 <span className="text-white font-medium">{estimatedOutput}</span>
@@ -5210,10 +5210,10 @@ const HomeTab = ({
       <div className="px-4 mt-3 mb-24">
         <button 
           onClick={onPolymarket}
-          className="w-full flex items-center justify-between p-4 bg-gray-900 rounded-2xl border border-gray-800 hover:border-purple-500/50 transition-colors"
+          className="w-full flex items-center justify-between p-4 bg-gray-900 rounded-2xl border border-gray-800 hover:border-accent-dynamic/50 transition-colors"
         >
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-purple-500/20 flex items-center justify-center">
+            <div className="w-12 h-12 rounded-xl bg-accent-dynamic-20 flex items-center justify-center">
               <span className="text-2xl">🔮</span>
             </div>
             <div className="text-left">

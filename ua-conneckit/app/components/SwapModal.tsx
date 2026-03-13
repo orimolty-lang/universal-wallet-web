@@ -48,7 +48,7 @@ const PRESET_SLIPPAGE_PCTS = [0.5, 1, 2, 3, 5];
 // Helper functions
 const formatTokenAmount = (amount: number, decimals: number = 6): string => {
   if (amount === 0) return "0";
-  if (amount < 0.000001) return amount.toExponential(2);
+  if (amount < 0.000001) return amount.toFixed(10).replace(/\.?0+$/, "");
   if (amount < 1) return amount.toFixed(Math.min(decimals, 6));
   if (amount < 1000) return amount.toFixed(4);
   if (amount < 1000000) return amount.toLocaleString(undefined, { maximumFractionDigits: 2 });

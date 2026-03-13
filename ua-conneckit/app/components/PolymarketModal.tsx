@@ -1062,7 +1062,7 @@ export default function PolymarketModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="bg-[#0a0a0a] rounded-3xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col border border-white/10">
+      <div className="bg-[#0a0a0a] rounded-3xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col border border-zinc-800">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10">
           <div className="flex items-center gap-2">
@@ -1089,7 +1089,7 @@ export default function PolymarketModal({
                     setSearchQuery(e.target.value);
                     searchMarkets(e.target.value);
                   }}
-                  className="w-full pl-10 pr-4 py-2 bg-[#252525] border border-white/10 rounded-lg text-white placeholder-gray-400"
+                  className="w-full pl-10 pr-4 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-white placeholder-gray-400"
                 />
               </div>
 
@@ -1103,7 +1103,7 @@ export default function PolymarketModal({
               </div>
 
               {showDebug && (
-                <div className="bg-[#161616] border border-white/10 rounded-lg p-3 text-xs text-gray-300 space-y-1">
+                <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-xs text-gray-300 space-y-1">
                   <div className="font-bold text-accent-dynamic mb-1">Markets Debug:</div>
                   <div>endpoint: {debugInfo.endpoint || 'n/a'}</div>
                   <div>rawCount: {debugInfo.rawCount ?? 0}</div>
@@ -1153,7 +1153,7 @@ export default function PolymarketModal({
                     <button
                       key={market.id}
                       onClick={() => setSelectedMarket(market)}
-                      className="w-full p-4 bg-[#252525] hover:bg-[#2f2f2f] rounded-lg text-left transition-colors border border-white/5 hover:border-accent-dynamic/40"
+                      className="w-full p-4 bg-zinc-900 hover:bg-zinc-800 rounded-lg text-left transition-colors border border-zinc-800 hover:border-accent-dynamic/40"
                     >
                       <div className="flex items-start gap-3">
                         {market.image && (
@@ -1201,7 +1201,7 @@ export default function PolymarketModal({
               </button>
 
               {/* Selected market */}
-              <div className="bg-[#252525] rounded-lg p-4 border border-white/10">
+              <div className="bg-zinc-900 rounded-lg p-4 border border-zinc-800">
                 <h3 className="text-white font-medium mb-2">{selectedMarket.question}</h3>
                 {selectedMarket.description && (
                   <p className="text-sm text-gray-400 mb-4">{selectedMarket.description}</p>
@@ -1238,7 +1238,7 @@ export default function PolymarketModal({
 
                 {/* Safe Wallet Info */}
                 {proxyWalletAddress && (
-                  <div className="mb-4 bg-[#161616] rounded-lg p-3 border border-accent-dynamic/40">
+                  <div className="mb-4 bg-zinc-900 rounded-lg p-3 border border-accent-dynamic/40">
                     <div className="text-xs text-blue-400 mb-1">🛡️ Safe Wallet (Polygon)</div>
                     <div className="flex items-center gap-2">
                       <code className="text-xs text-white bg-black/30 px-2 py-1 rounded flex-1 overflow-hidden text-ellipsis">
@@ -1269,7 +1269,7 @@ export default function PolymarketModal({
                     <div className="text-xs font-bold text-yellow-300">🧪 Live Debug Monitor</div>
                       <button
                       onClick={() => setShowDebug(!showDebug)}
-                        className="text-[10px] px-2 py-1 rounded bg-[#252525] text-gray-300 hover:text-white"
+                        className="text-[10px] px-2 py-1 rounded bg-zinc-900 text-gray-300 hover:text-white"
                     >
                       {showDebug ? 'Collapse' : 'Expand'}
                     </button>
@@ -1300,7 +1300,7 @@ export default function PolymarketModal({
                 </div>
 
                 {/* Portfolio */}
-                <div className="mb-4 bg-[#161616] rounded-lg p-3 border border-white/10">
+                <div className="mb-4 bg-zinc-900 rounded-lg p-3 border border-zinc-800">
                   <div className="text-xs text-gray-400">Available to trade (USDC.e)</div>
                   <div className="text-white font-semibold">{formatUnits6(availableBalance)}</div>
                 </div>
@@ -1313,13 +1313,13 @@ export default function PolymarketModal({
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
                     placeholder="10.00"
-                    className="w-full px-4 py-2 bg-[#161616] border border-white/10 rounded-lg text-white"
+                    className="w-full px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-white"
                   />
                 </div>
 
                 {/* Potential winnings */}
                 {amount && selectedMarket.outcomePrices?.[selectedOutcome] && (
-                  <div className="bg-[#161616] rounded-lg p-3 mb-4 border border-white/10">
+                  <div className="bg-zinc-900 rounded-lg p-3 mb-4 border border-zinc-800">
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-400">Potential return</span>
                       <span className="text-green-400 font-medium">
@@ -1338,14 +1338,14 @@ export default function PolymarketModal({
 
               {/* Active positions */}
               {selectedMarket.tokens?.length ? (
-                <div className="bg-[#161616] rounded-lg p-3 border border-white/10">
+                <div className="bg-zinc-900 rounded-lg p-3 border border-zinc-800">
                   <div className="text-sm text-gray-300 mb-2">Active positions</div>
                   <div className="space-y-2">
                     {selectedMarket.tokens.map((t) => {
                       const raw = positionBalances[t.token_id] || "0";
                       const qty = Number(raw) / 1_000_000;
                       return (
-                        <div key={t.token_id} className="flex items-center justify-between bg-[#252525] rounded px-3 py-2 border border-white/5">
+                        <div key={t.token_id} className="flex items-center justify-between bg-zinc-900 rounded px-3 py-2 border border-zinc-800">
                           <div>
                             <div className="text-white text-sm">{t.outcome}</div>
                             <div className="text-xs text-gray-400">{qty.toFixed(4)} shares</div>
