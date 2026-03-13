@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { X, TrendingUp, TrendingDown, Loader2, ExternalLink, Search, RotateCw } from "lucide-react";
 import BottomSheet from "../../components/BottomSheet";
 import type { UniversalAccount } from "@particle-network/universal-account-sdk";
@@ -146,10 +146,10 @@ export default function PolymarketModal({
 }: PolymarketModalProps) {
   const [primaryWallet] = useWallets();
   const { address } = useAccount();
-  const [markets, setMarkets] = useState<Market[]>([]);
   const [selectedMarket, setSelectedMarket] = useState<Market | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [allMarkets, setAllMarkets] = useState<Market[]>([]);
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [selectedOutcome, setSelectedOutcome] = useState<number>(0);
   const [amount, setAmount] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -325,32 +325,57 @@ export default function PolymarketModal({
 
       console.log("[Polymarket] Loaded markets:", finalMarkets.length, "(liquid:", liquidTradable.length, ", tradable:", tradable.length, ")");
       setAllMarkets(finalMarkets);
-      setMarkets(finalMarkets);
     } catch (err) {
       console.error("[Polymarket] Failed to fetch markets:", err);
       const msg = err instanceof Error ? err.message : "Unknown error";
       setError("Failed to load markets");
       setDebugInfo({ error: msg });
       setAllMarkets([]);
-      setMarkets([]);
     } finally {
       setIsLoadingMarkets(false);
     }
   }, []);
 
-  // Search markets (client-side filter for reliability)
-  const searchMarkets = useCallback((query: string) => {
-    const q = query.trim().toLowerCase();
-    if (!q) {
-      setMarkets(allMarkets);
-      return;
+  // Infer category from market question/slug
+  const inferCategory = useCallback((m: Market): string => {
+    const q = ((m.question || "") + " " + (m.slug || "")).toLowerCase();
+    if (/bitcoin|btc|ethereum|eth|solana|sol|crypto|defi|nft/.test(q)) return "crypto";
+    if (/trump|biden|election|vote|congress|senate|political|politic/.test(q)) return "politics";
+    if (/fed|rate|inflation|gdp|stock|market|finance|treasury/.test(q)) return "finance";
+    if (/war|ukraine|russia|china|geopolitic|nato/.test(q)) return "geopolitics";
+    if (/super bowl|nfl|nba|mlb|soccer|world cup|sport/.test(q)) return "sports";
+    return "other";
+  }, []);
+
+  // Filter markets by category and search
+  const filteredMarkets = useMemo(() => {
+    let list = allMarkets;
+    if (categoryFilter !== "all") {
+      list = list.filter((m) => inferCategory(m) === categoryFilter);
     }
-    const filtered = allMarkets.filter((m) =>
-      (m.question || "").toLowerCase().includes(q) ||
-      (m.slug || "").toLowerCase().includes(q)
-    );
-    setMarkets(filtered);
-  }, [allMarkets]);
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      list = list.filter((m) =>
+        (m.question || "").toLowerCase().includes(q) ||
+        (m.slug || "").toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [allMarkets, categoryFilter, searchQuery, inferCategory]);
+
+  const searchMarkets = useCallback((query: string) => {
+    setSearchQuery(query);
+  }, []);
+
+  const CATEGORIES = [
+    { id: "all", label: "All", icon: "◆" },
+    { id: "politics", label: "Politics", icon: "🗳" },
+    { id: "finance", label: "Finance", icon: "$" },
+    { id: "crypto", label: "Crypto", icon: "B" },
+    { id: "geopolitics", label: "Geopolitics", icon: "🌍" },
+    { id: "sports", label: "Sports", icon: "⚽" },
+    { id: "other", label: "Other", icon: "•" },
+  ];
 
   useEffect(() => {
     if (isOpen) {
@@ -1098,12 +1123,26 @@ export default function PolymarketModal({
                   type="text"
                   placeholder="Search markets..."
                   value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    searchMarkets(e.target.value);
-                  }}
+                  onChange={(e) => searchMarkets(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-white placeholder-gray-400"
                 />
+              </div>
+
+              {/* Category pills - Rainbow-style */}
+              <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 scrollbar-hide">
+                {CATEGORIES.map((cat) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setCategoryFilter(cat.id)}
+                    className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                      categoryFilter === cat.id
+                        ? "bg-accent-dynamic text-white"
+                        : "bg-zinc-800 text-gray-400 hover:bg-zinc-700 hover:text-gray-300"
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
               </div>
 
               <div className="flex items-center justify-between">
@@ -1155,40 +1194,51 @@ export default function PolymarketModal({
                 </div>
               )}
 
-              {/* Markets list */}
+              {/* Markets list - 2-column grid like Rainbow */}
               {isLoadingMarkets ? (
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="w-6 h-6 animate-spin text-accent-dynamic" />
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {markets.map((market) => (
-                    <button
-                      key={market.id}
-                      onClick={() => setSelectedMarket(market)}
-                      className="w-full p-4 bg-zinc-900 hover:bg-zinc-800 rounded-lg text-left transition-colors border border-zinc-800 hover:border-accent-dynamic/40"
-                    >
-                      <div className="flex items-start gap-3">
-                        {market.image && (
-                          <img src={market.image} alt="" className="w-10 h-10 rounded-lg object-cover" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <h3 className="text-white font-medium text-sm line-clamp-2">{market.question}</h3>
-                          <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
-                            <span>${parseFloat(market.volume || "0").toLocaleString()} vol</span>
-                            {market.outcomePrices?.[0] && (
-                              <>
-                                <span>•</span>
-                                <span className="text-green-400">{(parseFloat(market.outcomePrices[0]) * 100).toFixed(0)}% Yes</span>
-                              </>
-                            )}
+                <div className="grid grid-cols-2 gap-3">
+                  {filteredMarkets.map((market) => {
+                    const vol = parseFloat(market.volume || "0");
+                    return (
+                      <button
+                        key={market.id}
+                        onClick={() => setSelectedMarket(market)}
+                        className="p-3 bg-zinc-900 hover:bg-zinc-800 rounded-xl text-left transition-colors border border-zinc-800 hover:border-accent-dynamic/40 flex flex-col min-h-0"
+                      >
+                        <div className="flex items-start gap-2 mb-2">
+                          {market.image ? (
+                            <img src={market.image} alt="" className="w-8 h-8 rounded-lg object-cover flex-shrink-0" />
+                          ) : (
+                            <div className="w-8 h-8 rounded-lg bg-accent-dynamic/20 flex items-center justify-center text-accent-dynamic text-xs font-bold flex-shrink-0">
+                              ?
+                            </div>
+                          )}
+                          <h3 className="text-white font-medium text-xs line-clamp-2 flex-1 min-w-0">{market.question}</h3>
+                        </div>
+                        <div className="mt-auto space-y-1">
+                          {market.outcomes?.slice(0, 2).map((outcome, i) => (
+                            <div key={i} className="flex items-center justify-between text-[10px]">
+                              <span className="text-gray-400 truncate">{outcome}</span>
+                              {market.outcomePrices?.[i] != null && (
+                                <span className={i === 0 ? "text-green-400" : "text-red-400"}>
+                                  {(parseFloat(market.outcomePrices[i]) * 100).toFixed(0)}%
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                          <div className="text-[10px] text-gray-500">
+                            ${vol >= 1e6 ? (vol / 1e6).toFixed(1) + "M" : vol >= 1e3 ? (vol / 1e3).toFixed(1) + "K" : vol.toFixed(0)} vol
                           </div>
                         </div>
-                      </div>
-                    </button>
-                  ))}
-                  {markets.length === 0 && (
-                    <p className="text-center text-gray-400 py-8">No markets found</p>
+                      </button>
+                    );
+                  })}
+                  {filteredMarkets.length === 0 && (
+                    <div className="col-span-2 text-center text-gray-400 py-8">No markets in this category</div>
                   )}
                 </div>
               )}
@@ -1208,45 +1258,91 @@ export default function PolymarketModal({
               {/* Back button */}
               <button
                 onClick={() => setSelectedMarket(null)}
-                className="text-sm text-accent-dynamic hover:brightness-110"
+                className="text-sm text-accent-dynamic hover:brightness-110 mb-3"
               >
                 ← Back to markets
               </button>
 
-              {/* Selected market */}
-              <div className="bg-zinc-900 rounded-lg p-4 border border-zinc-800">
-                <h3 className="text-white font-medium mb-2">{selectedMarket.question}</h3>
-                {selectedMarket.description && (
-                  <p className="text-sm text-gray-400 mb-4">{selectedMarket.description}</p>
-                )}
+              {/* Selected market - Rainbow-style layout */}
+              <div className="bg-zinc-900 rounded-xl p-4 border border-zinc-800">
+                {/* Header: Question + Volume */}
+                <div className="flex items-start gap-3 mb-4">
+                  {selectedMarket.image ? (
+                    <img src={selectedMarket.image} alt="" className="w-12 h-12 rounded-xl object-cover flex-shrink-0" />
+                  ) : (
+                    <div className="w-12 h-12 rounded-xl bg-accent-dynamic/20 flex items-center justify-center text-accent-dynamic text-lg flex-shrink-0">?</div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-white font-semibold text-base mb-1">{selectedMarket.question}</h3>
+                    <div className="text-sm text-gray-400">
+                      ${parseFloat(selectedMarket.volume || "0") >= 1e6
+                        ? (parseFloat(selectedMarket.volume) / 1e6).toFixed(1) + "M"
+                        : parseFloat(selectedMarket.volume || "0") >= 1e3
+                          ? (parseFloat(selectedMarket.volume) / 1e3).toFixed(1) + "K"
+                          : parseFloat(selectedMarket.volume || "0").toFixed(0)}{" "}
+                      VOL
+                    </div>
+                  </div>
+                </div>
 
-                {/* Outcome buttons */}
-                <div className="grid grid-cols-2 gap-2 mb-4">
-                  {selectedMarket.outcomes?.map((outcome, i) => (
-                    <button
+                {/* Key prediction options - top outcomes with colored indicators */}
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {selectedMarket.outcomes?.slice(0, 4).map((outcome, i) => (
+                    <div
                       key={i}
-                      onClick={() => setSelectedOutcome(i)}
-                      className={`p-3 rounded-lg border-2 transition-colors ${
-                        selectedOutcome === i
-                          ? "border-accent-dynamic bg-accent-dynamic/20"
-                          : "border-gray-600 hover:border-gray-500"
+                      className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs ${
+                        i === 0 ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"
                       }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="text-white font-medium">{outcome}</span>
-                        {i === 0 ? (
-                          <TrendingUp className="w-4 h-4 text-green-400" />
-                        ) : (
-                          <TrendingDown className="w-4 h-4 text-red-400" />
-                        )}
-                      </div>
-                      <div className={`text-lg font-bold ${i === 0 ? "text-green-400" : "text-red-400"}`}>
-                        {selectedMarket.outcomePrices?.[i]
-                          ? `${(parseFloat(selectedMarket.outcomePrices[i]) * 100).toFixed(0)}¢`
-                          : "—"}
-                      </div>
-                    </button>
+                      {i === 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                      <span>{outcome}</span>
+                      {selectedMarket.outcomePrices?.[i] != null && (
+                        <span className="font-semibold">{(parseFloat(selectedMarket.outcomePrices[i]) * 100).toFixed(0)}%</span>
+                      )}
+                    </div>
                   ))}
+                </div>
+
+                {/* Outcomes list - scrollable with volume/probability */}
+                <div className="mb-4">
+                  <div className="text-xs font-medium text-gray-400 mb-2 flex items-center gap-1">
+                    <span>Outcomes</span>
+                  </div>
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                    {selectedMarket.outcomes?.map((outcome, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setSelectedOutcome(i)}
+                        className={`w-full flex items-center justify-between p-3 rounded-lg border transition-colors text-left ${
+                          selectedOutcome === i
+                            ? "border-accent-dynamic bg-accent-dynamic/20"
+                            : "border-zinc-700 bg-zinc-800/50 hover:border-zinc-600"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          {i === 0 ? (
+                            <TrendingUp className="w-4 h-4 text-green-400 flex-shrink-0" />
+                          ) : (
+                            <TrendingDown className="w-4 h-4 text-red-400 flex-shrink-0" />
+                          )}
+                          <span className="text-white font-medium truncate">{outcome}</span>
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 rounded text-xs font-semibold flex-shrink-0 ${
+                            selectedMarket.outcomePrices?.[i] != null
+                              ? parseFloat(selectedMarket.outcomePrices[i]) > 0.5
+                                ? "bg-green-500/30 text-green-400"
+                                : "bg-red-500/30 text-red-400"
+                              : "bg-gray-600 text-gray-400"
+                          }`}
+                        >
+                          {selectedMarket.outcomePrices?.[i]
+                            ? `${(parseFloat(selectedMarket.outcomePrices[i]) * 100).toFixed(1)}%`
+                            : "—"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Safe Wallet Info */}
