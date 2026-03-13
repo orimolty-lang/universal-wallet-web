@@ -62,7 +62,16 @@ export const EARN_CHAINS: EarnChainConfig[] = [
     uaChainId: CHAIN_ID.ARBITRUM_MAINNET_ONE,
     name: "Arbitrum",
     usdcAddress: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
-    morphoVaults: [],
+    morphoVaults: [
+      {
+        address: "0x9257eDDa03f9915857187e927eF501c53b1679b3",
+        name: "Avantgarde USDC Prime",
+        symbol: "agUSDC",
+        assetAddress: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+        assetSymbol: "USDC",
+        assetDecimals: 6,
+      },
+    ],
     aavePool: "0x794a61358D6845594F94dc1DB02A252b5b4814aD",
   },
   {

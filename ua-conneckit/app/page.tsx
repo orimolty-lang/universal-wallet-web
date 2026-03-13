@@ -7344,6 +7344,7 @@ const App = () => {
         isOpen={showEarnModal}
         onClose={() => setShowEarnModal(false)}
         assets={combinedAssets as IAssetsResponse | null}
+        primaryAssets={primaryAssets}
         universalAccount={universalAccountInstance}
         smartAccountAddress={accountInfo?.evmSmartAccount}
         blindSigningEnabled={profile.blindSigningEnabled}

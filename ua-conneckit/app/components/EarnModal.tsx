@@ -12,7 +12,6 @@ import {
   buildMorphoDepositTx,
   buildAaveSupplyTx,
   type EarnMarket,
-  type EarnProtocol,
 } from "../lib/earnService";
 
 type WalletClientLike = {
@@ -68,6 +67,7 @@ interface EarnModalProps {
   isOpen: boolean;
   onClose: () => void;
   assets: IAssetsResponse | null;
+  primaryAssets?: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
   smartAccountAddress?: string;
   blindSigningEnabled: boolean;
@@ -78,6 +78,7 @@ export default function EarnModal({
   isOpen,
   onClose,
   assets,
+  primaryAssets,
   universalAccount,
   smartAccountAddress,
   blindSigningEnabled,
@@ -93,13 +94,11 @@ export default function EarnModal({
   const [error, setError] = useState<string | null>(null);
   const [txResult, setTxResult] = useState<{ txId: string } | null>(null);
   const [chainFilter, setChainFilter] = useState<number | "all">("all");
-  const [protocolFilter, setProtocolFilter] = useState<EarnProtocol | "both">("both");
 
   const fetchMarkets = useCallback(async () => {
     setIsLoadingMarkets(true);
     try {
-      const filter = protocolFilter === "both" ? undefined : protocolFilter;
-      const list = await fetchEarnMarkets(filter);
+      const list = await fetchEarnMarkets();
       setMarkets(list);
     } catch (err) {
       console.error("[Earn] Fetch markets failed:", err);
@@ -107,19 +106,21 @@ export default function EarnModal({
     } finally {
       setIsLoadingMarkets(false);
     }
-  }, [protocolFilter]);
+  }, []);
 
   useEffect(() => {
     if (isOpen) fetchMarkets();
   }, [isOpen, fetchMarkets]);
 
-  // UA unified balance: match USDC by tokenType or symbol; sum chainAggregation if amount missing
+  // UA unified balance: prefer primaryAssets (UA source of truth), fallback to combined
   const userUsdcBalance = (() => {
-    if (!assets?.assets) return 0;
-    const list = assets.assets as Array<{
+    const src = primaryAssets ?? assets;
+    if (!src?.assets) return 0;
+    const list = src.assets as Array<{
       tokenType?: string;
       symbol?: string;
       amount?: number | string;
+      balance?: number | string;
       chainAggregation?: Array<{ amount?: number | string }>;
     }>;
     const usdc = list.find(
@@ -128,7 +129,9 @@ export default function EarnModal({
         (a.symbol || "").toUpperCase() === "USDC"
     );
     if (!usdc) return 0;
-    let amt = typeof usdc.amount === "string" ? parseFloat(usdc.amount || "0") : (usdc.amount || 0);
+    let amt = typeof usdc.amount === "string" ? parseFloat(usdc.amount || "0") : (usdc.amount ?? 0);
+    if (typeof usdc.balance === "number") amt = usdc.balance;
+    else if (typeof usdc.balance === "string") amt = parseFloat(usdc.balance || "0");
     if (amt <= 0 && usdc.chainAggregation?.length) {
       amt = usdc.chainAggregation.reduce((sum, c) => {
         const v = typeof c.amount === "string" ? parseFloat(c.amount || "0") : (c.amount || 0);
@@ -320,23 +323,7 @@ export default function EarnModal({
             </button>
           </div>
         ) : (
-          <>
-            <div className="flex gap-2 mb-3">
-              {(["both", "morpho", "aave"] as const).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setProtocolFilter(p)}
-                  className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium ${
-                    protocolFilter === p
-                      ? "bg-accent-dynamic text-white"
-                      : "bg-zinc-800 text-gray-400 hover:bg-zinc-700"
-                  }`}
-                >
-                  {p === "both" ? "Both" : p === "morpho" ? "Morpho" : "Aave"}
-                </button>
-              ))}
-            </div>
-
+            <>
             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide mb-3">
               <button
                 onClick={() => setChainFilter("all")}
@@ -386,8 +373,7 @@ export default function EarnModal({
                         {m.apy > 0 && (
                           <div className="text-green-400 text-sm font-medium">{m.apy.toFixed(2)}% APY</div>
                         )}
-                        <div className="text-gray-500 text-xs">{m.assetSymbol}</div>
-                        <div className="text-white/70 text-xs mt-0.5">{userUsdcBalance.toFixed(2)} USDC</div>
+                        <div className="text-gray-500 text-xs">{m.chainName} · {m.protocol}</div>
                       </div>
                     </div>
                   </button>

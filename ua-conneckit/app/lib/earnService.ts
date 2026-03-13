@@ -77,44 +77,73 @@ export interface EarnMarket {
 }
 
 /**
- * Fetch Morpho vaults from API (primary source - full list).
+ * Fetch Morpho vaults from API. Fallback to config if API fails.
  */
 async function fetchMorphoVaults(): Promise<EarnMarket[]> {
+  const chainIdToUa = getChainIdToUaMap();
+  const chainNames: Record<number, string> = {
+    1: "Ethereum", 8453: "Base", 42161: "Arbitrum", 10: "Optimism", 137: "Polygon",
+  };
+
   const out: EarnMarket[] = [];
   try {
     const res = await fetch("https://api.morpho.org/graphql", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        query: `query { vaultV2s(first: 500, where: { chainId_in: [1, 8453, 42161, 10, 137], listed: true }) { items { address symbol name chain { id network } asset { address decimals symbol } supplyApy totalSupply } } }`,
+        query: `query { vaultV2s(first: 200, where: { chainId_in: [1, 8453, 42161, 10, 137] }) { items { address symbol name chain { id network } asset { address decimals symbol } supplyApy avgApy totalSupply totalAssets } } }`,
       }),
       cache: "no-store",
     });
     const data = await res.json();
-    const items = data?.data?.vaultV2s?.items ?? [];
-    const chainIdToUa = getChainIdToUaMap();
+    const raw = data?.data?.vaultV2s;
+    const items = Array.isArray(raw) ? raw : (raw?.items ?? []);
     for (const item of items) {
       const chainId = parseInt(String(item.chain?.id ?? 0), 10);
       if (!chainId) continue;
       const asset = item.asset ?? {};
+      const apy = parseFloat(item.supplyApy ?? item.avgApy ?? 0) * 100;
+      const tvl = parseFloat(item.totalSupply ?? item.totalAssets ?? 0);
       out.push({
         id: `morpho-${chainId}-${(item.address ?? "").toLowerCase()}`,
         protocol: "morpho",
         chainId,
-        chainName: item.chain?.network || `Chain ${chainId}`,
+        chainName: item.chain?.network || chainNames[chainId] || `Chain ${chainId}`,
         uaChainId: chainIdToUa[chainId] ?? chainId,
         address: item.address ?? "",
         name: item.name || item.symbol || "Vault",
         symbol: item.symbol || "vault",
         assetAddress: asset.address ?? "",
-        assetSymbol: asset.symbol || "USDC",
+        assetSymbol: (asset.symbol || "USDC").toUpperCase(),
         assetDecimals: parseInt(String(asset.decimals ?? 6), 10),
-        apy: parseFloat(item.supplyApy ?? 0) * 100,
-        tvl: parseFloat(item.totalSupply ?? 0),
+        apy,
+        tvl,
       });
     }
+    if (out.length > 0) return out;
   } catch (err) {
     console.error("[Earn] Morpho API failed:", err);
+  }
+
+  // Fallback: config vaults
+  for (const chain of EARN_CHAINS) {
+    for (const v of chain.morphoVaults) {
+      out.push({
+        id: `morpho-${chain.chainId}-${v.address.toLowerCase()}`,
+        protocol: "morpho",
+        chainId: chain.chainId,
+        chainName: chain.name,
+        uaChainId: chain.uaChainId,
+        address: v.address,
+        name: v.name,
+        symbol: v.symbol,
+        assetAddress: v.assetAddress,
+        assetSymbol: v.assetSymbol,
+        assetDecimals: v.assetDecimals,
+        apy: 0,
+        tvl: 0,
+      });
+    }
   }
   return out;
 }
@@ -164,12 +193,9 @@ function getChainIdToUaMap(): Record<number, number> {
 /**
  * Fetch all earn markets (Morpho + Aave).
  */
-export async function fetchEarnMarkets(protocolFilter?: EarnProtocol): Promise<EarnMarket[]> {
+export async function fetchEarnMarkets(): Promise<EarnMarket[]> {
   const [morpho, aave] = await Promise.all([fetchMorphoVaults(), Promise.resolve(buildAaveMarkets())]);
-  let combined = [...morpho, ...aave];
-  if (protocolFilter === "morpho") combined = morpho;
-  else if (protocolFilter === "aave") combined = aave;
-  return combined;
+  return [...morpho, ...aave];
 }
 
 /**
