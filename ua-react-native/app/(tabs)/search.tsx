@@ -14,19 +14,25 @@ export default function SearchScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <Feather name="search" size={64} color="#3f3f46" />
-        <Text style={styles.title}>Search</Text>
-        <Text style={styles.subtitle}>
-          Search tokens, NFTs, and addresses across all chains
-        </Text>
-        <View style={styles.searchContainer}>
+        <View style={styles.searchBar}>
+          <Feather name="search" size={18} color="#71717a" />
           <TextInput
-            style={styles.searchInput}
-            placeholder="Search..."
-            placeholderTextColor="#6b7280"
+            style={styles.input}
+            placeholder="Search tokens, addresses..."
+            placeholderTextColor="#52525b"
             value={query}
             onChangeText={setQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
           />
+        </View>
+
+        <View style={styles.emptyState}>
+          <Feather name="search" size={64} color="#27272a" />
+          <Text style={styles.emptyTitle}>Search</Text>
+          <Text style={styles.emptySubtitle}>
+            Search tokens, NFTs, and addresses across all chains
+          </Text>
         </View>
       </View>
     </SafeAreaView>
@@ -36,39 +42,46 @@ export default function SearchScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000000",
+    backgroundColor: "#0a0a0a",
   },
   content: {
     flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
+    paddingTop: 16,
   },
-  title: {
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#18181b",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#27272a",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 10,
+  },
+  input: {
+    flex: 1,
+    color: "#ffffff",
+    fontSize: 15,
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingBottom: 100,
+  },
+  emptyTitle: {
     fontSize: 20,
-    fontWeight: "bold",
+    fontWeight: "700",
     color: "#ffffff",
     marginTop: 16,
     marginBottom: 8,
   },
-  subtitle: {
-    fontSize: 14,
-    color: "#6b7280",
+  emptySubtitle: {
+    color: "#71717a",
     textAlign: "center",
-    marginBottom: 24,
-  },
-  searchContainer: {
-    width: "100%",
-    maxWidth: 360,
-  },
-  searchInput: {
-    backgroundColor: "#18181b",
-    borderWidth: 1,
-    borderColor: "#27272a",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    color: "#ffffff",
-    fontSize: 16,
+    fontSize: 14,
+    maxWidth: 260,
   },
 });
