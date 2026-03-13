@@ -121,14 +121,13 @@ export default function EarnModal({
   }, [isOpen, fetchMarkets]);
 
   const loadPositions = useCallback(async () => {
-    if (!smartAccountAddress || markets.length === 0) {
+    if (!smartAccountAddress) {
       setPositions([]);
       return;
     }
     setIsLoadingPositions(true);
     try {
-      const morphoMarkets = markets.filter((m) => m.protocol === "morpho");
-      const pos = await fetchUserPositions(smartAccountAddress, morphoMarkets);
+      const pos = await fetchUserPositions(smartAccountAddress);
       setPositions(pos);
     } catch (err) {
       console.error("[Earn] Fetch positions failed:", err);
@@ -136,11 +135,11 @@ export default function EarnModal({
     } finally {
       setIsLoadingPositions(false);
     }
-  }, [smartAccountAddress, markets]);
+  }, [smartAccountAddress]);
 
   useEffect(() => {
-    if (isOpen && markets.length > 0) loadPositions();
-  }, [isOpen, markets.length, loadPositions]);
+    if (isOpen) loadPositions();
+  }, [isOpen, loadPositions]);
 
   // UA Balance: unified balance (token/chain agnostic). createUniversalTransaction sources USDC from this.
   const uaBalanceUsd = (() => {
@@ -400,9 +399,18 @@ export default function EarnModal({
           </div>
         ) : (
             <>
-            {(positions.length > 0 || (isLoadingPositions && markets.length > 0)) && (
+            {(positions.length > 0 || isLoadingPositions) && (
               <div className="mb-4">
-                <div className="text-gray-400 text-xs uppercase tracking-wide mb-2">Active Positions</div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-gray-400 text-xs uppercase tracking-wide">Active Positions</span>
+                  <button
+                    onClick={loadPositions}
+                    disabled={isLoadingPositions}
+                    className="text-accent-dynamic text-xs disabled:opacity-50"
+                  >
+                    {isLoadingPositions ? "..." : "Refresh"}
+                  </button>
+                </div>
                 <div className="space-y-2">
                   {isLoadingPositions && positions.length === 0 && (
                     <div className="text-gray-500 text-sm py-2">Loading...</div>

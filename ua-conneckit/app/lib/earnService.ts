@@ -318,13 +318,80 @@ export interface EarnPosition {
 }
 
 /**
- * Fetch user's positions in Morpho vaults (balanceOf for each vault).
+ * Fetch ALL Morpho vaults from API (no display filters) for position checking.
  */
-export async function fetchUserPositions(
-  uaAddress: string,
-  morphoMarkets: EarnMarket[]
-): Promise<EarnPosition[]> {
+async function fetchAllMorphoVaultsForPositions(): Promise<EarnMarket[]> {
+  const chainIdToUa = getChainIdToUaMap();
+  const chainNames: Record<number, string> = {
+    1: "Ethereum", 8453: "Base", 42161: "Arbitrum", 10: "Optimism", 137: "Polygon",
+  };
+  const out: EarnMarket[] = [];
+  try {
+    const res = await fetch("https://api.morpho.org/graphql", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: `query { vaultV2s(first: 200, where: { chainId_in: [1, 8453, 42161, 10, 137] }) { items { address symbol name chain { id network } asset { address decimals symbol } } } }`,
+      }),
+      cache: "no-store",
+    });
+    const data = await res.json();
+    const raw = data?.data?.vaultV2s;
+    const items = Array.isArray(raw) ? raw : (raw?.items ?? []);
+    for (const item of items) {
+      const chainId = parseInt(String(item.chain?.id ?? 0), 10);
+      if (!chainId || !item.address) continue;
+      const asset = item.asset ?? {};
+      out.push({
+        id: `morpho-${chainId}-${(item.address ?? "").toLowerCase()}`,
+        protocol: "morpho",
+        chainId,
+        chainName: item.chain?.network || chainNames[chainId] || `Chain ${chainId}`,
+        uaChainId: chainIdToUa[chainId] ?? chainId,
+        address: item.address,
+        name: item.name || item.symbol || "Vault",
+        symbol: item.symbol || "vault",
+        assetAddress: asset.address ?? "",
+        assetSymbol: (asset.symbol || "USDC").toUpperCase(),
+        assetDecimals: parseInt(String(asset.decimals ?? 6), 10),
+        apy: 0,
+        tvl: 0,
+      });
+    }
+  } catch (err) {
+    console.error("[Earn] Fetch all vaults for positions failed:", err);
+  }
+  if (out.length === 0) {
+    for (const chain of EARN_CHAINS) {
+      for (const v of chain.morphoVaults) {
+        out.push({
+          id: `morpho-${chain.chainId}-${v.address.toLowerCase()}`,
+          protocol: "morpho",
+          chainId: chain.chainId,
+          chainName: chain.name,
+          uaChainId: chain.uaChainId,
+          address: v.address,
+          name: v.name,
+          symbol: v.symbol,
+          assetAddress: v.assetAddress,
+          assetSymbol: v.assetSymbol,
+          assetDecimals: v.assetDecimals,
+          apy: 0,
+          tvl: 0,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Fetch user's positions in Morpho vaults (balanceOf for each vault).
+ * Uses ALL vaults from API, not just filtered display list.
+ */
+export async function fetchUserPositions(uaAddress: string): Promise<EarnPosition[]> {
   const positions: EarnPosition[] = [];
+  const morphoMarkets = await fetchAllMorphoVaultsForPositions();
   const balanceOfData = encodeFunctionData({
     abi: ERC4626_ABI,
     functionName: "balanceOf",
@@ -332,7 +399,6 @@ export async function fetchUserPositions(
   });
   const byChain = new Map<number, EarnMarket[]>();
   for (const m of morphoMarkets) {
-    if (m.protocol !== "morpho") continue;
     const list = byChain.get(m.chainId) || [];
     list.push(m);
     byChain.set(m.chainId, list);
@@ -356,7 +422,9 @@ export async function fetchUserPositions(
           const hex = json?.result;
           if (!hex || hex === "0x") return { market: m, sharesRaw: BigInt(0), assetsApprox: 0 };
           const sharesRaw = BigInt(hex);
-          const assetsApprox = Number(sharesRaw) / 1e18;
+          const as18 = Number(sharesRaw) / 1e18;
+          const asAsset = Number(sharesRaw) / Math.pow(10, m.assetDecimals);
+          const assetsApprox = as18 >= 0.0001 ? as18 : asAsset;
           return { market: m, sharesRaw, assetsApprox };
         } catch {
           return { market: m, sharesRaw: BigInt(0), assetsApprox: 0 };
