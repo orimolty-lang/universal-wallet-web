@@ -13,7 +13,10 @@ import {
   type IUniversalAccountConfig,
 } from "@particle-network/universal-account-sdk";
 import * as particleConnect from "@particle-network/rn-connect";
-import { WalletType, type AccountInfo as ParticleAccountInfo } from "@particle-network/rn-connect";
+import {
+  WalletType,
+  type AccountInfo as ParticleAccountInfo,
+} from "@particle-network/rn-connect";
 import Constants from "expo-constants";
 import { Buffer } from "buffer";
 
@@ -23,16 +26,65 @@ interface AccountInfo {
   solanaSmartAccount: string;
 }
 
+interface ProfileInfo {
+  emoji: string;
+  customImage: string | null;
+  displayName: string;
+  backgroundColor: string;
+  blindSigningEnabled: boolean;
+}
+
+interface MobulaAsset {
+  asset: {
+    name: string;
+    symbol: string;
+    logo: string;
+    price: number;
+    contracts: string[];
+    blockchains: string[];
+  };
+  token_balance: number;
+  estimated_balance: number;
+  cross_chain_balances?: Record<
+    string,
+    { token_balance: number; estimated_balance: number; address: string }
+  >;
+}
+
 interface UniversalAccountContextType {
   universalAccount: UniversalAccount | null;
   address: string | undefined;
   accountInfo: AccountInfo | null;
   primaryAssets: IAssetsResponse | null;
+  mobulaAssets: MobulaAsset[];
+  combinedAssets: any[];
   isLoading: boolean;
-  connectedAccount: ParticleAccountInfo | null;
+  profile: ProfileInfo;
+  updateProfile: (updates: Partial<ProfileInfo>) => void;
   fetchAssets: () => Promise<void>;
-  signUATransaction: (rootHash: Uint8Array) => Promise<string>;
+  fetchMobulaAssets: () => Promise<void>;
+  signUATransaction: (rootHash: string) => Promise<string>;
+  connectedAccount: ParticleAccountInfo | null;
+  setShowDepositModal: (show: boolean) => void;
+  setShowAssetBreakdown: (show: boolean) => void;
+  setShowTxHistory: (show: boolean) => void;
+  setShowSendModal: (show: boolean) => void;
+  showDepositModal: boolean;
+  showAssetBreakdown: boolean;
+  showTxHistory: boolean;
+  showSendModal: boolean;
 }
+
+const DEFAULT_PROFILE: ProfileInfo = {
+  emoji: "🟠",
+  customImage: null,
+  displayName: "Anon",
+  backgroundColor: "#f97316",
+  blindSigningEnabled: false,
+};
+
+const MOBULA_PROXY_URL =
+  "https://lifi-proxy.orimolty.workers.dev/mobula/api/1/wallet/portfolio";
 
 const UniversalAccountContext = createContext<
   UniversalAccountContextType | undefined
@@ -49,7 +101,13 @@ export const UniversalAccountProvider: React.FC<{
   const [primaryAssets, setPrimaryAssets] = useState<IAssetsResponse | null>(
     null
   );
+  const [mobulaAssets, setMobulaAssets] = useState<MobulaAsset[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [profile, setProfile] = useState<ProfileInfo>(DEFAULT_PROFILE);
+  const [showDepositModal, setShowDepositModal] = useState(false);
+  const [showAssetBreakdown, setShowAssetBreakdown] = useState(false);
+  const [showTxHistory, setShowTxHistory] = useState(false);
+  const [showSendModal, setShowSendModal] = useState(false);
 
   const address = connectedAccount?.publicAddress;
   const extra = Constants.expoConfig?.extra;
@@ -60,6 +118,7 @@ export const UniversalAccountProvider: React.FC<{
       projectId: extra.particleProjectId,
       projectClientKey: extra.particleClientKey || "",
       projectAppUuid: extra.particleAppId || "",
+      rpcUrl: "https://universal-rpc-staging.particle.network",
       smartAccountOptions: {
         useEIP7702: false,
         name: "UNIVERSAL",
@@ -74,6 +133,7 @@ export const UniversalAccountProvider: React.FC<{
       setUniversalAccount(null);
       setAccountInfo(null);
       setPrimaryAssets(null);
+      setMobulaAssets([]);
       return;
     }
 
@@ -105,23 +165,89 @@ export const UniversalAccountProvider: React.FC<{
 
   const fetchAssets = useCallback(async () => {
     if (!universalAccount) return;
+    setIsLoading(true);
     try {
       const assets = await universalAccount.getPrimaryAssets();
       setPrimaryAssets(assets);
     } catch (error) {
       console.error("Failed to fetch assets:", error);
+    } finally {
+      setIsLoading(false);
     }
   }, [universalAccount]);
+
+  const fetchMobulaAssets = useCallback(async () => {
+    if (!accountInfo?.evmSmartAccount) return;
+    try {
+      const response = await fetch(
+        `${MOBULA_PROXY_URL}?wallet=${accountInfo.evmSmartAccount}`
+      );
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data?.data?.assets) {
+        setMobulaAssets(data.data.assets);
+      }
+    } catch (error) {
+      console.error("Failed to fetch Mobula assets:", error);
+    }
+  }, [accountInfo?.evmSmartAccount]);
 
   useEffect(() => {
     fetchAssets();
   }, [fetchAssets]);
 
+  useEffect(() => {
+    if (accountInfo?.evmSmartAccount) {
+      fetchMobulaAssets();
+    }
+  }, [accountInfo?.evmSmartAccount, fetchMobulaAssets]);
+
+  const combinedAssets = useMemo(() => {
+    const primarySymbols = new Set<string>();
+    const merged: any[] = [];
+
+    if (primaryAssets?.assets) {
+      for (const asset of primaryAssets.assets) {
+        primarySymbols.add((asset as any).symbol?.toUpperCase());
+        merged.push({
+          symbol: (asset as any).symbol,
+          name: (asset as any).name,
+          balance: (asset as any).balance,
+          amountInUSD: (asset as any).amountInUSD,
+          logo: (asset as any).image || (asset as any).logo,
+          source: "primary" as const,
+        });
+      }
+    }
+
+    for (const mAsset of mobulaAssets) {
+      if (!primarySymbols.has(mAsset.asset.symbol.toUpperCase())) {
+        merged.push({
+          symbol: mAsset.asset.symbol,
+          name: mAsset.asset.name,
+          balance: mAsset.token_balance,
+          amountInUSD: mAsset.estimated_balance,
+          logo: mAsset.asset.logo,
+          price: mAsset.asset.price,
+          source: "mobula" as const,
+        });
+      }
+    }
+
+    return merged;
+  }, [primaryAssets, mobulaAssets]);
+
+  const updateProfile = useCallback((updates: Partial<ProfileInfo>) => {
+    setProfile((prev) => ({ ...prev, ...updates }));
+  }, []);
+
   const signUATransaction = useCallback(
-    async (rootHash: Uint8Array): Promise<string> => {
+    async (rootHash: string): Promise<string> => {
       if (!address) throw new Error("No wallet connected");
 
-      const hexMessage = "0x" + Buffer.from(rootHash).toString("hex");
+      const hexMessage = rootHash.startsWith("0x")
+        ? rootHash
+        : "0x" + Buffer.from(rootHash).toString("hex");
       const signature = await particleConnect.signMessage(
         WalletType.AuthCore,
         address,
@@ -143,10 +269,23 @@ export const UniversalAccountProvider: React.FC<{
         address,
         accountInfo,
         primaryAssets,
+        mobulaAssets,
+        combinedAssets,
         isLoading,
+        profile,
+        updateProfile,
         connectedAccount,
         fetchAssets,
+        fetchMobulaAssets,
         signUATransaction,
+        setShowDepositModal,
+        setShowAssetBreakdown,
+        setShowTxHistory,
+        setShowSendModal,
+        showDepositModal,
+        showAssetBreakdown,
+        showTxHistory,
+        showSendModal,
       }}
     >
       <AccountSetter onSetAccount={setAccount} />

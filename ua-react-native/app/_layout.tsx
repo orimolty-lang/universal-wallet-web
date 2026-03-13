@@ -4,28 +4,24 @@ import { StatusBar } from "expo-status-bar";
 import Constants from "expo-constants";
 import * as particleBase from "@particle-network/rn-base";
 import * as particleConnect from "@particle-network/rn-connect";
-import { Arbitrum } from "@particle-network/chains";
+import { ArbitrumOne } from "@particle-network/chains";
 import { Env } from "@particle-network/rn-base";
 import { UniversalAccountProvider } from "../context/UniversalAccountContext";
 
 export default function RootLayout() {
   useEffect(() => {
     const extra = Constants.expoConfig?.extra;
+    const wcProjectId = extra?.walletConnectProjectId || "";
 
-    particleBase.init(Arbitrum, Env.Production);
+    particleBase.init(ArbitrumOne, Env.Production);
 
-    particleConnect.init(Arbitrum, Env.Production, {
-      name: "Universal Wallet",
+    particleConnect.init(ArbitrumOne, Env.Production, {
+      walletConnectProjectId: wcProjectId,
+      name: "OMNI - Universal Wallet",
       icon: "https://connect.particle.network/icons/512.png",
       url: "https://particle.network",
-      description: "Universal Wallet powered by Particle Network",
+      description: "OMNI - Universal Wallet powered by Particle Network",
     });
-
-    if (extra?.walletConnectProjectId) {
-      particleConnect.setWalletConnectProjectId(
-        extra.walletConnectProjectId
-      );
-    }
   }, []);
 
   return (

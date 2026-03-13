@@ -13,7 +13,7 @@ type TransactionResult = {
 
 export const executeTransaction = async (
   universalAccount: UniversalAccount,
-  signUATransaction: (rootHash: Uint8Array) => Promise<string>,
+  signUATransaction: (rootHash: string) => Promise<string>,
   options: {
     contractAddress: string;
     chainId: CHAIN_ID;
@@ -72,7 +72,7 @@ export const executeTransaction = async (
 
 export const mintNFT = async (
   universalAccount: UniversalAccount,
-  signUATransaction: (rootHash: Uint8Array) => Promise<string>
+  signUATransaction: (rootHash: string) => Promise<string>
 ): Promise<TransactionResult> => {
   const CONTRACT_ADDRESS = "0x0287f57A1a17a725428689dfD9E65ECA01d82510";
 

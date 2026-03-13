@@ -5,16 +5,18 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
+  Dimensions,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
 import * as particleConnect from "@particle-network/rn-connect";
-import {
-  ConnectOption,
-  EnableSocialProvider,
-  EnableWallet,
-  EnableWalletLabel,
-} from "@particle-network/rn-connect";
+import { WalletType } from "@particle-network/rn-connect";
+import { LoginType, SupportAuthType } from "@particle-network/rn-base";
+
+const { width } = Dimensions.get("window");
+
+const FEATURE_CHIPS = ["Swap", "Perps", "Earn Yield", "Polymarket"];
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -23,36 +25,17 @@ export default function LoginScreen() {
   const handleConnect = async () => {
     setIsLoading(true);
     try {
-      const account = await particleConnect.connectWithConnectKitConfig({
-        connectOptions: [
-          ConnectOption.Email,
-          ConnectOption.Phone,
-          ConnectOption.Social,
-          ConnectOption.Wallet,
+      const account = await particleConnect.connect(WalletType.AuthCore, {
+        loginType: LoginType.Email,
+        supportAuthType: [
+          SupportAuthType.Apple,
+          SupportAuthType.Twitter,
+          SupportAuthType.Email,
+          SupportAuthType.Phone,
+          SupportAuthType.Discord,
+          SupportAuthType.Github,
+          SupportAuthType.Google,
         ],
-        socialProviders: [
-          EnableSocialProvider.Google,
-          EnableSocialProvider.Apple,
-          EnableSocialProvider.Twitter,
-          EnableSocialProvider.Github,
-          EnableSocialProvider.Facebook,
-          EnableSocialProvider.Microsoft,
-          EnableSocialProvider.Linkedin,
-          EnableSocialProvider.Discord,
-          EnableSocialProvider.Twitch,
-        ],
-        walletProviders: [
-          {
-            enableWallet: EnableWallet.MetaMask,
-            label: EnableWalletLabel.Popular,
-          },
-        ],
-        additionalLayoutOptions: {
-          isCollapseWalletList: false,
-          isSplitEmailAndSocial: false,
-          isSplitEmailAndPhone: false,
-          isHideContinueButton: true,
-        },
       });
 
       if (account?.publicAddress) {
@@ -67,27 +50,24 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.emoji}>🍊</Text>
-      <Text style={styles.title}>UNIVERSAL WALLET</Text>
+      <View style={styles.heroSection}>
+        <LinearGradient
+          colors={["#f97316", "#fb923c", "#fdba74"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.gradientTextContainer}
+        >
+          <Text style={styles.brandTitle}>OMNI</Text>
+        </LinearGradient>
 
-      <View style={styles.taglineContainer}>
-        <View style={styles.taglineRow}>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>One</Text>
-          </View>
-          <Text style={styles.taglineText}>Account</Text>
-        </View>
-        <View style={styles.taglineRow}>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>One</Text>
-          </View>
-          <Text style={styles.taglineText}>Balance</Text>
-        </View>
-        <View style={styles.taglineRow}>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>Any</Text>
-          </View>
-          <Text style={styles.taglineText}>Chain</Text>
+        <Text style={styles.tagline}>One Account. One Balance. Any Chain.</Text>
+
+        <View style={styles.chipRow}>
+          {FEATURE_CHIPS.map((chip) => (
+            <View key={chip} style={styles.chip}>
+              <Text style={styles.chipText}>{chip}</Text>
+            </View>
+          ))}
         </View>
       </View>
 
@@ -96,12 +76,13 @@ export default function LoginScreen() {
           style={styles.getStartedButton}
           onPress={handleConnect}
           disabled={isLoading}
+          activeOpacity={0.8}
         >
           {isLoading ? (
-            <ActivityIndicator color="#ffffff" />
+            <ActivityIndicator color="#000000" />
           ) : (
             <>
-              <Feather name="log-in" size={20} color="#ffffff" />
+              <Feather name="arrow-right" size={20} color="#000000" />
               <Text style={styles.getStartedText}>Get Started</Text>
             </>
           )}
@@ -114,68 +95,74 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000000",
+    backgroundColor: "#0a0a0a",
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 24,
   },
-  emoji: {
-    fontSize: 72,
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#ffffff",
-    letterSpacing: 3,
-    marginBottom: 8,
-  },
-  taglineContainer: {
-    marginVertical: 48,
-    gap: 20,
-    width: "100%",
-    maxWidth: 320,
-  },
-  taglineRow: {
-    flexDirection: "row",
+  heroSection: {
     alignItems: "center",
-    gap: 16,
+    marginBottom: 48,
   },
-  badge: {
-    borderWidth: 2,
-    borderColor: "#a855f7",
+  gradientTextContainer: {
     borderRadius: 8,
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 4,
+    marginBottom: 16,
   },
-  badgeText: {
-    color: "#a855f7",
-    fontWeight: "bold",
+  brandTitle: {
+    fontSize: 52,
+    fontWeight: "900",
+    color: "#000000",
+    letterSpacing: 6,
+  },
+  tagline: {
     fontSize: 16,
+    color: "#a1a1aa",
+    textAlign: "center",
+    marginBottom: 32,
+    letterSpacing: 0.5,
   },
-  taglineText: {
-    color: "#ffffff",
-    fontSize: 24,
-    fontWeight: "bold",
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 10,
+    maxWidth: width * 0.85,
+  },
+  chip: {
+    borderWidth: 1,
+    borderColor: "#27272a",
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "#18181b",
+  },
+  chipText: {
+    color: "#d4d4d8",
+    fontSize: 13,
+    fontWeight: "500",
   },
   buttonContainer: {
     width: "100%",
     maxWidth: 320,
-    marginTop: 32,
+    position: "absolute",
+    bottom: 80,
+    alignSelf: "center",
   },
   getStartedButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#9333ea",
+    backgroundColor: "#f97316",
     borderRadius: 16,
     paddingVertical: 16,
     paddingHorizontal: 24,
     gap: 10,
   },
   getStartedText: {
-    color: "#ffffff",
+    color: "#000000",
     fontSize: 18,
-    fontWeight: "bold",
+    fontWeight: "700",
   },
 });
