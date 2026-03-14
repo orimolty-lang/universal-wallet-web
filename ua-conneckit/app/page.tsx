@@ -901,9 +901,19 @@ const ReceiveModal = ({
     setTimeout(() => setCopied(null), 2000);
   };
 
+  const EVM_CHAINS = [
+    { name: "Ethereum", logo: CHAIN_LOGOS["Ethereum"] },
+    { name: "Base", logo: CHAIN_LOGOS["Base"] },
+    { name: "BNB Chain", logo: CHAIN_LOGOS["BNB Chain"] },
+    { name: "Arbitrum", logo: CHAIN_LOGOS["Arbitrum"] },
+    { name: "Polygon", logo: CHAIN_LOGOS["Polygon"] },
+    { name: "Optimism", logo: CHAIN_LOGOS["Optimism"] },
+    { name: "Avalanche", logo: CHAIN_LOGOS["Avalanche"] },
+  ];
+
   const rows = [
-    { id: "evm", label: "EVM", address: evmAddress, logo: CHAIN_LOGOS["Base"] },
-    { id: "solana", label: "Solana", address: solanaAddress, logo: CHAIN_LOGOS["Solana"] },
+    { id: "evm", label: "EVM", address: evmAddress, logos: EVM_CHAINS },
+    { id: "solana", label: "Solana", address: solanaAddress, logos: [{ name: "Solana", logo: CHAIN_LOGOS["Solana"] }] },
   ];
 
   return (
@@ -930,7 +940,17 @@ const ReceiveModal = ({
             <div key={row.id} className="bg-[#252525] rounded-xl px-3 py-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <img src={row.logo} alt={row.label} className="w-10 h-10 rounded-full flex-shrink-0" />
+                  <div className="flex items-center flex-shrink-0 w-10 h-10">
+                    {row.logos.length > 1 ? (
+                      <div className="flex -space-x-2">
+                        {row.logos.map((c) => (
+                          <img key={c.name} src={c.logo} alt={c.name} className="w-6 h-6 rounded-full border-2 border-[#252525]" title={c.name} />
+                        ))}
+                      </div>
+                    ) : (
+                      <img src={row.logos[0].logo} alt={row.label} className="w-10 h-10 rounded-full" />
+                    )}
+                  </div>
                   <div className="min-w-0 flex-1">
                     <div className="text-white font-medium">{row.label}</div>
                     <p className="text-gray-400 text-xs font-mono break-all mt-0.5">{row.address}</p>
