@@ -15,6 +15,7 @@ export default {
       bundleIdentifier: "com.orimolty.omniwallet",
       deploymentTarget: "17.0",
       infoPlist: {
+        ITSAppUsesNonExemptEncryption: false,
         LSApplicationQueriesSchemes: [
           "metamask",
           "trust",
@@ -35,8 +36,6 @@ export default {
     },
     plugins: [
       "expo-router",
-      "expo-secure-store",
-      "expo-web-browser",
       "./plugins/withParticleNetwork",
       [
         "expo-build-properties",
