@@ -65,6 +65,13 @@ const ASSET_TO_TOKEN_TYPE: Record<string, any> = {
   USDC: SUPPORTED_TOKEN_TYPE.USDC,
   USDT: SUPPORTED_TOKEN_TYPE.USDT,
   ETH: SUPPORTED_TOKEN_TYPE.ETH,
+  WETH: SUPPORTED_TOKEN_TYPE.ETH,
+  WBTC: SUPPORTED_TOKEN_TYPE.BTC,
+  BTC: SUPPORTED_TOKEN_TYPE.BTC,
+  wstETH: SUPPORTED_TOKEN_TYPE.ETH,
+  WSTETH: SUPPORTED_TOKEN_TYPE.ETH,
+  stETH: SUPPORTED_TOKEN_TYPE.ETH,
+  STETH: SUPPORTED_TOKEN_TYPE.ETH,
 };
 
 interface EarnModalProps {
@@ -171,7 +178,7 @@ export default function EarnModal({
     setIsLoading(true);
     try {
       const uaChainId = CHAIN_ID_MAP[selectedMarket.chainId] ?? selectedMarket.uaChainId;
-      const tokenType = ASSET_TO_TOKEN_TYPE[selectedMarket.assetSymbol] ?? SUPPORTED_TOKEN_TYPE.USDC;
+      const tokenType = ASSET_TO_TOKEN_TYPE[selectedMarket.assetSymbol] ?? ASSET_TO_TOKEN_TYPE[selectedMarket.assetSymbol?.toUpperCase()] ?? SUPPORTED_TOKEN_TYPE.USDC;
 
       let approve: `0x${string}`;
       let action: `0x${string}`;
@@ -275,10 +282,20 @@ export default function EarnModal({
     USDC: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png",
     USDT: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xdAC17F958D2ee523a2206206994597C13D831ec7/logo.png",
     ETH: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png",
+    WETH: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2/logo.png",
+    WBTC: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599/logo.png",
+    BTC: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/bitcoin/info/logo.png",
+    wstETH: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0/logo.png",
+    WSTETH: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0/logo.png",
+    stETH: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84/logo.png",
+    STETH: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84/logo.png",
     DAI: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x6B175474E89094C44Da98b954EescdeCB5BE3830/logo.png",
     EURC: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x1aBaEA1f7C830bD89Acc67eC4af516284b1bC33c/logo.png",
   };
-  const getAssetLogo = (symbol: string) => ASSET_LOGOS[symbol?.toUpperCase()] ?? ASSET_LOGOS.USDC;
+  const getAssetLogo = (symbol: string) => {
+    const s = symbol?.trim() || "";
+    return ASSET_LOGOS[s] ?? ASSET_LOGOS[s.toUpperCase()] ?? ASSET_LOGOS.USDC;
+  };
   const getChainLogo = (chainId: number) => chainMeta[chainId]?.logo ?? chainMeta[1]?.logo;
   const [chainDropdownOpen, setChainDropdownOpen] = useState(false);
   const [protocolDropdownOpen, setProtocolDropdownOpen] = useState(false);

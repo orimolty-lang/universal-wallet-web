@@ -132,15 +132,17 @@ async function fetchMorphoVaults(): Promise<EarnMarket[]> {
       const rawAssets = parseFloat(item.totalAssets ?? 0);
       const rawSupply = parseFloat(item.totalSupply ?? 0);
       const rawTvl = rawAssets > 0 ? rawAssets : rawSupply;
-      let tvlUsd = rawTvl / Math.pow(10, decimals);
-      if (tvlUsd > 1e12 || tvlUsd < 0) tvlUsd = 0;
+      let tvlFromRaw = rawTvl / Math.pow(10, decimals);
+      if (tvlFromRaw > 1e12 || tvlFromRaw < 0) tvlFromRaw = 0;
+      const apiTotalUsd = typeof item.totalAssetsUsd === "number" ? item.totalAssetsUsd : null;
+      const tvlUsd = apiTotalUsd != null && apiTotalUsd > 0 ? apiTotalUsd : tvlFromRaw;
+      if (tvlUsd > MAX_TVL_USD || tvlUsd < MIN_TVL_USD) continue;
       const apyRaw = parseFloat(item.avgNetApy ?? item.avgApy ?? 0);
       const apy = apyRaw <= 1 && apyRaw > 0 ? apyRaw * 100 : apyRaw;
       const name = item.name || item.symbol || "";
       const isTestOrGeneric = !name || /test/i.test(name) || /^vault$/i.test(name) || /^v\d*$/i.test(name);
       const hasData = apy > 0 || tvlUsd > 0;
       if (isTestOrGeneric || !hasData) continue;
-      const totalAssetsUsd = typeof item.totalAssetsUsd === "number" ? item.totalAssetsUsd : tvlUsd;
       const liquidityUsd = typeof item.liquidityUsd === "number" ? item.liquidityUsd : undefined;
       const sharePrice = typeof item.sharePrice === "number" ? item.sharePrice : undefined;
       out.push({
@@ -159,7 +161,7 @@ async function fetchMorphoVaults(): Promise<EarnMarket[]> {
         tvl: tvlUsd,
         sharePrice,
         liquidityUsd,
-        totalAssetsUsd: totalAssetsUsd > 0 ? totalAssetsUsd : undefined,
+        totalAssetsUsd: tvlUsd > 0 ? tvlUsd : undefined,
         curatorAddress: item.curator?.address ?? undefined,
         description: item.metadata?.description ?? undefined,
       });
@@ -326,6 +328,8 @@ export interface EarnPosition {
 }
 
 const EARN_CHAIN_IDS = [1, 8453, 42161, 10, 137] as const;
+const MIN_TVL_USD = 2_000;
+const MAX_TVL_USD = 50e9; // $50B cap to filter garbage (e.g. 100B false data)
 const CHAIN_NAMES: Record<number, string> = {
   1: "Ethereum", 8453: "Base", 42161: "Arbitrum", 10: "Optimism", 137: "Polygon",
 };
