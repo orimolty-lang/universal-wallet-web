@@ -204,7 +204,6 @@ const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
 const TRADE_MENU_LOGOS = {
   perps: "https://1312337203-files.gitbook.io/~/files/v0/b/gitbook-x-prod.appspot.com/o/spaces%2F76vAZHPcNKY10NzuKsC4%2Fuploads%2FfM44ZIUWnrYhajk68ioy%2FAvantis%20White%20Logo%20-%20Iconmark.png?alt=media",
   polymarket: "https://polymarket.com/favicon.ico",
-  earn: "https://morpho.org/favicon.ico",
 };
 
 // Types
@@ -881,7 +880,7 @@ const ProfilePickerModal = ({
   );
 };
 
-// Receive/Deposit Modal
+// Receive/Deposit Modal - consolidated EVM (single address) + Solana
 const ReceiveModal = ({
   isOpen,
   onClose,
@@ -904,20 +903,24 @@ const ReceiveModal = ({
 
   const truncateAddr = (addr: string) => addr ? `${addr.slice(0, 4)}...${addr.slice(-3)}` : "";
 
-  const chains = [
-    { name: "Solana", logo: CHAIN_LOGOS["Solana"], address: solanaAddress },
-    { name: "Ethereum", logo: CHAIN_LOGOS["Ethereum"], address: evmAddress },
-    { name: "Base", logo: CHAIN_LOGOS["Base"], address: evmAddress },
-    { name: "BNB Chain", logo: CHAIN_LOGOS["BNB Chain"], address: evmAddress },
-    { name: "Arbitrum", logo: CHAIN_LOGOS["Arbitrum"], address: evmAddress },
-    { name: "Polygon", logo: CHAIN_LOGOS["Polygon"], address: evmAddress },
-    { name: "Optimism", logo: CHAIN_LOGOS["Optimism"], address: evmAddress },
-    { name: "Avalanche", logo: CHAIN_LOGOS["Avalanche"], address: evmAddress },
+  const EVM_CHAIN_LOGOS = [
+    { name: "Ethereum", logo: CHAIN_LOGOS["Ethereum"] },
+    { name: "Base", logo: CHAIN_LOGOS["Base"] },
+    { name: "BNB Chain", logo: CHAIN_LOGOS["BNB Chain"] },
+    { name: "Arbitrum", logo: CHAIN_LOGOS["Arbitrum"] },
+    { name: "Polygon", logo: CHAIN_LOGOS["Polygon"] },
+    { name: "Optimism", logo: CHAIN_LOGOS["Optimism"] },
+    { name: "Avalanche", logo: CHAIN_LOGOS["Avalanche"] },
+  ];
+
+  const rows = [
+    { id: "evm", label: "EVM Universal Account", address: evmAddress, logos: EVM_CHAIN_LOGOS },
+    { id: "solana", label: "Solana Universal Account", address: solanaAddress, logos: [{ name: "Solana", logo: CHAIN_LOGOS["Solana"] }] },
   ];
 
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose}>
-      <div className="px-5 pb-8">
+      <div className="px-5 pb-8 min-h-[400px]">
         <h2 className="text-white text-xl font-bold mb-2">Receive</h2>
         
         <p className="text-gray-400 text-sm mb-3">
@@ -934,21 +937,25 @@ const ReceiveModal = ({
 
         <p className="text-gray-500 text-xs mb-3 uppercase tracking-wide">Your receive address</p>
 
-        <div className="space-y-2 max-h-[50vh] overflow-y-auto">
-          {chains.map((chain) => (
-            <div key={chain.name} className="bg-[#252525] rounded-xl px-3 py-2 flex items-center justify-between">
+        <div className="space-y-3">
+          {rows.map((row) => (
+            <div key={row.id} className="bg-[#252525] rounded-xl px-3 py-3 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <img src={chain.logo} alt={chain.name} className="w-9 h-9 rounded-full" />
-                <span className="text-white font-medium">{chain.name}</span>
+                <div className="flex flex-wrap gap-1">
+                  {row.logos.map((c) => (
+                    <img key={c.name} src={c.logo} alt={c.name} className="w-8 h-8 rounded-full border-2 border-[#252525]" title={c.name} />
+                  ))}
+                </div>
+                <span className="text-white font-medium">{row.label}</span>
               </div>
-              <div className="flex items-center gap-3">
-                <span className="text-gray-400 text-sm font-mono">{truncateAddr(chain.address)}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-400 text-sm font-mono">{truncateAddr(row.address)}</span>
                 <button
-                  onClick={() => handleCopy(chain.address, chain.name)}
+                  onClick={() => handleCopy(row.address, row.id)}
                   className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
                   title="Copy address"
                 >
-                  {copied === chain.name ? (
+                  {copied === row.id ? (
                     <svg className="w-5 h-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
@@ -959,7 +966,7 @@ const ReceiveModal = ({
                   )}
                 </button>
                 <button
-                  onClick={() => setQrAddress({ chain: chain.name, address: chain.address })}
+                  onClick={() => setQrAddress({ chain: row.label, address: row.address })}
                   className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
                   title="Show QR code"
                 >
@@ -974,9 +981,9 @@ const ReceiveModal = ({
 
         {/* QR Code Modal */}
         {qrAddress && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50" onClick={() => setQrAddress(null)}>
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60]" onClick={() => setQrAddress(null)}>
             <div className="bg-[#1a1a1a] rounded-2xl p-6 mx-4 max-w-sm w-full" onClick={e => e.stopPropagation()}>
-              <h3 className="text-white text-lg font-bold mb-4 text-center">{qrAddress.chain} Address</h3>
+              <h3 className="text-white text-lg font-bold mb-4 text-center">{qrAddress.chain}</h3>
               <div className="bg-white p-4 rounded-xl mb-4 flex items-center justify-center">
                 <img 
                   src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${qrAddress.address}`} 
@@ -1139,7 +1146,7 @@ const SendModal = ({
 
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose}>
-      <div className="px-5 pb-8">
+      <div className="px-5 pb-8 min-h-[400px]">
         <h2 className="text-white text-xl font-bold mb-2">Send</h2>
         <p className="text-gray-400 text-sm mb-5">
           Transfer UA primary assets or ERC20/SPL tokens to another EVM or Solana wallet.
@@ -1619,7 +1626,7 @@ const ConvertModal = ({
 
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose}>
-      <div className="px-5 pb-8">
+      <div className="px-5 pb-8 min-h-[400px]">
         <h2 className="text-white text-xl font-bold mb-2">Convert</h2>
         <p className="text-gray-400 text-sm mb-4">
           Convert primary assets between chains.
@@ -4839,31 +4846,6 @@ const PerpsModal = ({
   );
 };
 
-// Buy (Onramp) Modal
-const BuyModal = ({
-  isOpen,
-  onClose,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-}) => {
-  return (
-    <BottomSheet isOpen={isOpen} onClose={onClose}>
-      <div className="px-6 pb-8">
-        <h2 className="text-white text-xl font-bold mb-6 text-center">Buy Crypto</h2>
-
-        <div className="text-center py-8">
-          <div className="text-5xl mb-4">💳</div>
-          <h3 className="text-white text-lg mb-2">Coming Soon</h3>
-          <p className="text-gray-500 text-sm">
-            Onramp integration with card payments will be available soon.
-          </p>
-        </div>
-      </div>
-    </BottomSheet>
-  );
-};
-
 // Agent Chat Modal (overlay instead of tab)
 const AgentModal = ({
   isOpen,
@@ -4975,10 +4957,10 @@ const HomeTab = ({
   primaryAssets, 
   profile,
   onShowProfilePicker,
-  onBuy,
   onReceive,
   onSend,
   onConvert,
+  onEarn,
   onTokenSelect,
   onRefresh,
 }: {
@@ -4986,10 +4968,10 @@ const HomeTab = ({
   primaryAssets: IAssetsResponse | null;
   profile: ProfileSettings;
   onShowProfilePicker: () => void;
-  onBuy: () => void;
   onReceive: () => void;
   onSend: () => void;
   onConvert: () => void;
+  onEarn: () => void;
   onTokenSelect?: (token: { id: string; symbol: string; name: string; logo?: string; price: number; contracts?: Array<{ address: string; blockchain: string }> }) => void;
   onRefresh?: () => Promise<void>;
 }) => {
@@ -5167,7 +5149,7 @@ const HomeTab = ({
         </div>
       </div>
 
-      {/* Action Pill Bar - Buy, Receive, Send, Convert (long-press to toggle compact mode) */}
+      {/* Action Pill Bar - Receive, Send, Convert, Earn (long-press to toggle compact mode) */}
       <div className="flex justify-center py-6 px-4 relative">
         <div 
           className="flex bg-white/[0.08] backdrop-blur-xl rounded-full p-1.5 border border-white/10"
@@ -5178,10 +5160,10 @@ const HomeTab = ({
           onMouseLeave={handleActionBarTouchEnd}
         >
           {[
-            { icon: "$", label: "Buy", action: onBuy },
             { icon: "↓", label: "Receive", action: onReceive },
             { icon: "↑", label: "Send", action: onSend },
             { icon: "⇄", label: "Convert", action: onConvert },
+            { icon: "📈", label: "Earn", action: onEarn },
           ].map(({ icon, label, action }, idx, arr) => (
             <div key={label} className="flex items-center">
               <button 
@@ -6714,7 +6696,7 @@ const BottomNav = ({
   active: TabType; 
   onChange: (t: TabType) => void;
   onAgentPress: () => void;
-  onTradePress: (option: "perps" | "polymarket" | "earn") => void;
+  onTradePress: (option: "perps" | "polymarket") => void;
 }) => {
   const tabs = [
     { id: "home" as TabType, icon: (active: boolean) => (
@@ -6783,13 +6765,6 @@ const BottomNav = ({
                     <img src={TRADE_MENU_LOGOS.polymarket} alt="" className="w-5 h-5 rounded object-contain" />
                     Predictions
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={() => onTradePress("earn")}
-                    className="flex items-center gap-2 text-white focus:bg-gray-800 focus:text-white cursor-pointer py-2"
-                  >
-                    <img src={TRADE_MENU_LOGOS.earn} alt="" className="w-5 h-5 rounded object-contain" />
-                    Earn
-                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             );
@@ -6830,7 +6805,6 @@ const App = () => {
   // Modals
   const [showAgentModal, setShowAgentModal] = useState(false);
   const [showProfilePicker, setShowProfilePicker] = useState(false);
-  const [showBuyModal, setShowBuyModal] = useState(false);
   const [showReceiveModal, setShowReceiveModal] = useState(false);
   const [showSendModal, setShowSendModal] = useState(false);
   const [showConvertModal, setShowConvertModal] = useState(false);
@@ -7178,10 +7152,10 @@ const App = () => {
           primaryAssets={combinedAssets as IAssetsResponse | null}
           profile={profile}
           onShowProfilePicker={() => setShowProfilePicker(true)}
-          onBuy={() => setShowBuyModal(true)}
           onReceive={() => setShowReceiveModal(true)}
           onSend={() => setShowSendModal(true)}
           onConvert={() => setShowConvertModal(true)}
+          onEarn={() => setShowEarnModal(true)}
           onTokenSelect={(token) => setHomeSelectedToken(token)}
           onRefresh={async () => {
             await fetchAssets();
@@ -7205,7 +7179,6 @@ const App = () => {
         onTradePress={(option) => {
           if (option === "perps") setShowPerpsModal(true);
           else if (option === "polymarket") setShowPolymarketModal(true);
-          else if (option === "earn") setShowEarnModal(true);
         }}
       />
 
@@ -7218,8 +7191,6 @@ const App = () => {
         profile={profile}
         onUpdateProfile={updateProfile}
       />
-      
-      <BuyModal isOpen={showBuyModal} onClose={() => setShowBuyModal(false)} />
       
       <ReceiveModal
         isOpen={showReceiveModal}

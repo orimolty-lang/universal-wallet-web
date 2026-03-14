@@ -285,7 +285,7 @@ export default function EarnModal({
 
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose}>
-      <div className="px-5 pb-8" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+      <div className="px-5 pb-8 min-h-[400px]" style={{ paddingTop: "env(safe-area-inset-top)" }}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-white text-xl font-bold flex items-center gap-2">
             <TrendingUp className="w-6 h-6 text-accent-dynamic" />
