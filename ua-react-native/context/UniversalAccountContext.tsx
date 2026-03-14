@@ -12,14 +12,23 @@ import {
   type IAssetsResponse,
   type IUniversalAccountConfig,
 } from "@particle-network/universal-account-sdk";
-import * as particleConnect from "@particle-network/rn-connect";
-import {
-  WalletType,
-  type AccountInfo as ParticleAccountInfo,
-} from "@particle-network/rn-connect";
 import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 import { Buffer } from "buffer";
+import { getParticleConnect } from "../lib/particleSafe";
+
+type ParticleAccountInfo = {
+  icons: string[];
+  name: string;
+  publicAddress: string;
+  url: string;
+  description?: string;
+  chainId?: number;
+  mnemonic?: string;
+  walletType?: string;
+};
+
+const WalletType = { AuthCore: "AuthCore" as const };
 
 interface AccountInfo {
   ownerAddress: string;
@@ -270,7 +279,9 @@ export const UniversalAccountProvider: React.FC<{
       // Uses personal_sign via Particle's native signMessage
       // This matches the webapp's signUniversalRootHash which also uses personal_sign
       // (both blind-sign and non-blind-sign paths produce the same EIP-191 signature)
-      const signature = await particleConnect.signMessage(
+      const pc = getParticleConnect();
+      if (!pc) throw new Error("Particle Connect not available");
+      const signature = await pc.signMessage(
         WalletType.AuthCore,
         address,
         hexMessage
@@ -322,7 +333,9 @@ const AccountSetter: React.FC<{
   useEffect(() => {
     const checkExistingAccount = async () => {
       try {
-        const accounts = await particleConnect.getAccounts(WalletType.AuthCore);
+        const pc = getParticleConnect();
+        if (!pc) return;
+        const accounts = await pc.getAccounts(WalletType.AuthCore);
         if (accounts.length > 0) {
           onSetAccount(accounts[0]);
         }

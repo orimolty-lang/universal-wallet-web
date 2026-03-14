@@ -10,9 +10,18 @@ import {
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
-import * as particleConnect from "@particle-network/rn-connect";
-import { WalletType } from "@particle-network/rn-connect";
-import { LoginType, SupportAuthType } from "@particle-network/rn-base";
+import { getParticleConnect } from "../lib/particleSafe";
+// Lazy-loaded to prevent crash if native modules are missing
+const LoginType = { Email: "Email" } as const;
+const SupportAuthType = {
+  Apple: "Apple",
+  Twitter: "Twitter",
+  Email: "Email",
+  Phone: "Phone",
+  Discord: "Discord",
+  Github: "Github",
+  Google: "Google",
+} as const;
 
 const { width } = Dimensions.get("window");
 
@@ -25,7 +34,9 @@ export default function LoginScreen() {
   const handleConnect = async () => {
     setIsLoading(true);
     try {
-      const account = await particleConnect.connect(WalletType.AuthCore, {
+      const pc = getParticleConnect();
+      if (!pc) throw new Error("Particle Connect not available");
+      const account = await pc.connect("AuthCore", {
         loginType: LoginType.Email,
         supportAuthType: [
           SupportAuthType.Apple,

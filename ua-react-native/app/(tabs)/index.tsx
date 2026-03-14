@@ -10,8 +10,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import * as particleConnect from "@particle-network/rn-connect";
-import { WalletType } from "@particle-network/rn-connect";
+import { getParticleConnect } from "../../lib/particleSafe";
 import { useUniversalAccount } from "../../context/UniversalAccountContext";
 import { formatAddress, formatUSD } from "../../lib/utils";
 import * as Clipboard from "expo-clipboard";
@@ -43,10 +42,12 @@ export default function HomeScreen() {
 
   const handleDisconnect = async () => {
     try {
-      const accounts = await particleConnect.getAccounts(WalletType.AuthCore);
+      const pc = getParticleConnect();
+      if (!pc) return;
+      const accounts = await pc.getAccounts("AuthCore");
       if (accounts.length > 0) {
-        await particleConnect.disconnect(
-          WalletType.AuthCore,
+        await pc.disconnect(
+          "AuthCore",
           accounts[0].publicAddress
         );
       }
