@@ -11,19 +11,12 @@ import {
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
-import Constants from "expo-constants";
-import { getParticleBase, getParticleChains, getParticleConnect } from "../lib/particleSafe";
-// Lazy-loaded to prevent crash if native modules are missing
-const LoginType = { Email: "Email" } as const;
-const SupportAuthType = {
-  Apple: "Apple",
-  Twitter: "Twitter",
-  Email: "Email",
-  Phone: "Phone",
-  Discord: "Discord",
-  Github: "Github",
-  Google: "Google",
-} as const;
+import { getParticleBase, getParticleChains } from "../lib/particleSafe";
+import {
+  init as initAuthCore,
+  connect as connectAuthCore,
+} from "@particle-network/rn-auth-core";
+import { LoginType, SupportAuthType, SocialLoginPrompt } from "@particle-network/rn-base";
 
 const { width } = Dimensions.get("window");
 
@@ -38,36 +31,36 @@ export default function LoginScreen() {
     try {
       const base = getParticleBase();
       const chains = getParticleChains();
-      const pc = getParticleConnect();
-      const extra = Constants.expoConfig?.extra;
 
-      if (!base || !chains || !pc) {
-        Alert.alert("SDK unavailable", "Particle SDK modules are not available in this build.");
+      if (!base || !chains) {
+        Alert.alert("SDK unavailable", "Particle base SDK modules are not available in this build.");
         return;
       }
 
-      // Safe on-demand init (keeps app startup stable)
-      try {
-        base.init(chains.ArbitrumOne, base.Env.Production);
-        pc.init(chains.ArbitrumOne, base.Env.Production, {
-          name: "OMNI Wallet",
-          icon: "https://connect.particle.network/icons/512.png",
-          url: "https://particle.network",
-          description: "OMNI - Universal Wallet powered by Particle Network",
-        });
-        if (extra?.walletConnectProjectId) {
-          pc.setWalletConnectProjectId(extra.walletConnectProjectId);
-        }
-      } catch (e) {
-        console.log("Particle init warning:", e);
-      }
+      // Keep init on-demand to avoid launch-time crash.
+      base.init(chains.ArbitrumOne, base.Env.Production);
+      initAuthCore();
 
-      const account = await pc.connect("AuthCore", { loginType: LoginType.Email });
+      const userInfo = await connectAuthCore(
+        LoginType.Email,
+        undefined,
+        [
+          SupportAuthType.Apple,
+          SupportAuthType.Twitter,
+          SupportAuthType.Email,
+          SupportAuthType.Phone,
+          SupportAuthType.Discord,
+          SupportAuthType.Github,
+          SupportAuthType.Google,
+        ],
+        SocialLoginPrompt.SelectAccount
+      );
 
-      if (account?.publicAddress) {
+      const primaryWallet = userInfo?.wallets?.[0];
+      if (primaryWallet?.public_address) {
         router.replace("/(tabs)");
       } else {
-        Alert.alert("Connection failed", "No account returned from SDK");
+        Alert.alert("Connection failed", "No wallet returned from AuthCore");
       }
     } catch (error: any) {
       console.error("Connection failed:", error);
