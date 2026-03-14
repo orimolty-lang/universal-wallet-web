@@ -352,9 +352,30 @@ const AccountSetter: React.FC<{
 export const useUniversalAccount = () => {
   const context = useContext(UniversalAccountContext);
   if (context === undefined) {
-    throw new Error(
-      "useUniversalAccount must be used within a UniversalAccountProvider"
-    );
+    // Return safe defaults instead of crashing the app in production.
+    return {
+      universalAccount: null,
+      address: undefined,
+      accountInfo: null,
+      primaryAssets: null,
+      mobulaAssets: [],
+      combinedAssets: [],
+      isLoading: false,
+      profile: DEFAULT_PROFILE,
+      updateProfile: () => {},
+      fetchAssets: async () => {},
+      fetchMobulaAssets: async () => {},
+      signUATransaction: async () => "",
+      connectedAccount: null,
+      setShowDepositModal: () => {},
+      setShowAssetBreakdown: () => {},
+      setShowTxHistory: () => {},
+      setShowSendModal: () => {},
+      showDepositModal: false,
+      showAssetBreakdown: false,
+      showTxHistory: false,
+      showSendModal: false,
+    } as UniversalAccountContextType;
   }
   return context;
 };
