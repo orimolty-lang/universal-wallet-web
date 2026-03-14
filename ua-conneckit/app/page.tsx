@@ -195,7 +195,7 @@ const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
 };
 
 // Types
-type TabType = "home" | "search" | "trade" | "points";
+type TabType = "home" | "search" | "browser" | "points";
 
 interface AccountInfo {
   ownerAddress: string;
@@ -4966,6 +4966,9 @@ const HomeTab = ({
   onReceive,
   onSend,
   onConvert,
+  onPerps,
+  onPolymarket,
+  onEarn,
   onTokenSelect,
   onRefresh,
 }: {
@@ -4977,6 +4980,9 @@ const HomeTab = ({
   onReceive: () => void;
   onSend: () => void;
   onConvert: () => void;
+  onPerps: () => void;
+  onPolymarket: () => void;
+  onEarn: () => void;
   onTokenSelect?: (token: { id: string; symbol: string; name: string; logo?: string; price: number; contracts?: Array<{ address: string; blockchain: string }> }) => void;
   onRefresh?: () => Promise<void>;
 }) => {
@@ -5341,7 +5347,68 @@ const HomeTab = ({
         )}
       </div>
       
-      <div className="mb-24" />
+      {/* Perps Menu Item */}
+      <div className="px-4 mt-6">
+        <button 
+          onClick={onPerps}
+          className="w-full flex items-center justify-between p-4 bg-gray-900 rounded-2xl border border-gray-800 hover:border-accent-dynamic/50 transition-colors"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-accent-dynamic-20 flex items-center justify-center">
+              <span className="text-2xl">∞</span>
+            </div>
+            <div className="text-left">
+              <div className="text-white font-semibold">Perps</div>
+              <div className="text-gray-500 text-sm">Trade perpetual futures</div>
+            </div>
+          </div>
+          <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Polymarket Menu Item */}
+      <div className="px-4 mt-3">
+        <button 
+          onClick={onPolymarket}
+          className="w-full flex items-center justify-between p-4 bg-gray-900 rounded-2xl border border-gray-800 hover:border-accent-dynamic/50 transition-colors"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-accent-dynamic-20 flex items-center justify-center overflow-hidden">
+              <img src="https://polymarket.com/favicon.ico" alt="" className="w-8 h-8" />
+            </div>
+            <div className="text-left">
+              <div className="text-white font-semibold">Predictions</div>
+              <div className="text-gray-500 text-sm">Bet on real-world events</div>
+            </div>
+          </div>
+          <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Earn Menu Item */}
+      <div className="px-4 mt-3 mb-24">
+        <button 
+          onClick={onEarn}
+          className="w-full flex items-center justify-between p-4 bg-gray-900 rounded-2xl border border-gray-800 hover:border-accent-dynamic/50 transition-colors"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-accent-dynamic-20 flex items-center justify-center">
+              <span className="text-2xl">📈</span>
+            </div>
+            <div className="text-left">
+              <div className="text-white font-semibold">Earn</div>
+              <div className="text-gray-500 text-sm">Deposit USDC into yield vaults</div>
+            </div>
+          </div>
+          <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      </div>
     </div>
   );
 };
@@ -5820,6 +5887,158 @@ const SearchTab = ({
           console.log("Swap success:", txId);
         }}
       />
+    </div>
+  );
+};
+
+// Browser Tab (dApp Browser)
+const BrowserTab = () => {
+  const [inputUrl, setInputUrl] = useState("");
+  const [currentUrl, setCurrentUrl] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  
+  const quickLinks = [
+    { name: "Avantis", url: "https://foundation.avantisfi.com", icon: "📈", description: "Perps trading" },
+    { name: "DefiLlama", url: "https://defillama.com", icon: "🦙", description: "DeFi analytics" },
+    { name: "Dexscreener", url: "https://dexscreener.com", icon: "📊", description: "DEX charts" },
+    { name: "CoinGecko", url: "https://coingecko.com", icon: "🦎", description: "Token data" },
+    { name: "Basescan", url: "https://basescan.org", icon: "🔍", description: "Base explorer" },
+    { name: "Etherscan", url: "https://etherscan.io", icon: "⟠", description: "ETH explorer" },
+  ];
+
+  const navigateTo = (url: string) => {
+    const fullUrl = url.startsWith("http") ? url : `https://${url}`;
+    setCurrentUrl(fullUrl);
+    setInputUrl(fullUrl);
+    setIsLoading(true);
+    setLoadError(false);
+  };
+
+  const closeBrowser = () => {
+    setCurrentUrl(null);
+    setInputUrl("");
+    setLoadError(false);
+  };
+
+  // If browsing a site, show embedded browser
+  if (currentUrl) {
+    return (
+      <div className="flex-1 flex flex-col bg-[#0a0a0a]" style={{ marginBottom: '80px' }}>
+        {/* Browser Header */}
+        <div className="flex items-center gap-2 px-3 py-2 bg-gray-900 border-b border-gray-800">
+          <button 
+            onClick={closeBrowser}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-800 text-white"
+          >
+            ✕
+          </button>
+          <div className="flex-1 bg-gray-800 rounded-full px-3 py-1.5 flex items-center gap-2">
+            {isLoading && <div className="w-3 h-3 border-2 border-accent-dynamic border-t-transparent rounded-full animate-spin" />}
+            <span className="text-gray-400 text-xs truncate">{currentUrl}</span>
+          </div>
+          <button 
+            onClick={() => window.open(currentUrl, '_blank')}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-800 text-white text-sm"
+            title="Open in browser"
+          >
+            ↗
+          </button>
+        </div>
+
+        {/* Browser Frame */}
+        <div className="flex-1 relative">
+          {loadError ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 p-6">
+              <span className="text-4xl mb-4">🔒</span>
+              <p className="text-white font-medium mb-2">Site cannot be embedded</p>
+              <p className="text-gray-400 text-sm text-center mb-4">
+                This site blocks in-app browsers for security. Open it externally instead.
+              </p>
+              <button
+                onClick={() => window.open(currentUrl, '_blank')}
+                className="bg-accent-dynamic text-white px-6 py-2 rounded-xl font-medium"
+              >
+                Open in Browser
+              </button>
+            </div>
+          ) : (
+            <iframe
+              ref={iframeRef}
+              src={currentUrl}
+              className="w-full h-full border-0 bg-white"
+              title="dApp Browser"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+              onLoad={() => setIsLoading(false)}
+              onError={() => { setLoadError(true); setIsLoading(false); }}
+            />
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Home view
+  return (
+    <div className="flex-1 flex flex-col bg-[#0a0a0a] pb-24 overflow-auto">
+      {/* Header */}
+      <div className="px-4 pt-4 pb-2">
+        <h2 className="text-white text-xl font-bold">Browser</h2>
+        <p className="text-gray-500 text-sm mt-1">Explore DeFi & Web3</p>
+      </div>
+
+      {/* URL Bar */}
+      <div className="px-4 py-3">
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={inputUrl}
+            onChange={(e) => setInputUrl(e.target.value)}
+            placeholder="Enter URL..."
+            className="flex-1 bg-gray-900 rounded-xl px-4 py-2.5 text-white text-sm outline-none"
+            onKeyPress={(e) => {
+              if (e.key === "Enter" && inputUrl.trim()) {
+                navigateTo(inputUrl.trim());
+              }
+            }}
+          />
+          <button 
+            onClick={() => inputUrl.trim() && navigateTo(inputUrl.trim())}
+            className="bg-accent-dynamic text-white px-4 py-2.5 rounded-xl text-sm font-medium"
+          >
+            Go
+          </button>
+        </div>
+      </div>
+
+      {/* Quick Links */}
+      <div className="px-4">
+        <div className="text-gray-500 text-xs uppercase mb-3">Quick Access</div>
+        <div className="space-y-2">
+          {quickLinks.map((link) => (
+            <button
+              key={link.name}
+              onClick={() => navigateTo(link.url)}
+              className="w-full flex items-center gap-3 p-3 bg-gray-900 rounded-xl hover:bg-gray-800 transition-colors"
+            >
+              <span className="text-2xl w-10 h-10 flex items-center justify-center bg-gray-800 rounded-lg">{link.icon}</span>
+              <div className="text-left flex-1">
+                <span className="text-white font-medium">{link.name}</span>
+                <p className="text-gray-500 text-xs">{link.description}</p>
+              </div>
+              <span className="text-gray-500">→</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Note */}
+      <div className="px-4 mt-4">
+        <p className="text-gray-600 text-xs text-center">
+          Some sites may not load due to security restrictions. Use ↗ to open externally.
+        </p>
+      </div>
     </div>
   );
 };
@@ -6691,17 +6910,15 @@ const SettingsModal = ({
   </BottomSheet>
 );
 
-// Bottom Nav with Agent and Trade buttons
+// Bottom Nav with Agent button
 const BottomNav = ({ 
   active, 
   onChange,
-  onAgentPress,
-  onTradePress,
+  onAgentPress 
 }: { 
   active: TabType; 
   onChange: (t: TabType) => void;
   onAgentPress: () => void;
-  onTradePress: () => void;
 }) => {
   const tabs = [
     { id: "home" as TabType, icon: (active: boolean) => (
@@ -6717,11 +6934,11 @@ const BottomNav = ({
     { id: "agent" as TabType, icon: () => (
       <span className="text-xl">🤖</span>
     ), isAgent: true },
-    { id: "trade" as TabType, icon: () => (
+    { id: "browser" as TabType, icon: () => (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/>
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 21a9.004 9.004 0 008.716-6.747M12 21a9.004 9.004 0 01-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 017.843 4.582M12 3a8.997 8.997 0 00-7.843 4.582m15.686 0A11.953 11.953 0 0112 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0121 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0112 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 013 12c0-1.605.42-3.113 1.157-4.418"/>
       </svg>
-    ), isTrade: true },
+    )},
     { id: "points" as TabType, icon: () => (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z"/>
@@ -6739,15 +6956,11 @@ const BottomNav = ({
         }}
       >
         {tabs.map((tab) => {
-          const isActive = active === tab.id || (tab.isAgent && false) || (tab.isTrade && false);
+          const isActive = active === tab.id || (tab.isAgent && false);
           return (
             <button
               key={tab.id}
-              onClick={() => {
-                if (tab.isAgent) onAgentPress();
-                else if (tab.isTrade) onTradePress();
-                else onChange(tab.id);
-              }}
+              onClick={() => tab.isAgent ? onAgentPress() : onChange(tab.id)}
               className={`relative flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 ${
                 isActive 
                   ? 'text-accent-dynamic bg-accent-dynamic-20' 
@@ -6784,7 +6997,6 @@ const App = () => {
   const [showReceiveModal, setShowReceiveModal] = useState(false);
   const [showSendModal, setShowSendModal] = useState(false);
   const [showConvertModal, setShowConvertModal] = useState(false);
-  const [showTradeSheet, setShowTradeSheet] = useState(false);
   const [showPerpsModal, setShowPerpsModal] = useState(false);
   const [showPolymarketModal, setShowPolymarketModal] = useState(false);
   const [showEarnModal, setShowEarnModal] = useState(false);
@@ -7133,6 +7345,9 @@ const App = () => {
           onReceive={() => setShowReceiveModal(true)}
           onSend={() => setShowSendModal(true)}
           onConvert={() => setShowConvertModal(true)}
+          onPerps={() => setShowPerpsModal(true)}
+          onPolymarket={() => setShowPolymarketModal(true)}
+          onEarn={() => setShowEarnModal(true)}
           onTokenSelect={(token) => setHomeSelectedToken(token)}
           onRefresh={async () => {
             await fetchAssets();
@@ -7147,61 +7362,14 @@ const App = () => {
           onSend={() => setShowSendModal(true)}
         />
       )}
+      {activeTab === "browser" && <BrowserTab />}
       {activeTab === "points" && <PointsTab />}
 
       <BottomNav 
         active={activeTab} 
         onChange={setActiveTab} 
         onAgentPress={() => setShowAgentModal(true)}
-        onTradePress={() => setShowTradeSheet(true)}
       />
-
-      <BottomSheet isOpen={showTradeSheet} onClose={() => setShowTradeSheet(false)}>
-        <div className="px-4 pb-8" onClick={(e) => e.stopPropagation()}>
-          <h3 className="text-white text-lg font-semibold mb-4">Trade</h3>
-          <div className="space-y-2">
-            <button
-              onClick={() => {
-                setShowTradeSheet(false);
-                setShowPerpsModal(true);
-              }}
-              className="w-full flex items-center gap-3 p-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-left transition-colors"
-            >
-              <span className="text-2xl">📈</span>
-              <div>
-                <div className="text-white font-medium">Perps</div>
-                <div className="text-gray-400 text-sm">Trade perpetual futures</div>
-              </div>
-            </button>
-            <button
-              onClick={() => {
-                setShowTradeSheet(false);
-                setShowPolymarketModal(true);
-              }}
-              className="w-full flex items-center gap-3 p-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-left transition-colors"
-            >
-              <span className="text-2xl">🎯</span>
-              <div>
-                <div className="text-white font-medium">Predictions</div>
-                <div className="text-gray-400 text-sm">Polymarket prediction markets</div>
-              </div>
-            </button>
-            <button
-              onClick={() => {
-                setShowTradeSheet(false);
-                setShowEarnModal(true);
-              }}
-              className="w-full flex items-center gap-3 p-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-left transition-colors"
-            >
-              <span className="text-2xl">💎</span>
-              <div>
-                <div className="text-white font-medium">Earn</div>
-                <div className="text-gray-400 text-sm">Stake and earn yield</div>
-              </div>
-            </button>
-          </div>
-        </div>
-      </BottomSheet>
 
       {/* All Modals */}
       <AgentModal isOpen={showAgentModal} onClose={() => setShowAgentModal(false)} />
