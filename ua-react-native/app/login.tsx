@@ -11,7 +11,8 @@ import {
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
-import { getParticleConnect } from "../lib/particleSafe";
+import Constants from "expo-constants";
+import { getParticleBase, getParticleChains, getParticleConnect } from "../lib/particleSafe";
 // Lazy-loaded to prevent crash if native modules are missing
 const LoginType = { Email: "Email" } as const;
 const SupportAuthType = {
@@ -35,24 +36,43 @@ export default function LoginScreen() {
   const handleConnect = async () => {
     setIsLoading(true);
     try {
+      const base = getParticleBase();
+      const chains = getParticleChains();
       const pc = getParticleConnect();
+      const extra = Constants.expoConfig?.extra;
 
-      if (!pc) {
+      if (!base || !chains || !pc) {
         Alert.alert("SDK unavailable", "Particle SDK modules are not available in this build.");
         return;
       }
 
-      // Minimal connect payload for iOS 26.4 stability testing
-      const account = await pc.connect("AuthCore", {
-        loginType: LoginType.Email,
-      });
+      // Safe on-demand init (keeps app startup stable)
+      try {
+        base.init(chains.ArbitrumOne, base.Env.Production);
+        pc.init(chains.ArbitrumOne, base.Env.Production, {
+          name: "OMNI Wallet",
+          icon: "https://connect.particle.network/icons/512.png",
+          url: "https://particle.network",
+          description: "OMNI - Universal Wallet powered by Particle Network",
+        });
+        if (extra?.walletConnectProjectId) {
+          pc.setWalletConnectProjectId(extra.walletConnectProjectId);
+        }
+      } catch (e) {
+        console.log("Particle init warning:", e);
+      }
+
+      const account = await pc.connect("AuthCore", { loginType: LoginType.Email });
 
       if (account?.publicAddress) {
         router.replace("/(tabs)");
+      } else {
+        Alert.alert("Connection failed", "No account returned from SDK");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Connection failed:", error);
-      Alert.alert("Connection failed", error instanceof Error ? error.message : "Unknown error");
+      const details = error?.message || error?.reason || error?.code || JSON.stringify(error);
+      Alert.alert("Connection failed", String(details || "Unknown error"));
     } finally {
       setIsLoading(false);
     }
