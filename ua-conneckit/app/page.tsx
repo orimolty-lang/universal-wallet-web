@@ -901,21 +901,9 @@ const ReceiveModal = ({
     setTimeout(() => setCopied(null), 2000);
   };
 
-  const truncateAddr = (addr: string) => addr ? `${addr.slice(0, 4)}...${addr.slice(-3)}` : "";
-
-  const EVM_CHAIN_LOGOS = [
-    { name: "Ethereum", logo: CHAIN_LOGOS["Ethereum"] },
-    { name: "Base", logo: CHAIN_LOGOS["Base"] },
-    { name: "BNB Chain", logo: CHAIN_LOGOS["BNB Chain"] },
-    { name: "Arbitrum", logo: CHAIN_LOGOS["Arbitrum"] },
-    { name: "Polygon", logo: CHAIN_LOGOS["Polygon"] },
-    { name: "Optimism", logo: CHAIN_LOGOS["Optimism"] },
-    { name: "Avalanche", logo: CHAIN_LOGOS["Avalanche"] },
-  ];
-
   const rows = [
-    { id: "evm", label: "EVM Universal Account", address: evmAddress, logos: EVM_CHAIN_LOGOS },
-    { id: "solana", label: "Solana Universal Account", address: solanaAddress, logos: [{ name: "Solana", logo: CHAIN_LOGOS["Solana"] }] },
+    { id: "evm", label: "EVM", address: evmAddress, logo: CHAIN_LOGOS["Base"] },
+    { id: "solana", label: "Solana", address: solanaAddress, logo: CHAIN_LOGOS["Solana"] },
   ];
 
   return (
@@ -939,41 +927,41 @@ const ReceiveModal = ({
 
         <div className="space-y-3">
           {rows.map((row) => (
-            <div key={row.id} className="bg-[#252525] rounded-xl px-3 py-3 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex flex-wrap gap-1">
-                  {row.logos.map((c) => (
-                    <img key={c.name} src={c.logo} alt={c.name} className="w-8 h-8 rounded-full border-2 border-[#252525]" title={c.name} />
-                  ))}
+            <div key={row.id} className="bg-[#252525] rounded-xl px-3 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <img src={row.logo} alt={row.label} className="w-10 h-10 rounded-full flex-shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-white font-medium">{row.label}</div>
+                    <p className="text-gray-400 text-xs font-mono break-all mt-0.5">{row.address}</p>
+                  </div>
                 </div>
-                <span className="text-white font-medium">{row.label}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-gray-400 text-sm font-mono">{truncateAddr(row.address)}</span>
-                <button
-                  onClick={() => handleCopy(row.address, row.id)}
-                  className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
-                  title="Copy address"
-                >
-                  {copied === row.id ? (
-                    <svg className="w-5 h-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  ) : (
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    onClick={() => handleCopy(row.address, row.id)}
+                    className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                    title="Copy address"
+                  >
+                    {copied === row.id ? (
+                      <svg className="w-5 h-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setQrAddress({ chain: row.label, address: row.address })}
+                    className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                    title="Show QR code"
+                  >
                     <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h4v4H4V4zm0 12h4v4H4v-4zm12-12h4v4h-4V4zm0 12h4v4h-4v-4zm-6-6h4v4h-4v-4z" />
                     </svg>
-                  )}
-                </button>
-                <button
-                  onClick={() => setQrAddress({ chain: row.label, address: row.address })}
-                  className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
-                  title="Show QR code"
-                >
-                  <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h4v4H4V4zm0 12h4v4H4v-4zm12-12h4v4h-4V4zm0 12h4v4h-4v-4zm-6-6h4v4h-4v-4z" />
-                  </svg>
-                </button>
+                  </button>
+                </div>
               </div>
             </div>
           ))}
@@ -1053,6 +1041,7 @@ const SendModal = ({
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
   const [selectedOption, setSelectedOption] = useState<string>("");
+  const [sendTokenOpen, setSendTokenOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [txResult, setTxResult] = useState<{ txId: string } | null>(null);
@@ -1177,21 +1166,59 @@ const SendModal = ({
               </div>
             )}
 
-            {/* Token + Chain Selection */}
+            {/* Token + Chain Selection - Convert-style dropdown */}
             <div className="mb-3 bg-zinc-900 rounded-xl p-3 border border-zinc-800">
               <label className="text-gray-400 text-sm mb-2 block">Token & Network</label>
-              <select
-                value={selectedOption}
-                onChange={(e) => setSelectedOption(e.target.value)}
-                className="w-full bg-zinc-950 rounded-xl px-3 py-2 text-white outline-none border border-zinc-800"
-              >
-                <option value="">Select token and chain</option>
-                {transferOptions.map((o) => (
-                  <option key={o.key} value={o.key}>
-                    {o.symbol} on {CHAIN_ID_TO_NAME_SEND[o.chainId] || `Chain ${o.chainId}`} — {o.balance.toFixed(4)}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <button
+                  onClick={() => setSendTokenOpen(!sendTokenOpen)}
+                  className="w-full bg-zinc-950 rounded-lg px-3 py-2.5 text-white text-left flex items-center justify-between border border-zinc-800"
+                >
+                  <div className="flex items-center gap-2">
+                    {selected ? (
+                      <>
+                        <div className="relative">
+                          <img src={TOKEN_LOGOS[selected.symbol] || TOKEN_LOGOS.ETH} alt="" className="w-6 h-6 rounded-full" />
+                          <img
+                            src={CHAIN_LOGOS[CHAIN_ID_TO_NAME_SEND[selected.chainId]] || CHAIN_LOGOS.Ethereum}
+                            alt=""
+                            className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-zinc-950"
+                          />
+                        </div>
+                        <span className="text-sm font-medium">{selected.symbol} on {CHAIN_ID_TO_NAME_SEND[selected.chainId]}</span>
+                        <span className="text-gray-500 text-xs">— {selected.balance.toFixed(4)}</span>
+                      </>
+                    ) : (
+                      <span className="text-gray-400 text-sm">Select token and chain</span>
+                    )}
+                  </div>
+                  <span className="text-gray-400 text-xs">▼</span>
+                </button>
+                {sendTokenOpen && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden z-20 max-h-48 overflow-y-auto">
+                    {transferOptions.map((o) => (
+                      <button
+                        key={o.key}
+                        onClick={() => { setSelectedOption(o.key); setSendTokenOpen(false); }}
+                        className="w-full px-3 py-2.5 flex items-center gap-2 hover:bg-zinc-800 text-left"
+                      >
+                        <div className="relative">
+                          <img src={TOKEN_LOGOS[o.symbol] || TOKEN_LOGOS.ETH} alt="" className="w-6 h-6 rounded-full" />
+                          <img
+                            src={CHAIN_LOGOS[CHAIN_ID_TO_NAME_SEND[o.chainId]] || CHAIN_LOGOS.Ethereum}
+                            alt=""
+                            className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-zinc-900"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-white text-sm">{o.symbol} on {CHAIN_ID_TO_NAME_SEND[o.chainId]}</div>
+                          <div className="text-gray-500 text-xs">{o.balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })}</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="mb-3 bg-zinc-900 rounded-xl p-3 border border-zinc-800">
