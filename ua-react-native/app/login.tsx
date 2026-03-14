@@ -11,12 +11,8 @@ import {
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
-import { getParticleBase, getParticleChains } from "../lib/particleSafe";
-import {
-  init as initAuthCore,
-  connect as connectAuthCore,
-} from "@particle-network/rn-auth-core";
-import { LoginType, SupportAuthType, SocialLoginPrompt } from "@particle-network/rn-base";
+import * as WebBrowser from "expo-web-browser";
+import * as Linking from "expo-linking";
 
 const { width } = Dimensions.get("window");
 
@@ -29,38 +25,30 @@ export default function LoginScreen() {
   const handleConnect = async () => {
     setIsLoading(true);
     try {
-      const base = getParticleBase();
-      const chains = getParticleChains();
+      const redirectUri = Linking.createURL("auth"); // omniwallet://auth
+      const webAuthUrl = `https://orimolty-lang.github.io/universal-wallet-web/?mobileAuth=1&redirect_uri=${encodeURIComponent(
+        redirectUri
+      )}`;
 
-      if (!base || !chains) {
-        Alert.alert("SDK unavailable", "Particle base SDK modules are not available in this build.");
-        return;
-      }
+      const result = await WebBrowser.openAuthSessionAsync(webAuthUrl, redirectUri);
 
-      // Keep init on-demand to avoid launch-time crash.
-      base.init(chains.ArbitrumOne, base.Env.Production);
-      initAuthCore();
+      if (result.type === "success" && result.url) {
+        const parsed = Linking.parse(result.url);
+        const params = (parsed.queryParams || {}) as Record<string, string | undefined>;
 
-      const userInfo = await connectAuthCore(
-        LoginType.Email,
-        undefined,
-        [
-          SupportAuthType.Apple,
-          SupportAuthType.Twitter,
-          SupportAuthType.Email,
-          SupportAuthType.Phone,
-          SupportAuthType.Discord,
-          SupportAuthType.Github,
-          SupportAuthType.Google,
-        ],
-        SocialLoginPrompt.SelectAccount
-      );
+        if (params.connected === "1" || params.success === "1" || params.address) {
+          router.replace("/(tabs)");
+          return;
+        }
 
-      const primaryWallet = userInfo?.wallets?.[0];
-      if (primaryWallet?.public_address) {
-        router.replace("/(tabs)");
+        Alert.alert(
+          "Login returned",
+          "Auth completed but no wallet payload was returned. Opened web auth successfully."
+        );
+      } else if (result.type === "cancel") {
+        // user cancelled
       } else {
-        Alert.alert("Connection failed", "No wallet returned from AuthCore");
+        Alert.alert("Connection failed", "Web auth did not complete");
       }
     } catch (error: any) {
       console.error("Connection failed:", error);
