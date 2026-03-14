@@ -417,30 +417,26 @@ export async function fetchUserPositions(uaAddress: string): Promise<EarnPositio
     }
 
     // 2. V2 vault positions (userByAddress per chain - includes Gauntlet USDC Prime etc.)
-    const v2Queries = EARN_CHAIN_IDS.map(
-      (chainId) =>
-        `u${chainId}: userByAddress(address: "${addr}", chainId: ${chainId}) {
-          vaultV2Positions {
-            vault { address name chain { id network } asset { address symbol decimals } }
-            shares
-            assets
-          }
-        }`
-    ).join("\n");
+    // Query each chain separately: userByAddress returns NOT_FOUND when user has no activity,
+    // and a batched query fails entirely if any sub-query errors. Separate fetches avoid that.
+    const v2Query = (chainId: number) =>
+      `query { userByAddress(address: "${addr}", chainId: ${chainId}) { vaultV2Positions { vault { address name chain { id network } asset { address symbol decimals } } shares assets } } }`;
 
-    const v2Res = await fetch("https://api.morpho.org/graphql", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        query: `query { ${v2Queries} }`,
-      }),
-      cache: "no-store",
-    });
-    const v2Data = await v2Res.json();
-    const v2Root = v2Data?.data ?? {};
-    for (const chainId of EARN_CHAIN_IDS) {
-      const user = v2Root[`u${chainId}`];
-      const v2Items = user?.vaultV2Positions ?? [];
+    const v2Results = await Promise.allSettled(
+      EARN_CHAIN_IDS.map((chainId) =>
+        fetch("https://api.morpho.org/graphql", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: v2Query(chainId) }),
+          cache: "no-store",
+        }).then((r) => r.json())
+      )
+    );
+
+    for (const result of v2Results) {
+      if (result.status !== "fulfilled") continue;
+      const data = result.value?.data?.userByAddress;
+      const v2Items = data?.vaultV2Positions ?? [];
       for (const item of v2Items) {
         const pos = parseV2Position(item, chainIdToUa);
         if (pos) positions.push(pos);

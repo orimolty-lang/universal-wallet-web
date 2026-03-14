@@ -362,6 +362,25 @@ export default function EarnModal({
               </div>
             </div>
 
+            {(() => {
+              const existingPos = positions.find((p) => p.market.id === selectedMarket.id);
+              return existingPos ? (
+                <div className="bg-zinc-900 rounded-xl p-3 border border-zinc-800 flex items-center justify-between">
+                  <div>
+                    <div className="text-gray-400 text-xs uppercase tracking-wide mb-0.5">Your position</div>
+                    <div className="text-white font-medium">~{existingPos.assetsApprox.toFixed(2)} {selectedMarket.assetSymbol}</div>
+                  </div>
+                  <button
+                    onClick={() => handleWithdraw(existingPos)}
+                    disabled={!!withdrawingPosition}
+                    className="px-3 py-1.5 rounded-lg bg-zinc-700 text-white text-xs font-medium hover:bg-zinc-600 disabled:opacity-50"
+                  >
+                    {withdrawingPosition?.market.id === existingPos.market.id ? "..." : "Withdraw"}
+                  </button>
+                </div>
+              ) : null;
+            })()}
+
             {error && (
               <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-2 text-red-300 text-xs">
                 {error}
