@@ -351,12 +351,13 @@ export default function EarnModal({
               <div className="flex items-center justify-between mb-2">
                 <span className="text-white font-medium">{selectedMarket.name}</span>
                 <div className="flex items-center gap-1.5 text-gray-400 text-xs capitalize">
-                  <img src={getChainLogo(selectedMarket.chainId)} alt="" className="w-4 h-4 rounded-full" />
-                  <span>{selectedMarket.chainName}</span>
-                  <span>·</span>
+                  <img src={getChainLogo(selectedMarket.chainId)} alt="" className="w-4 h-4 rounded-full" title={selectedMarket.chainName} />
                   <span>{selectedMarket.protocol}</span>
                 </div>
               </div>
+              {(selectedMarket.description ?? "").trim().length > 0 && (
+                <p className="text-gray-400 text-xs mt-2 leading-relaxed">{selectedMarket.description}</p>
+              )}
               <div className="grid grid-cols-2 gap-2 mt-2">
                 {selectedMarket.apy > 0 && (
                   <div>
@@ -364,10 +365,30 @@ export default function EarnModal({
                     <div className="text-green-400 font-medium">{selectedMarket.apy.toFixed(2)}%</div>
                   </div>
                 )}
-                {selectedMarket.tvl > 0 && (
+                {(selectedMarket.totalAssetsUsd ?? selectedMarket.tvl) > 0 && (
                   <div>
-                    <div className="text-gray-500 text-xs">TVL</div>
-                    <div className="text-gray-300 text-sm">{formatTvl(selectedMarket.tvl)}</div>
+                    <div className="text-gray-500 text-xs">Total deposits</div>
+                    <div className="text-gray-300 text-sm">{formatTvl(selectedMarket.totalAssetsUsd ?? selectedMarket.tvl)}</div>
+                  </div>
+                )}
+                {(selectedMarket.liquidityUsd ?? 0) > 0 && (
+                  <div>
+                    <div className="text-gray-500 text-xs">Liquidity</div>
+                    <div className="text-gray-300 text-sm">{formatTvl(selectedMarket.liquidityUsd!)}</div>
+                  </div>
+                )}
+                {selectedMarket.sharePrice != null && selectedMarket.sharePrice > 0 && (
+                  <div>
+                    <div className="text-gray-500 text-xs">Share price</div>
+                    <div className="text-gray-300 text-sm">${selectedMarket.sharePrice.toFixed(4)}</div>
+                  </div>
+                )}
+                {selectedMarket.curatorAddress && (
+                  <div className="col-span-2">
+                    <div className="text-gray-500 text-xs">Curator</div>
+                    <div className="text-gray-400 text-xs font-mono truncate" title={selectedMarket.curatorAddress}>
+                      {selectedMarket.curatorAddress.slice(0, 6)}…{selectedMarket.curatorAddress.slice(-4)}
+                    </div>
                   </div>
                 )}
                 <div>
@@ -460,9 +481,7 @@ export default function EarnModal({
                       <div>
                         <div className="text-white font-medium text-sm">{pos.market.name}</div>
                         <div className="flex items-center gap-1.5 text-gray-500 text-xs mt-0.5">
-                          <img src={getChainLogo(pos.market.chainId)} alt="" className="w-3.5 h-3.5 rounded-full" />
-                          <span>{pos.market.chainName}</span>
-                          <span>·</span>
+                          <img src={getChainLogo(pos.market.chainId)} alt="" className="w-3.5 h-3.5 rounded-full" title={pos.market.chainName} />
                           <img src={getAssetLogo(pos.market.assetSymbol)} alt="" className="w-3.5 h-3.5 rounded-full" />
                           <span>~{pos.assetsApprox.toFixed(2)} {pos.market.assetSymbol}</span>
                         </div>
@@ -580,7 +599,7 @@ export default function EarnModal({
                         </div>
                         <div>
                         <div className="text-white font-medium">{m.name}</div>
-                        <div className="text-gray-400 text-xs mt-0.5 capitalize">{m.chainName} · {m.protocol}</div>
+                        <div className="text-gray-400 text-xs mt-0.5 capitalize">{m.protocol}</div>
                         {m.tvl > 0 && (
                           <div className="text-gray-500 text-xs mt-1">TVL {formatTvl(m.tvl)}</div>
                         )}

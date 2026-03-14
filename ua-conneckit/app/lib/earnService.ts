@@ -90,6 +90,16 @@ export interface EarnMarket {
   assetDecimals: number;
   apy: number;
   tvl: number;
+  /** Share price (assets per share, ~1.0 for new vaults) */
+  sharePrice?: number;
+  /** Liquidity in USD (idle assets available for instant withdraw) */
+  liquidityUsd?: number;
+  /** Total deposits in USD */
+  totalAssetsUsd?: number;
+  /** Curator address (vault manager) */
+  curatorAddress?: string;
+  /** Vault description from metadata */
+  description?: string | null;
 }
 
 /**
@@ -107,7 +117,7 @@ async function fetchMorphoVaults(): Promise<EarnMarket[]> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        query: `query { vaultV2s(first: 200, where: { chainId_in: [1, 8453, 42161, 10, 137] }) { items { address symbol name chain { id network } asset { address decimals symbol } avgApy avgNetApy totalSupply totalAssets } } }`,
+        query: `query { vaultV2s(first: 200, where: { chainId_in: [1, 8453, 42161, 10, 137] }) { items { address symbol name chain { id network } asset { address decimals symbol } avgApy avgNetApy totalSupply totalAssets totalAssetsUsd liquidity liquidityUsd sharePrice curator { address } metadata { description } } } }`,
       }),
       cache: "no-store",
     });
@@ -130,6 +140,9 @@ async function fetchMorphoVaults(): Promise<EarnMarket[]> {
       const isTestOrGeneric = !name || /test/i.test(name) || /^vault$/i.test(name) || /^v\d*$/i.test(name);
       const hasData = apy > 0 || tvlUsd > 0;
       if (isTestOrGeneric || !hasData) continue;
+      const totalAssetsUsd = typeof item.totalAssetsUsd === "number" ? item.totalAssetsUsd : tvlUsd;
+      const liquidityUsd = typeof item.liquidityUsd === "number" ? item.liquidityUsd : undefined;
+      const sharePrice = typeof item.sharePrice === "number" ? item.sharePrice : undefined;
       out.push({
         id: `morpho-${chainId}-${(item.address ?? "").toLowerCase()}`,
         protocol: "morpho",
@@ -144,6 +157,11 @@ async function fetchMorphoVaults(): Promise<EarnMarket[]> {
         assetDecimals: parseInt(String(asset.decimals ?? 6), 10),
         apy,
         tvl: tvlUsd,
+        sharePrice,
+        liquidityUsd,
+        totalAssetsUsd: totalAssetsUsd > 0 ? totalAssetsUsd : undefined,
+        curatorAddress: item.curator?.address ?? undefined,
+        description: item.metadata?.description ?? undefined,
       });
     }
     if (out.length > 0) return out;
