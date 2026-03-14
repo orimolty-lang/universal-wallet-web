@@ -53,6 +53,9 @@ export default {
       ],
     ],
     extra: {
+      eas: {
+        projectId: "18f123fb-7394-4394-809a-03183c87823e",
+      },
       particleProjectId: process.env.NEXT_PUBLIC_PROJECT_ID || "",
       particleClientKey: process.env.NEXT_PUBLIC_CLIENT_KEY || "",
       particleAppId: process.env.NEXT_PUBLIC_APP_ID || "",
