@@ -9,9 +9,13 @@
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "ios": {
+        "simulator": false
+      }
     },
     "production": {
+      "distribution": "internal",
       "autoIncrement": true
     }
   },
