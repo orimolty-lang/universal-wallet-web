@@ -912,8 +912,8 @@ const ReceiveModal = ({
   ];
 
   const rows = [
-    { id: "evm", label: "EVM", address: evmAddress, logos: EVM_CHAINS },
-    { id: "solana", label: "Solana", address: solanaAddress, logos: [{ name: "Solana", logo: CHAIN_LOGOS["Solana"] }] },
+    { id: "evm", label: "EVM", address: evmAddress, logos: EVM_CHAINS, centerLogo: false },
+    { id: "solana", label: "Solana", address: solanaAddress, logos: [{ name: "Solana", logo: CHAIN_LOGOS["Solana"] }], centerLogo: true },
   ];
 
   return (
@@ -939,8 +939,8 @@ const ReceiveModal = ({
           {rows.map((row) => (
             <div key={row.id} className="bg-[#252525] rounded-xl px-3 py-3">
               <div className="flex items-start gap-3">
-                {/* Logo area - fixed width so EVM logos don't overlap address */}
-                <div className="flex-shrink-0 w-[110px] flex items-center justify-start">
+                {/* Logo area - same width for both; EVM shows all chains, Solana centers its logo */}
+                <div className={`flex-shrink-0 w-[88px] flex items-center min-h-[52px] ${row.centerLogo ? "justify-center" : "justify-start"}`}>
                   {row.logos.length > 1 ? (
                     <div className="flex flex-wrap gap-1">
                       {row.logos.map((c) => (
@@ -948,7 +948,7 @@ const ReceiveModal = ({
                       ))}
                     </div>
                   ) : (
-                    <img src={row.logos[0].logo} alt={row.label} className="w-6 h-6 rounded-full" />
+                    <img src={row.logos[0].logo} alt={row.label} className="w-8 h-8 rounded-full" />
                   )}
                 </div>
                 {/* Label + address + actions */}
