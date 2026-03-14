@@ -13,7 +13,7 @@ export default {
     ios: {
       supportsTablet: false,
       bundleIdentifier: "com.orimolty.omniwallet",
-      deploymentTarget: "15.1",
+      deploymentTarget: "17.0",
       infoPlist: {
         LSApplicationQueriesSchemes: [
           "metamask",
@@ -42,7 +42,7 @@ export default {
         "expo-build-properties",
         {
           ios: {
-            deploymentTarget: "15.1",
+            deploymentTarget: "17.0",
             useFrameworks: "static",
           },
           android: {

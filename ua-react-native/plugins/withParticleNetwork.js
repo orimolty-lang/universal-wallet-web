@@ -89,10 +89,10 @@ function withParticlePodfile(config) {
       if (fs.existsSync(podfilePath)) {
         let podfile = fs.readFileSync(podfilePath, "utf8");
 
-        // Ensure platform is 15.1
+        // Ensure platform is 17.0 (ParticleNetworkChains binary requires it)
         podfile = podfile.replace(
           /platform :ios, ['"]?\d+\.\d+['"]?/,
-          "platform :ios, '15.1'"
+          "platform :ios, '17.0'"
         );
 
         // Add BUILD_LIBRARY_FOR_DISTRIBUTION for Swift compatibility with Xcode 16+
@@ -115,10 +115,11 @@ function withParticlePodfile(config) {
           }
         }
 
-        // Add Particle's custom pod sources for SkeletonView/SwiftyUserDefaults if needed
+        // Add Particle's custom pod sources for WalletConnect, SkeletonView, SwiftyUserDefaults
         if (!podfile.includes("SwiftyUserDefaults")) {
           const particlePods = `
-  # Particle Network dependency overrides for Xcode 16 compatibility
+  # Particle Network dependency overrides (custom forks for compatibility)
+  pod 'WalletConnectSwiftV2', :git => 'https://github.com/SunZhiC/WalletConnectSwiftV2.git', :branch => 'particle'
   pod 'SwiftyUserDefaults', :git => 'https://github.com/SunZhiC/SwiftyUserDefaults.git', :branch => 'master'
   pod 'SkeletonView', :git => 'https://github.com/SunZhiC/SkeletonView.git', :branch => 'main'`;
 
