@@ -1,65 +1,29 @@
-import { useEffect, useState } from "react";
-import { Redirect } from "expo-router";
-import { View, ActivityIndicator, Text, StyleSheet } from "react-native";
-import { getParticleConnect } from "../lib/particleSafe";
+import { View, Text, StyleSheet } from "react-native";
 
 export default function Index() {
-  const [checking, setChecking] = useState(true);
-  const [isConnected, setIsConnected] = useState(false);
-
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      setChecking(false);
-    }, 5000);
-
-    const checkConnection = async () => {
-      try {
-        const pc = getParticleConnect();
-        if (!pc) {
-          setChecking(false);
-          return;
-        }
-        const accounts = await pc.getAccounts("AuthCore");
-        setIsConnected(accounts.length > 0);
-      } catch {
-        setIsConnected(false);
-      } finally {
-        clearTimeout(timeout);
-        setChecking(false);
-      }
-    };
-    checkConnection();
-
-    return () => clearTimeout(timeout);
-  }, []);
-
-  if (checking) {
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color="#f97316" />
-        <Text style={styles.loadingText}>Connecting...</Text>
-      </View>
-    );
-  }
-
-  if (isConnected) {
-    return <Redirect href="/(tabs)" />;
-  }
-
-  return <Redirect href="/login" />;
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>OMNI Wallet</Text>
+      <Text style={styles.subtitle}>Static startup test build</Text>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-  loading: {
+  container: {
     flex: 1,
     backgroundColor: "#0a0a0a",
     justifyContent: "center",
     alignItems: "center",
-    gap: 12,
   },
-  loadingText: {
-    color: "#6b7280",
-    fontSize: 14,
+  title: {
+    color: "#f97316",
+    fontSize: 32,
+    fontWeight: "800",
+  },
+  subtitle: {
+    color: "#9ca3af",
     marginTop: 8,
+    fontSize: 14,
   },
 });
