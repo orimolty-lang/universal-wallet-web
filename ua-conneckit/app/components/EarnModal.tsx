@@ -60,18 +60,12 @@ const CHAIN_ID_MAP: Record<number, number> = {
   43114: CHAIN_ID.AVALANCHE_MAINNET,
 };
 
+// UA supports USDC, USDT, ETH only (no WETH, wstETH, WBTC, BTC)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const ASSET_TO_TOKEN_TYPE: Record<string, any> = {
   USDC: SUPPORTED_TOKEN_TYPE.USDC,
   USDT: SUPPORTED_TOKEN_TYPE.USDT,
   ETH: SUPPORTED_TOKEN_TYPE.ETH,
-  WETH: SUPPORTED_TOKEN_TYPE.ETH,
-  WBTC: SUPPORTED_TOKEN_TYPE.BTC,
-  BTC: SUPPORTED_TOKEN_TYPE.BTC,
-  wstETH: SUPPORTED_TOKEN_TYPE.ETH,
-  WSTETH: SUPPORTED_TOKEN_TYPE.ETH,
-  stETH: SUPPORTED_TOKEN_TYPE.ETH,
-  STETH: SUPPORTED_TOKEN_TYPE.ETH,
 };
 
 interface EarnModalProps {
@@ -178,7 +172,7 @@ export default function EarnModal({
     setIsLoading(true);
     try {
       const uaChainId = CHAIN_ID_MAP[selectedMarket.chainId] ?? selectedMarket.uaChainId;
-      const tokenType = ASSET_TO_TOKEN_TYPE[selectedMarket.assetSymbol] ?? ASSET_TO_TOKEN_TYPE[selectedMarket.assetSymbol?.toUpperCase()] ?? SUPPORTED_TOKEN_TYPE.USDC;
+      const tokenType = ASSET_TO_TOKEN_TYPE[selectedMarket.assetSymbol] ?? SUPPORTED_TOKEN_TYPE.USDC;
 
       let approve: `0x${string}`;
       let action: `0x${string}`;

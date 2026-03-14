@@ -142,7 +142,9 @@ async function fetchMorphoVaults(): Promise<EarnMarket[]> {
       const name = item.name || item.symbol || "";
       const isTestOrGeneric = !name || /test/i.test(name) || /^vault$/i.test(name) || /^v\d*$/i.test(name);
       const hasData = apy > 0 || tvlUsd > 0;
+      const assetSymbol = (asset.symbol || "USDC").toUpperCase();
       if (isTestOrGeneric || !hasData) continue;
+      if (!UA_SUPPORTED_ASSETS.includes(assetSymbol)) continue;
       const liquidityUsd = typeof item.liquidityUsd === "number" ? item.liquidityUsd : undefined;
       const sharePrice = typeof item.sharePrice === "number" ? item.sharePrice : undefined;
       out.push({
@@ -155,7 +157,7 @@ async function fetchMorphoVaults(): Promise<EarnMarket[]> {
         name: name || item.symbol || "Vault",
         symbol: item.symbol || "vault",
         assetAddress: asset.address ?? "",
-        assetSymbol: (asset.symbol || "USDC").toUpperCase(),
+        assetSymbol,
         assetDecimals: parseInt(String(asset.decimals ?? 6), 10),
         apy,
         tvl: tvlUsd,
@@ -328,8 +330,9 @@ export interface EarnPosition {
 }
 
 const EARN_CHAIN_IDS = [1, 8453, 42161, 10, 137] as const;
-const MIN_TVL_USD = 2_000;
+const MIN_TVL_USD = 500_000;
 const MAX_TVL_USD = 50e9; // $50B cap to filter garbage (e.g. 100B false data)
+const UA_SUPPORTED_ASSETS = ["USDC", "USDT", "ETH"];
 const CHAIN_NAMES: Record<number, string> = {
   1: "Ethereum", 8453: "Base", 42161: "Arbitrum", 10: "Optimism", 137: "Polygon",
 };
