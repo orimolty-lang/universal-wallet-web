@@ -11,8 +11,7 @@ import {
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
-import Constants from "expo-constants";
-import { getParticleBase, getParticleChains, getParticleConnect } from "../lib/particleSafe";
+import { getParticleConnect } from "../lib/particleSafe";
 // Lazy-loaded to prevent crash if native modules are missing
 const LoginType = { Email: "Email" } as const;
 const SupportAuthType = {
@@ -36,43 +35,16 @@ export default function LoginScreen() {
   const handleConnect = async () => {
     setIsLoading(true);
     try {
-      const base = getParticleBase();
-      const chains = getParticleChains();
       const pc = getParticleConnect();
-      const extra = Constants.expoConfig?.extra;
 
-      if (!base || !chains || !pc) {
+      if (!pc) {
         Alert.alert("SDK unavailable", "Particle SDK modules are not available in this build.");
         return;
       }
 
-      // Initialize on demand (avoids launch-time crash on some iOS 26.4 setups)
-      try {
-        base.init(chains.ArbitrumOne, base.Env.Production);
-        pc.init(chains.ArbitrumOne, base.Env.Production, {
-          name: "OMNI Wallet",
-          icon: "https://connect.particle.network/icons/512.png",
-          url: "https://particle.network",
-          description: "OMNI - Universal Wallet powered by Particle Network",
-        });
-        if (extra?.walletConnectProjectId) {
-          pc.setWalletConnectProjectId(extra.walletConnectProjectId);
-        }
-      } catch (e) {
-        console.log("Particle init-on-connect warning:", e);
-      }
-
+      // Minimal connect payload for iOS 26.4 stability testing
       const account = await pc.connect("AuthCore", {
         loginType: LoginType.Email,
-        supportAuthType: [
-          SupportAuthType.Apple,
-          SupportAuthType.Twitter,
-          SupportAuthType.Email,
-          SupportAuthType.Phone,
-          SupportAuthType.Discord,
-          SupportAuthType.Github,
-          SupportAuthType.Google,
-        ],
       });
 
       if (account?.publicAddress) {
