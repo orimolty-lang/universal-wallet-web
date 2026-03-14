@@ -26,7 +26,7 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       const redirectUri = Linking.createURL("auth"); // omniwallet://auth
-      const webAuthUrl = `https://orimolty-lang.github.io/universal-wallet-web/?mobileAuth=1&redirect_uri=${encodeURIComponent(
+      const webAuthUrl = `https://omni-auth-relay.orimolty.workers.dev/mobile-auth?redirect_uri=${encodeURIComponent(
         redirectUri
       )}`;
 
