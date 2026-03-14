@@ -307,15 +307,87 @@ export interface EarnPosition {
   assetsApprox: number;
 }
 
+const EARN_CHAIN_IDS = [1, 8453, 42161, 10, 137] as const;
+const CHAIN_NAMES: Record<number, string> = {
+  1: "Ethereum", 8453: "Base", 42161: "Arbitrum", 10: "Optimism", 137: "Polygon",
+};
+
+function parseV1Position(
+  item: { vault?: { address?: string; name?: string; chain?: { id?: number; network?: string }; asset?: { address?: string; symbol?: string; decimals?: number } }; state?: { shares?: string; assets?: number } },
+  chainIdToUa: Record<number, number>
+): EarnPosition | null {
+  const vault = item.vault ?? {};
+  const state = item.state ?? {};
+  const sharesStr = String(state.shares ?? "0");
+  const sharesRaw = BigInt(sharesStr);
+  if (sharesRaw <= BigInt(0)) return null;
+  const decimals = parseInt(String(vault.asset?.decimals ?? 6), 10);
+  const assetsRaw = Number(state.assets ?? 0);
+  const assetsApprox = assetsRaw > 0 ? assetsRaw / Math.pow(10, decimals) : Number(sharesRaw) / 1e18;
+  const chainId = parseInt(String(vault.chain?.id ?? 0), 10);
+  if (!chainId || !vault.address) return null;
+  const market: EarnMarket = {
+    id: `morpho-${chainId}-${(vault.address ?? "").toLowerCase()}`,
+    protocol: "morpho",
+    chainId,
+    chainName: vault.chain?.network || CHAIN_NAMES[chainId] || `Chain ${chainId}`,
+    uaChainId: chainIdToUa[chainId] ?? chainId,
+    address: vault.address,
+    name: vault.name || "Vault",
+    symbol: "vault",
+    assetAddress: vault.asset?.address ?? "",
+    assetSymbol: (vault.asset?.symbol || "USDC").toUpperCase(),
+    assetDecimals: decimals,
+    apy: 0,
+    tvl: 0,
+  };
+  return { market, sharesRaw, assetsApprox };
+}
+
+function parseV2Position(
+  item: { vault?: { address?: string; name?: string; chain?: { id?: number; network?: string }; asset?: { address?: string; symbol?: string; decimals?: number } }; shares?: string; assets?: number },
+  chainIdToUa: Record<number, number>
+): EarnPosition | null {
+  const vault = item.vault ?? {};
+  const sharesStr = String(item.shares ?? "0");
+  const sharesRaw = BigInt(sharesStr);
+  if (sharesRaw <= BigInt(0)) return null;
+  const decimals = parseInt(String(vault.asset?.decimals ?? 6), 10);
+  const assetsRaw = Number(item.assets ?? 0);
+  const assetsApprox = assetsRaw > 0 ? assetsRaw / Math.pow(10, decimals) : Number(sharesRaw) / 1e18;
+  const chainId = parseInt(String(vault.chain?.id ?? 0), 10);
+  if (!chainId || !vault.address) return null;
+  const market: EarnMarket = {
+    id: `morpho-${chainId}-${(vault.address ?? "").toLowerCase()}`,
+    protocol: "morpho",
+    chainId,
+    chainName: vault.chain?.network || CHAIN_NAMES[chainId] || `Chain ${chainId}`,
+    uaChainId: chainIdToUa[chainId] ?? chainId,
+    address: vault.address,
+    name: vault.name || "Vault",
+    symbol: "vault",
+    assetAddress: vault.asset?.address ?? "",
+    assetSymbol: (vault.asset?.symbol || "USDC").toUpperCase(),
+    assetDecimals: decimals,
+    apy: 0,
+    tvl: 0,
+  };
+  return { market, sharesRaw, assetsApprox };
+}
+
 /**
- * Fetch user's positions via Morpho GraphQL API (vaultPositions).
- * Per docs.morpho.org - uses the official API for user vault positions.
+ * Fetch user's positions via Morpho GraphQL API.
+ * Includes both V1 vaultPositions and V2 vaultV2Positions (e.g. Gauntlet USDC Prime).
+ * userByAddress per chain returns vaultV2Positions; vaultPositions covers V1.
  */
 export async function fetchUserPositions(uaAddress: string): Promise<EarnPosition[]> {
   const chainIdToUa = getChainIdToUaMap();
+  const addr = uaAddress.toLowerCase();
   const positions: EarnPosition[] = [];
+
   try {
-    const res = await fetch("https://api.morpho.org/graphql", {
+    // 1. V1 vault positions (single query)
+    const v1Res = await fetch("https://api.morpho.org/graphql", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -333,39 +405,46 @@ export async function fetchUserPositions(uaAddress: string): Promise<EarnPositio
             }
           }
         }`,
-        variables: { user: [uaAddress] },
+        variables: { user: [addr] },
       }),
       cache: "no-store",
     });
-    const data = await res.json();
-    const items = data?.data?.vaultPositions?.items ?? [];
-    for (const item of items) {
-      const vault = item.vault ?? {};
-      const state = item.state ?? {};
-      const sharesStr = String(state.shares ?? "0");
-      const sharesRaw = BigInt(sharesStr);
-      if (sharesRaw <= BigInt(0)) continue;
-      const decimals = parseInt(String(vault.asset?.decimals ?? 6), 10);
-      const assetsRaw = Number(state.assets ?? 0);
-      const assetsApprox = assetsRaw > 0 ? assetsRaw / Math.pow(10, decimals) : Number(sharesRaw) / 1e18;
-      const chainId = parseInt(String(vault.chain?.id ?? 0), 10);
-      if (!chainId || !vault.address) continue;
-      const market: EarnMarket = {
-        id: `morpho-${chainId}-${(vault.address ?? "").toLowerCase()}`,
-        protocol: "morpho",
-        chainId,
-        chainName: vault.chain?.network || `Chain ${chainId}`,
-        uaChainId: chainIdToUa[chainId] ?? chainId,
-        address: vault.address,
-        name: vault.name || "Vault",
-        symbol: "vault",
-        assetAddress: vault.asset?.address ?? "",
-        assetSymbol: (vault.asset?.symbol || "USDC").toUpperCase(),
-        assetDecimals: decimals,
-        apy: 0,
-        tvl: 0,
-      };
-      positions.push({ market, sharesRaw, assetsApprox });
+    const v1Data = await v1Res.json();
+    const v1Items = v1Data?.data?.vaultPositions?.items ?? [];
+    for (const item of v1Items) {
+      const pos = parseV1Position(item, chainIdToUa);
+      if (pos) positions.push(pos);
+    }
+
+    // 2. V2 vault positions (userByAddress per chain - includes Gauntlet USDC Prime etc.)
+    const v2Queries = EARN_CHAIN_IDS.map(
+      (chainId) =>
+        `u${chainId}: userByAddress(address: "${addr}", chainId: ${chainId}) {
+          vaultV2Positions {
+            vault { address name chain { id network } asset { address symbol decimals } }
+            shares
+            assets
+          }
+        }`
+    ).join("\n");
+
+    const v2Res = await fetch("https://api.morpho.org/graphql", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: `query { ${v2Queries} }`,
+      }),
+      cache: "no-store",
+    });
+    const v2Data = await v2Res.json();
+    const v2Root = v2Data?.data ?? {};
+    for (const chainId of EARN_CHAIN_IDS) {
+      const user = v2Root[`u${chainId}`];
+      const v2Items = user?.vaultV2Positions ?? [];
+      for (const item of v2Items) {
+        const pos = parseV2Position(item, chainIdToUa);
+        if (pos) positions.push(pos);
+      }
     }
   } catch (err) {
     console.error("[Earn] Fetch positions failed:", err);
