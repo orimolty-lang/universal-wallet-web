@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Dimensions,
+  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -35,7 +36,10 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       const pc = getParticleConnect();
-      if (!pc) throw new Error("Particle Connect not available");
+      if (!pc) {
+        Alert.alert("SDK unavailable", "Particle Connect module is not available in this build.");
+        return;
+      }
       const account = await pc.connect("AuthCore", {
         loginType: LoginType.Email,
         supportAuthType: [
@@ -54,6 +58,7 @@ export default function LoginScreen() {
       }
     } catch (error) {
       console.error("Connection failed:", error);
+      Alert.alert("Connection failed", error instanceof Error ? error.message : "Unknown error");
     } finally {
       setIsLoading(false);
     }
