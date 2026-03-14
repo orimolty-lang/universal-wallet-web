@@ -9,7 +9,7 @@ import {
   getParticleConnect,
   getParticleChains,
 } from "../lib/particleSafe";
-import { UniversalAccountProvider } from "../context/UniversalAccountContext";
+// import { UniversalAccountProvider } from "../context/UniversalAccountContext";
 
 export default function RootLayout() {
   const [initStatus, setInitStatus] = useState<string>("starting");
@@ -92,14 +92,14 @@ export default function RootLayout() {
   }
 
   return (
-    <UniversalAccountProvider>
+    <>
       <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="login" />
         <Stack.Screen name="(tabs)" />
       </Stack>
-    </UniversalAccountProvider>
+    </>
   );
 }
 
