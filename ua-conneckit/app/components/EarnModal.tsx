@@ -247,6 +247,7 @@ export default function EarnModal({
         blindSigningEnabled
       );
       await universalAccount.sendTransaction(tx, signature);
+      setPositions((prev) => prev.filter((p) => p.market.id !== pos.market.id));
       loadPositions();
       onSuccess?.();
     } catch (err) {
@@ -270,6 +271,15 @@ export default function EarnModal({
     morpho: { name: "Morpho", logo: "https://morpho.org/favicon.ico" },
     aave: { name: "Aave", logo: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9/logo.png" },
   };
+  const ASSET_LOGOS: Record<string, string> = {
+    USDC: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png",
+    USDT: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xdAC17F958D2ee523a2206206994597C13D831ec7/logo.png",
+    ETH: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png",
+    DAI: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x6B175474E89094C44Da98b954EescdeCB5BE3830/logo.png",
+    EURC: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x1aBaEA1f7C830bD89Acc67eC4af516284b1bC33c/logo.png",
+  };
+  const getAssetLogo = (symbol: string) => ASSET_LOGOS[symbol?.toUpperCase()] ?? ASSET_LOGOS.USDC;
+  const getChainLogo = (chainId: number) => chainMeta[chainId]?.logo ?? chainMeta[1]?.logo;
   const [chainDropdownOpen, setChainDropdownOpen] = useState(false);
   const [protocolDropdownOpen, setProtocolDropdownOpen] = useState(false);
   const chainDropdownRef = useRef<HTMLDivElement>(null);
@@ -340,7 +350,12 @@ export default function EarnModal({
             <div className="bg-zinc-900 rounded-xl p-4 border border-zinc-800">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-white font-medium">{selectedMarket.name}</span>
-                <span className="text-gray-400 text-xs capitalize">{selectedMarket.chainName} · {selectedMarket.protocol}</span>
+                <div className="flex items-center gap-1.5 text-gray-400 text-xs capitalize">
+                  <img src={getChainLogo(selectedMarket.chainId)} alt="" className="w-4 h-4 rounded-full" />
+                  <span>{selectedMarket.chainName}</span>
+                  <span>·</span>
+                  <span>{selectedMarket.protocol}</span>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-2 mt-2">
                 {selectedMarket.apy > 0 && (
@@ -357,7 +372,10 @@ export default function EarnModal({
                 )}
                 <div>
                   <div className="text-gray-500 text-xs">Asset</div>
-                  <div className="text-gray-300 text-sm">{selectedMarket.assetSymbol}</div>
+                  <div className="flex items-center gap-1.5 text-gray-300 text-sm">
+                    <img src={getAssetLogo(selectedMarket.assetSymbol)} alt="" className="w-4 h-4 rounded-full" />
+                    {selectedMarket.assetSymbol}
+                  </div>
                 </div>
               </div>
             </div>
@@ -368,7 +386,10 @@ export default function EarnModal({
                 <div className="bg-zinc-900 rounded-xl p-3 border border-zinc-800 flex items-center justify-between">
                   <div>
                     <div className="text-gray-400 text-xs uppercase tracking-wide mb-0.5">Your position</div>
-                    <div className="text-white font-medium">~{existingPos.assetsApprox.toFixed(2)} {selectedMarket.assetSymbol}</div>
+                    <div className="flex items-center gap-1.5 text-white font-medium">
+                      <img src={getAssetLogo(selectedMarket.assetSymbol)} alt="" className="w-4 h-4 rounded-full" />
+                      ~{existingPos.assetsApprox.toFixed(2)} {selectedMarket.assetSymbol}
+                    </div>
                   </div>
                   <button
                     onClick={() => handleWithdraw(existingPos)}
@@ -438,7 +459,13 @@ export default function EarnModal({
                     <div key={pos.market.id} className="bg-zinc-900 rounded-xl p-3 border border-zinc-800 flex items-center justify-between">
                       <div>
                         <div className="text-white font-medium text-sm">{pos.market.name}</div>
-                        <div className="text-gray-500 text-xs">{pos.market.chainName} · ~{pos.assetsApprox.toFixed(2)} {pos.market.assetSymbol}</div>
+                        <div className="flex items-center gap-1.5 text-gray-500 text-xs mt-0.5">
+                          <img src={getChainLogo(pos.market.chainId)} alt="" className="w-3.5 h-3.5 rounded-full" />
+                          <span>{pos.market.chainName}</span>
+                          <span>·</span>
+                          <img src={getAssetLogo(pos.market.assetSymbol)} alt="" className="w-3.5 h-3.5 rounded-full" />
+                          <span>~{pos.assetsApprox.toFixed(2)} {pos.market.assetSymbol}</span>
+                        </div>
                       </div>
                       <button
                         onClick={() => handleWithdraw(pos)}
@@ -546,12 +573,18 @@ export default function EarnModal({
                     className="w-full p-4 bg-zinc-900 hover:bg-zinc-800 rounded-xl text-left border border-zinc-800 hover:border-accent-dynamic/40 transition-colors"
                   >
                     <div className="flex justify-between items-start">
-                      <div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex -space-x-1">
+                          <img src={getChainLogo(m.chainId)} alt="" className="w-6 h-6 rounded-full border-2 border-zinc-900" />
+                          <img src={getAssetLogo(m.assetSymbol)} alt="" className="w-6 h-6 rounded-full border-2 border-zinc-900" />
+                        </div>
+                        <div>
                         <div className="text-white font-medium">{m.name}</div>
                         <div className="text-gray-400 text-xs mt-0.5 capitalize">{m.chainName} · {m.protocol}</div>
                         {m.tvl > 0 && (
                           <div className="text-gray-500 text-xs mt-1">TVL {formatTvl(m.tvl)}</div>
                         )}
+                        </div>
                       </div>
                       <div className="text-right">
                         {m.apy > 0 ? (
@@ -559,7 +592,10 @@ export default function EarnModal({
                         ) : (
                           <div className="text-gray-500 text-sm">—</div>
                         )}
-                        <div className="text-gray-500 text-xs mt-0.5">{m.assetSymbol}</div>
+                        <div className="flex items-center justify-end gap-1 text-gray-500 text-xs mt-0.5">
+                          <img src={getAssetLogo(m.assetSymbol)} alt="" className="w-3.5 h-3.5 rounded-full" />
+                          {m.assetSymbol}
+                        </div>
                       </div>
                     </div>
                   </button>
