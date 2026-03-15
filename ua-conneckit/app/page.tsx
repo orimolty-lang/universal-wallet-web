@@ -5747,7 +5747,7 @@ const SearchTab = ({
             return (
             <div key={token.id} className="relative overflow-hidden border-b border-gray-800/30">
               <button
-                className="absolute right-0 top-0 bottom-0 w-16 bg-red-600/90 flex items-center justify-center z-10"
+                className="absolute right-0 top-0 bottom-0 w-16 bg-red-600/90 flex items-center justify-center z-0"
                 onClick={(e) => handleDeleteClick(e, token)}
                 aria-label="Remove from history"
               >
@@ -5756,8 +5756,8 @@ const SearchTab = ({
                 </svg>
               </button>
               <div
-                className="w-full bg-[#0a0a0a] py-3 text-left transition-transform touch-pan-y"
-                style={{ transform: `translateX(${offset}px)` }}
+                className="relative z-10 w-full min-w-full bg-[#0a0a0a] py-3 text-left select-none"
+                style={{ transform: `translateX(${offset}px)`, touchAction: 'pan-y' }}
                 onTouchStart={(e) => handleSwipeStart(e, token.id)}
                 onTouchMove={(e) => handleSwipeMove(e, token.id)}
                 onTouchEnd={() => handleSwipeEnd(token.id)}
@@ -6812,7 +6812,7 @@ const BottomNav = ({
       </svg>
     )},
     { id: "agent" as TabType, icon: () => (
-      <img src="/universal-wallet-web/omni-logo.png" alt="Omni" className="w-6 h-6 rounded-lg object-contain" />
+      <img src="/universal-wallet-web/omni-logo.png" alt="Omni" className="w-9 h-9 rounded-lg object-contain" />
     ), isAgent: true },
     { id: "trade" as TabType, icon: () => (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
