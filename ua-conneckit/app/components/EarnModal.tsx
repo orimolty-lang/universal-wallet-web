@@ -363,7 +363,7 @@ export default function EarnModal({
                 <span className="text-white font-medium">{selectedMarket.name}</span>
                 <div className="flex items-center gap-1.5 text-gray-400 text-xs capitalize">
                   <img src={getChainLogo(selectedMarket.chainId)} alt="" className="w-4 h-4 rounded-full" title={selectedMarket.chainName} />
-                  <span>{selectedMarket.protocol}</span>
+                  <img src={protocolMeta[selectedMarket.protocol]?.logo} alt="" className="w-4 h-4 rounded" title={protocolMeta[selectedMarket.protocol]?.name} />
                 </div>
               </div>
               {(selectedMarket.description ?? "").trim().length > 0 && (
@@ -610,7 +610,9 @@ export default function EarnModal({
                         </div>
                         <div>
                         <div className="text-white font-medium">{m.name}</div>
-                        <div className="text-gray-400 text-xs mt-0.5 capitalize">{m.protocol}</div>
+                        <div className="flex items-center gap-1 text-gray-400 text-xs mt-0.5">
+                          <img src={protocolMeta[m.protocol]?.logo} alt="" className="w-3.5 h-3.5 rounded" title={protocolMeta[m.protocol]?.name} />
+                        </div>
                         {m.tvl > 0 && (
                           <div className="text-gray-500 text-xs mt-1">TVL {formatTvl(m.tvl)}</div>
                         )}

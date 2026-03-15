@@ -5444,6 +5444,47 @@ const SearchTab = ({
     });
   };
 
+  const removeFromRecentTokens = (token: TokenResult) => {
+    setRecentTokens(prev => {
+      const updated = prev.filter(t => t.id !== token.id);
+      localStorage.setItem('recentTokensV2', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const [swipeOffsets, setSwipeOffsets] = useState<Record<string, number>>({});
+  const touchStartRef = useRef<{ x: number; id: string } | null>(null);
+
+  const getClientX = (e: React.TouchEvent | React.MouseEvent) =>
+    'touches' in e ? e.touches[0].clientX : e.clientX;
+  const handleSwipeStart = (e: React.TouchEvent | React.MouseEvent, tokenId: string) => {
+    touchStartRef.current = { x: getClientX(e), id: tokenId };
+  };
+  const handleSwipeMove = (e: React.TouchEvent | React.MouseEvent, tokenId: string) => {
+    if (!touchStartRef.current || touchStartRef.current.id !== tokenId) return;
+    const x = 'touches' in e ? e.touches[0]?.clientX : e.clientX;
+    if (x === undefined) return;
+    const delta = x - touchStartRef.current.x;
+    const offset = Math.min(0, Math.max(-80, delta));
+    setSwipeOffsets(prev => ({ ...prev, [tokenId]: offset }));
+  };
+  const handleSwipeEnd = (tokenId: string) => {
+    if (!touchStartRef.current || touchStartRef.current.id !== tokenId) return;
+    touchStartRef.current = null;
+    const current = swipeOffsets[tokenId] ?? 0;
+    setSwipeOffsets(prev => ({ ...prev, [tokenId]: current < -40 ? -64 : 0 }));
+  };
+  const handleDeleteClick = (e: React.MouseEvent, token: TokenResult) => {
+    e.stopPropagation();
+    e.preventDefault();
+    removeFromRecentTokens(token);
+    setSwipeOffsets(prev => {
+      const next = { ...prev };
+      delete next[token.id];
+      return next;
+    });
+  };
+
   const isAddressQuery = useMemo(() => {
     const trimmed = query.trim();
     return /^0x[a-fA-F0-9]{40}$/.test(trimmed) || /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trimmed);
@@ -5695,63 +5736,75 @@ const SearchTab = ({
       
       {error && <div className="text-red-500 text-center py-4 text-sm">Error: {error}</div>}
       
-      {/* Recent Tokens - DexScreener style list */}
+      {/* Recent Tokens - DexScreener style list, swipe left to delete */}
       {!query && recentTokens.length > 0 && (
         <div>
           <div className="text-gray-500 text-xs uppercase mb-3">History</div>
           {recentTokens.map((token) => {
             const primaryContract = pickPrimaryContract(token, query);
             const chainLogo = getChainLogoForBlockchain(primaryContract?.blockchain);
-            
+            const offset = swipeOffsets[token.id] ?? 0;
             return (
-            <button 
-              key={token.id} 
-              onClick={() => setSelectedToken(token)}
-              className="w-full py-3 border-b border-gray-800/30 text-left"
-            >
-              {/* Top row: logo, name, price, change */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    {token.logo ? (
-                      <img src={token.logo} alt={token.symbol} className="w-9 h-9 rounded-full bg-gray-800" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                    ) : (
-                      <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold">
-                        {token.symbol.slice(0, 2)}
-                      </div>
-                    )}
-                    {/* Chain badge on logo */}
-                    {chainLogo && (
-                      <img 
-                        src={chainLogo}
-                        alt=""
-                        className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-[#0a0a0a]"
-                      />
-                    )}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-white font-medium text-sm">{token.symbol}</span>
+            <div key={token.id} className="relative overflow-hidden border-b border-gray-800/30">
+              <button
+                className="absolute right-0 top-0 bottom-0 w-16 bg-red-600/90 flex items-center justify-center z-10"
+                onClick={(e) => handleDeleteClick(e, token)}
+                aria-label="Remove from history"
+              >
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+              <div
+                className="w-full bg-[#0a0a0a] py-3 text-left transition-transform touch-pan-y"
+                style={{ transform: `translateX(${offset}px)` }}
+                onTouchStart={(e) => handleSwipeStart(e, token.id)}
+                onTouchMove={(e) => handleSwipeMove(e, token.id)}
+                onTouchEnd={() => handleSwipeEnd(token.id)}
+                onMouseDown={(e) => handleSwipeStart(e, token.id)}
+                onMouseMove={(e) => { if (e.buttons) handleSwipeMove(e, token.id); }}
+                onMouseUp={() => handleSwipeEnd(token.id)}
+                onMouseLeave={() => touchStartRef.current?.id === token.id && handleSwipeEnd(token.id)}
+                onClick={() => offset === 0 && setSelectedToken(token)}
+              >
+                {/* Top row: logo, name, price, change */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      {token.logo ? (
+                        <img src={token.logo} alt={token.symbol} className="w-9 h-9 rounded-full bg-gray-800" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold">
+                          {token.symbol.slice(0, 2)}
+                        </div>
+                      )}
+                      {chainLogo && (
+                        <img src={chainLogo} alt="" className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-[#0a0a0a]" />
+                      )}
                     </div>
-                    <div className="text-gray-500 text-xs truncate max-w-[120px]">{token.name}</div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-white font-medium text-sm">{token.symbol}</span>
+                      </div>
+                      <div className="text-gray-500 text-xs truncate max-w-[120px]">{token.name}</div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-white text-sm font-medium">{formatPrice(token.price || 0)}</div>
+                    {typeof token.price_change_24h === 'number' && (
+                      <span className={`text-xs ${token.price_change_24h >= 0 ? "text-green-500" : "text-red-500"}`}>
+                        24H {token.price_change_24h >= 0 ? "+" : ""}{token.price_change_24h.toFixed(1)}%
+                      </span>
+                    )}
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="text-white text-sm font-medium">{formatPrice(token.price || 0)}</div>
-                  {typeof token.price_change_24h === 'number' && (
-                    <span className={`text-xs ${token.price_change_24h >= 0 ? "text-green-500" : "text-red-500"}`}>
-                      24H {token.price_change_24h >= 0 ? "+" : ""}{token.price_change_24h.toFixed(1)}%
-                    </span>
-                  )}
+                <div className="flex gap-3 mt-2 ml-12 text-xs">
+                  <span className="text-gray-500">LIQ <span className="text-gray-400">{token.liquidity && token.liquidity > 0 ? formatMarketCap(token.liquidity) : "N/A"}</span></span>
+                  <span className="text-gray-500">VOL <span className="text-gray-400">{token.volume && token.volume > 0 ? formatMarketCap(token.volume) : "N/A"}</span></span>
+                  <span className="text-gray-500">MCAP <span className="text-gray-400">{token.market_cap && token.market_cap > 0 ? formatMarketCap(token.market_cap) : "N/A"}</span></span>
                 </div>
               </div>
-              {/* Bottom row: LIQ, VOL, MCAP */}
-              <div className="flex gap-3 mt-2 ml-12 text-xs">
-                <span className="text-gray-500">LIQ <span className="text-gray-400">{token.liquidity && token.liquidity > 0 ? formatMarketCap(token.liquidity) : "N/A"}</span></span>
-                <span className="text-gray-500">VOL <span className="text-gray-400">{token.volume && token.volume > 0 ? formatMarketCap(token.volume) : "N/A"}</span></span>
-                <span className="text-gray-500">MCAP <span className="text-gray-400">{token.market_cap && token.market_cap > 0 ? formatMarketCap(token.market_cap) : "N/A"}</span></span>
-              </div>
-            </button>
+            </div>
             );
           })}
         </div>
@@ -6759,7 +6812,7 @@ const BottomNav = ({
       </svg>
     )},
     { id: "agent" as TabType, icon: () => (
-      <span className="text-xl">🤖</span>
+      <img src="/universal-wallet-web/omni-logo.png" alt="Omni" className="w-6 h-6 rounded-lg object-contain" />
     ), isAgent: true },
     { id: "trade" as TabType, icon: () => (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
