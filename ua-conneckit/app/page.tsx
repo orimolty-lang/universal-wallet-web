@@ -2361,7 +2361,7 @@ const PerpsModal = ({
   const [isZeroFeeMode, setIsZeroFeeMode] = useState(false);
   const [pairLeverageLimits, setPairLeverageLimits] = useState<Record<string, PairLeverageLimits>>({});
   const [marketSearch, setMarketSearch] = useState('');
-  const [marketGroupFilter, setMarketGroupFilter] = useState<'all' | PerpsMarketGroup>('all');
+  const [marketGroupFilter, setMarketGroupFilter] = useState<'all' | PerpsMarketGroup | 'zfp'>('all');
   const [showTpSlInputs, setShowTpSlInputs] = useState(false);
   const [displayOpenPositions, setDisplayOpenPositions] = useState<OpenPerpsPosition[]>([]);
   const [, setPositionsLoading] = useState(false);
@@ -2380,7 +2380,9 @@ const PerpsModal = ({
   const marketPricesRef = useRef<Record<string, { price: number; change24h: number }>>({});
   const previousPositionIdsRef = useRef<Set<string>>(new Set());
   const [showPerpsHistoryModal, setShowPerpsHistoryModal] = useState(false);
-  
+  const [showPerpsExplainerModal, setShowPerpsExplainerModal] = useState(false);
+  const [perpsExplainerStep, setPerpsExplainerStep] = useState(0);
+
   // Helper to add debug messages
   const addDebug = (msg: string) => {
     console.log('[Perps Debug]', msg);
@@ -2457,7 +2459,11 @@ const PerpsModal = ({
     }
   }, [perpsActivity]);
   useEffect(() => {
-    if (!isOpen) setShowPerpsHistoryModal(false);
+    if (!isOpen) {
+      setShowPerpsHistoryModal(false);
+      setShowPerpsExplainerModal(false);
+      setPerpsExplainerStep(0);
+    }
   }, [isOpen]);
   useEffect(() => {
     if (!isOpen) return;
@@ -4068,17 +4074,20 @@ const PerpsModal = ({
     }
   };
 
+  const MIN_POSITION_SIZE_USDC = 100;
   const isLeverageValid =
     leverage >= leverageMin &&
     leverage <= leverageMax &&
     (!isZeroFeeMode || zfpAvailable);
+  const positionSizeValid = positionSize >= MIN_POSITION_SIZE_USDC;
   const canTrade =
     !!collateral &&
     parseFloat(collateral) > 0 &&
     parseFloat(collateral) <= usdcBalance &&
     !!currentPrice &&
     currentPrice > 0 &&
-    isLeverageValid;
+    isLeverageValid &&
+    positionSizeValid;
   const depositAmountNum = parseFloat(depositAmount) || 0;
   const gasTopUpNum = parseFloat(gasTopUpAmount) || 0;
   const canDeposit =
@@ -4099,7 +4108,11 @@ const PerpsModal = ({
   const filteredSortedMarkets = useMemo(() => {
     const searchLower = marketSearch.trim().toLowerCase();
     const filtered = availableMarkets.filter((m) => {
-      const groupOk = marketGroupFilter === 'all' || m.group === marketGroupFilter;
+      const groupOk = marketGroupFilter === 'all'
+        ? true
+        : marketGroupFilter === 'zfp'
+          ? (pairLeverageLimits[m.pairName]?.zfpMax ?? 0) > 0
+          : m.group === marketGroupFilter;
       if (!groupOk) return false;
       if (!searchLower) return true;
       return (
@@ -4145,7 +4158,9 @@ const PerpsModal = ({
                 onClick={() => setShowPerpsHistoryModal(true)}
                 className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center"
               >
-                <span className="text-gray-400">⏱</span>
+                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
               </button>
             </div>
 
@@ -4197,6 +4212,15 @@ const PerpsModal = ({
                     className="h-8 w-auto mx-auto mb-2 opacity-80"
                   />
                   <p className="text-white/90 font-semibold text-lg mb-1">No Open Positions</p>
+                  <button
+                    onClick={() => { setPerpsExplainerStep(0); setShowPerpsExplainerModal(true); }}
+                    className="mt-2 w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center mx-auto hover:bg-gray-700 transition-colors"
+                    aria-label="Learn about perps"
+                  >
+                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/>
+                    </svg>
+                  </button>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -4282,8 +4306,8 @@ const PerpsModal = ({
                 placeholder="Search market"
                 className="w-full bg-gray-900/80 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white outline-none"
               />
-              <div className="flex gap-2 mt-2">
-                {(['all', 'crypto', 'forex', 'commodities', 'equity', 'other'] as const).map((group) => (
+              <div className="flex gap-2 mt-2 flex-wrap">
+                {(['all', 'zfp', 'crypto', 'forex', 'commodities', 'equity', 'other'] as const).map((group) => (
                   <button
                     key={group}
                     onClick={() => setMarketGroupFilter(group)}
@@ -4293,7 +4317,7 @@ const PerpsModal = ({
                         : 'bg-gray-800 text-gray-400'
                     }`}
                   >
-                    {group}
+                    {group === 'zfp' ? 'ZFP' : group}
                   </button>
                 ))}
               </div>
@@ -4307,7 +4331,8 @@ const PerpsModal = ({
                 const change = priceData?.change24h || 0;
                 const pairName = market.pairName;
                 const marketMeta = pairLeverageLimits[pairName];
-                const displayLev = isZeroFeeMode
+                const zfpEligible = (marketMeta?.zfpMax ?? 0) > 0;
+                const displayLev = zfpEligible
                   ? (marketMeta?.zfpMax || market.maxLeverage)
                   : (marketMeta?.standardMax || market.maxLeverage);
                 const volumeOi = marketMeta?.pairOI || 0;
@@ -4649,125 +4674,167 @@ const PerpsModal = ({
               )}
             </div>
 
-            {/* Current Price */}
-            <div className="text-center mb-4 py-3 bg-gray-800/30 rounded-xl">
-              <span className="text-gray-400 text-xs">Current Price</span>
-              <div className="text-white text-3xl font-bold">
-                ${currentPrice?.toLocaleString(undefined, { minimumFractionDigits: 2 }) || '...'}
-              </div>
-            </div>
-
-            {/* Long/Short Toggle */}
+            {/* Long/Short Toggle - Avantis layout */}
             <div className="flex gap-2 mb-4">
               <button
                 onClick={() => setIsLong(true)}
-                className={`flex-1 py-3 rounded-xl font-bold transition-colors ${
-                  isLong ? 'bg-green-500 text-white' : 'bg-gray-800 text-gray-400'
+                className={`flex-1 py-3 rounded-xl font-bold transition-colors border-2 ${
+                  isLong ? 'bg-green-500/20 border-green-500 text-green-400' : 'bg-gray-800 border-gray-700 text-gray-400'
                 }`}
               >
                 Long
               </button>
               <button
                 onClick={() => setIsLong(false)}
-                className={`flex-1 py-3 rounded-xl font-bold transition-colors ${
-                  !isLong ? 'bg-red-500 text-white' : 'bg-gray-800 text-gray-400'
+                className={`flex-1 py-3 rounded-xl font-bold transition-colors border-2 ${
+                  !isLong ? 'bg-red-500/20 border-red-500 text-red-400' : 'bg-gray-800 border-gray-700 text-gray-400'
                 }`}
               >
                 Short
               </button>
             </div>
 
-            {/* Zero Fee Perps Mode */}
-            <div className="bg-gray-800/40 rounded-xl p-3 mb-3 border border-gray-700/60">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm text-white font-medium">Zero Fee Perps (ZFP)</div>
-                  <div className="text-[11px] text-gray-400">
-                    {zfpAvailable
-                      ? `Standard ${activeLeverageLimits.standardMin}x-${activeLeverageLimits.standardMax}x • ZFP ${activeLeverageLimits.zfpMin}x-${activeLeverageLimits.zfpMax}x`
-                      : 'Not available for this market'}
+            {/* Zero Fee Perps (ZFP) - only for ZFP-enabled markets */}
+            {zfpAvailable && (
+              <div className="bg-gray-800/40 rounded-xl p-3 mb-3 border border-gray-700/60">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm text-white font-medium">Zero Fee Perpetuals (ZFP)</div>
+                    <div className="text-[11px] text-gray-400">
+                      Standard {activeLeverageLimits.standardMin}x-{activeLeverageLimits.standardMax}x • ZFP {activeLeverageLimits.zfpMin}x-{activeLeverageLimits.zfpMax}x
+                    </div>
                   </div>
-                </div>
-                <button
-                  type="button"
-                  disabled={!zfpAvailable}
-                  onClick={() => setIsZeroFeeMode((prev) => !prev)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    isZeroFeeMode && zfpAvailable ? 'bg-accent-dynamic' : 'bg-gray-600'
-                  } ${!zfpAvailable ? 'opacity-40 cursor-not-allowed' : ''}`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      isZeroFeeMode && zfpAvailable ? 'translate-x-6' : 'translate-x-1'
+                  <button
+                    type="button"
+                    onClick={() => setIsZeroFeeMode((prev) => !prev)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      isZeroFeeMode ? 'bg-accent-dynamic' : 'bg-gray-600'
                     }`}
-                  />
-                </button>
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        isZeroFeeMode ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
-              <div className="text-[11px] text-gray-500 mt-2">
-                Order type: {isZeroFeeMode ? 'Market Zero Fee' : 'Market'}
+            )}
+
+            {/* Order type + Current Price - Avantis layout */}
+            <div className="flex gap-3 mb-4">
+              <div className="flex-1 bg-gray-800/50 rounded-xl px-3 py-3">
+                <div className="text-[11px] text-gray-500 uppercase tracking-wide mb-1">Order type</div>
+                <div className="text-white font-medium">{isZeroFeeMode && zfpAvailable ? 'Market Zero Fee' : 'Market'}</div>
+              </div>
+              <div className="flex-1 bg-gray-800/50 rounded-xl px-3 py-3">
+                <div className="text-[11px] text-gray-500 uppercase tracking-wide mb-1">Current Price</div>
+                <div className="text-white font-bold">
+                  ${currentPrice?.toLocaleString(undefined, { minimumFractionDigits: 2 }) || '...'} USD
+                </div>
               </div>
             </div>
 
-            {/* Leverage */}
-            <div className="bg-gray-800/50 rounded-xl p-4 mb-3">
-              <div className="flex justify-between text-sm mb-2">
-                <span className="text-gray-400">Leverage</span>
-                <span className="text-white font-bold text-lg">{leverage}x</span>
-              </div>
-              <input
-                type="range"
-                min={leverageMin}
-                max={leverageMax}
-                value={leverage}
-                onChange={(e) => setLeverage(Number(e.target.value))}
-                className="w-full accent-dynamic h-2"
-              />
-              <div className="flex justify-between text-xs text-gray-500 mt-1">
-                <span>{leverageMin}x</span>
-                <span>{leverageMax}x</span>
-              </div>
-            </div>
-
-            {/* Collateral */}
+            {/* Collateral - Avantis layout */}
             <div className="bg-gray-800/50 rounded-xl p-4 mb-3">
               <div className="flex justify-between items-center mb-2">
-                <span className="text-gray-400 text-sm">Collateral (USDC)</span>
-                <button 
-                  onClick={() => setCollateral(eoaUsdcBalance.toString())}
-                  className="text-accent-dynamic text-xs"
-                >
-                  EOA USDC: ${usdcBalance.toFixed(2)}
-                </button>
+                <span className="text-gray-400 text-sm">Collateral</span>
+                <div className="flex items-center gap-1.5 text-xs">
+                  <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>
+                  </svg>
+                  <span className="text-gray-500">${eoaUsdcBalance.toFixed(0)}</span>
+                  <button type="button" onClick={() => setView('deposit')} className="text-accent-dynamic font-medium">Add Funds</button>
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <input
                   type="number"
                   value={collateral}
                   onChange={(e) => setCollateral(e.target.value)}
-                  placeholder="0.00"
+                  placeholder="0"
                   className="flex-1 bg-gray-700 rounded-lg px-3 py-3 text-white outline-none text-xl"
                 />
-                <button 
-                  onClick={() => setCollateral(eoaUsdcBalance.toString())}
-                  className="bg-gray-700 px-4 py-3 rounded-lg text-accent-dynamic text-sm"
-                >
-                  MAX
-                </button>
-              </div>
-              {positionSize > 0 && (
-                <div className="text-gray-400 text-xs mt-2">
-                  Position Size: ${positionSize.toLocaleString()}
+                <div className="flex items-center gap-1.5 text-sm text-gray-300">
+                  <img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png" alt="USDC" className="w-5 h-5 rounded-full" />
+                  <span>USDC</span>
                 </div>
-              )}
-              <div className="text-[11px] text-gray-500 mt-2">
-                Owner EOA: {ownerEOA ? `${ownerEOA.slice(0, 8)}...${ownerEOA.slice(-6)}` : 'n/a'}
               </div>
-              <div className="text-[11px] text-gray-500">
-                EOA Balances: ${eoaUsdcBalance.toFixed(2)} USDC • {eoaEthBalance.toFixed(5)} ETH
+              <div className="flex gap-2 mt-2">
+                {[10, 25, 50, 75, 100].map((pct) => (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => setCollateral((eoaUsdcBalance * pct / 100).toFixed(2))}
+                    className="flex-1 py-1.5 rounded-lg bg-gray-700/80 text-gray-300 text-xs font-medium hover:bg-gray-600"
+                  >
+                    {pct}%
+                  </button>
+                ))}
               </div>
-
             </div>
 
+            {/* Leverage - Avantis layout with dots */}
+            <div className="bg-gray-800/50 rounded-xl p-4 mb-3">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-gray-400 text-sm">Leverage</span>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min={leverageMin}
+                    max={leverageMax}
+                    value={leverage}
+                    onChange={(e) => setLeverage(Math.min(leverageMax, Math.max(leverageMin, Number(e.target.value) || leverageMin)))}
+                    className="w-12 bg-gray-700 rounded px-2 py-1 text-white text-sm font-bold text-right outline-none"
+                  />
+                  <span className="text-gray-400 text-sm">x</span>
+                  <button type="button" onClick={() => setLeverage(leverageMin)} className="text-gray-500 hover:text-gray-400 p-0.5" aria-label="Reset leverage">✕</button>
+                </div>
+              </div>
+              <div className="pt-2 pb-1">
+                <div className="relative">
+                  <input
+                    type="range"
+                    min={leverageMin}
+                    max={leverageMax}
+                    value={leverage}
+                    onChange={(e) => setLeverage(Number(e.target.value))}
+                    className="w-full h-3 rounded-full appearance-none bg-gray-700 cursor-pointer accent-green-500"
+                  />
+                </div>
+                <div className="flex justify-between mt-1.5 gap-0.5">
+                  {Array.from({ length: 11 }, (_, i) => (
+                    <span key={i} className="w-1 h-1 rounded-full bg-gray-500 flex-shrink-0" />
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Position Size - Avantis layout */}
+            <div className="bg-gray-800/50 rounded-xl p-4 mb-3">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-gray-400 text-sm">Position Size</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-white font-medium">{positionSize > 0 ? positionSize.toLocaleString(undefined, { maximumFractionDigits: 4 }) : '0'}</span>
+                  <div className="w-5 h-5 rounded-full overflow-hidden flex items-center justify-center" style={{ backgroundColor: `${selectedMarket.color}30` }}>
+                    <img src={selectedMarket.logo} alt="" className="w-4 h-4 object-contain" />
+                  </div>
+                  <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+                  </svg>
+                </div>
+              </div>
+              <div className="w-full bg-gray-700 rounded-lg px-3 py-3 text-white text-lg">
+                {positionSize > 0 ? positionSize.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '0'}
+              </div>
+              {positionSize > 0 && positionSize < MIN_POSITION_SIZE_USDC && (
+                <div className="text-red-400 text-xs mt-2">
+                  Minimum position size for this asset is {MIN_POSITION_SIZE_USDC.toFixed(2)} USDC
+                </div>
+              )}
+            </div>
+
+            {/* Set TP/SL - Avantis layout */}
             <div className="bg-gray-800/40 rounded-xl p-3 mb-3 border border-gray-700/60">
               <div className="flex items-center justify-between">
                 <div className="text-sm text-white font-medium">Set TP/SL</div>
@@ -4888,6 +4955,54 @@ const PerpsModal = ({
                 </div>
               ))}
             </div>
+          )}
+        </div>
+      </BottomSheet>
+
+      {/* Perps Explainer Modals (3 steps) */}
+      <BottomSheet isOpen={showPerpsExplainerModal} onClose={() => setShowPerpsExplainerModal(false)}>
+        <div className="px-5 pb-8 max-w-md mx-auto">
+          {perpsExplainerStep === 0 && (
+            <>
+              <h3 className="text-white text-xl font-bold mb-3">Perpetual Futures</h3>
+              <p className="text-gray-400 text-sm leading-relaxed mb-6">
+                Bet on price movements without buying it. Open and close positions with no expiration. Powered by Avantis and Hyperliquid.
+              </p>
+              <button
+                onClick={() => setPerpsExplainerStep(1)}
+                className="w-full py-3 rounded-xl bg-accent-dynamic text-black font-bold"
+              >
+                Next
+              </button>
+            </>
+          )}
+          {perpsExplainerStep === 1 && (
+            <>
+              <h3 className="text-white text-xl font-bold mb-3">Go long or short</h3>
+              <p className="text-gray-400 text-sm leading-relaxed mb-6">
+                Go long when you believe price of the asset will rise. Go short when you believe the price will go down.
+              </p>
+              <button
+                onClick={() => setPerpsExplainerStep(2)}
+                className="w-full py-3 rounded-xl bg-accent-dynamic text-black font-bold"
+              >
+                Next
+              </button>
+            </>
+          )}
+          {perpsExplainerStep === 2 && (
+            <>
+              <h3 className="text-white text-xl font-bold mb-3">Leverage</h3>
+              <p className="text-gray-400 text-sm leading-relaxed mb-6">
+                Leverage can amplify gains or amplify losses. When you&apos;re right, you are rewarded heavy. When you are wrong, losses can accrue and positions may be liquidated.
+              </p>
+              <button
+                onClick={() => { setShowPerpsExplainerModal(false); setPerpsExplainerStep(0); }}
+                className="w-full py-3 rounded-xl bg-accent-dynamic text-black font-bold"
+              >
+                LFG!
+              </button>
+            </>
           )}
         </div>
       </BottomSheet>
