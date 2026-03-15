@@ -4667,96 +4667,75 @@ const PerpsModal = ({
               </div>
             )}
 
-            {/* Debug Panel - Toggle */}
-            <div className="mb-4">
-              <button
-                onClick={() => setShowDebug(!showDebug)}
-                className="text-xs text-gray-500 underline"
-              >
-                {showDebug ? 'Hide Debug' : 'Show Debug'} ({debugLog.length} logs)
-              </button>
-              {showDebug && debugLog.length > 0 && (
-                <div className="mt-2 bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs font-mono text-gray-300 max-h-40 overflow-y-auto">
-                  {debugLog.map((log, i) => (
-                    <div key={i} className="py-0.5 border-b border-gray-800 last:border-0">
-                      {log}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* ZFP first (when available) - Avantis exact order */}
+            {zfpAvailable && (
+              <div className="flex items-center justify-between mb-4 py-2 px-3 rounded-xl bg-[#151515] border border-[#2a2a2a]">
+                <span className="text-white text-sm font-medium">Zero Fee Perpetuals (ZFP)</span>
+                <button
+                  type="button"
+                  onClick={() => setIsZeroFeeMode((prev) => !prev)}
+                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                    isZeroFeeMode ? 'bg-[#22c55e]' : 'bg-[#404040]'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      isZeroFeeMode ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+            )}
 
-            {/* Long/Short Toggle - Avantis layout */}
+            {/* Long/Short - Avantis exact: green border when selected, dotted bg for long */}
             <div className="flex gap-2 mb-4">
               <button
                 onClick={() => setIsLong(true)}
-                className={`flex-1 py-3.5 rounded-xl font-bold transition-colors border-2 ${
-                  isLong ? 'bg-green-500/15 border-green-500 text-green-400 shadow-[0_0_0_1px_rgba(34,197,94,0.3)]' : 'bg-[#1a1a1a] border-[#333] text-gray-500'
+                className={`flex-1 py-3.5 rounded-xl font-bold text-base transition-colors border-2 ${
+                  isLong
+                    ? 'bg-green-500/10 border-green-500 text-green-400'
+                    : 'bg-[#151515] border-[#2a2a2a] text-gray-500'
                 }`}
+                style={isLong ? { backgroundImage: 'radial-gradient(circle, rgba(34,197,94,0.15) 1px, transparent 1px)', backgroundSize: '8px 8px' } : undefined}
               >
                 Long
               </button>
               <button
                 onClick={() => setIsLong(false)}
-                className={`flex-1 py-3.5 rounded-xl font-bold transition-colors border-2 ${
-                  !isLong ? 'bg-red-500/15 border-red-500 text-red-400 shadow-[0_0_0_1px_rgba(239,68,68,0.3)]' : 'bg-[#1a1a1a] border-[#333] text-gray-500'
+                className={`flex-1 py-3.5 rounded-xl font-bold text-base transition-colors border-2 ${
+                  !isLong
+                    ? 'bg-red-500/10 border-red-500 text-red-400'
+                    : 'bg-[#151515] border-[#2a2a2a] text-gray-500'
                 }`}
               >
                 Short
               </button>
             </div>
 
-            {/* Zero Fee Perps (ZFP) - only for ZFP-enabled markets */}
-            {zfpAvailable && (
-              <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-3 mb-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm text-white font-medium">Zero Fee Perpetuals (ZFP)</div>
-                    <div className="text-[11px] text-gray-400">
-                      Standard {activeLeverageLimits.standardMin}x-{activeLeverageLimits.standardMax}x • ZFP {activeLeverageLimits.zfpMin}x-{activeLeverageLimits.zfpMax}x
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsZeroFeeMode((prev) => !prev)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      isZeroFeeMode ? 'bg-accent-dynamic' : 'bg-gray-600'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        isZeroFeeMode ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Order type + Current Price - Avantis layout */}
+            {/* Order type + Current Price - Avantis exact layout */}
             <div className="flex gap-3 mb-4">
-              <div className="flex-1 bg-[#1a1a1a] border border-[#333] rounded-xl px-3 py-3">
-                <div className="text-[11px] text-gray-500 uppercase tracking-wide mb-1">Order type</div>
-                <div className="text-white font-medium">{isZeroFeeMode && zfpAvailable ? 'Market Zero Fee' : 'Market'}</div>
+              <div className="flex-1 rounded-xl px-3 py-3 bg-[#151515] border border-[#2a2a2a]">
+                <div className="text-[11px] text-gray-500 uppercase tracking-wide mb-0.5">Order type</div>
+                <div className="text-white font-medium text-sm">{isZeroFeeMode && zfpAvailable ? 'Market Zero Fee' : 'Market'}</div>
               </div>
-              <div className="flex-1 bg-[#1a1a1a] border border-[#333] rounded-xl px-3 py-3">
-                <div className="text-[11px] text-gray-500 uppercase tracking-wide mb-1">Current Price</div>
-                <div className="text-white font-bold">
-                  ${currentPrice?.toLocaleString(undefined, { minimumFractionDigits: 2 }) || '...'} USD
+              <div className="flex-1 rounded-xl px-3 py-3 bg-[#151515] border border-[#2a2a2a]">
+                <div className="text-[11px] text-gray-500 uppercase tracking-wide mb-0.5">Current Price</div>
+                <div className="text-white font-bold text-sm">
+                  {currentPrice != null ? currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 }) : '...'} USD
                 </div>
               </div>
             </div>
 
-            {/* Collateral - Avantis layout */}
-            <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4 mb-3">
+            {/* Collateral - Avantis exact: label row has wallet+balance+Add Funds right */}
+            <div className="rounded-xl p-4 mb-3 bg-[#151515] border border-[#2a2a2a]">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-gray-400 text-sm">Collateral</span>
-                <div className="flex items-center gap-1.5 text-xs">
+                <div className="flex items-center gap-2 text-xs">
                   <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>
                   </svg>
-                  <span className="text-gray-500">${eoaUsdcBalance.toFixed(0)}</span>
-                  <button type="button" onClick={() => setView('deposit')} className="text-accent-dynamic font-medium">Add Funds</button>
+                  <span className="text-gray-500">{eoaUsdcBalance.toFixed(0)}</span>
+                  <button type="button" onClick={() => setView('deposit')} className="text-[#3b82f6] font-medium hover:underline">Add Funds</button>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -4765,10 +4744,10 @@ const PerpsModal = ({
                   value={collateral}
                   onChange={(e) => setCollateral(e.target.value)}
                   placeholder="0"
-                  className="flex-1 bg-gray-700 rounded-lg px-3 py-3 text-white outline-none text-xl"
+                  className="flex-1 bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-3 text-white outline-none text-lg"
                 />
-                <div className="flex items-center gap-1.5 text-sm text-gray-300">
-                  <img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png" alt="USDC" className="w-5 h-5 rounded-full" />
+                <div className="flex items-center gap-1.5 text-sm text-gray-300 shrink-0">
+                  <img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png" alt="" className="w-5 h-5 rounded-full" />
                   <span>USDC</span>
                 </div>
               </div>
@@ -4778,7 +4757,7 @@ const PerpsModal = ({
                     key={pct}
                     type="button"
                     onClick={() => setCollateral((eoaUsdcBalance * pct / 100).toFixed(2))}
-                    className="flex-1 py-1.5 rounded-lg bg-gray-700/80 text-gray-300 text-xs font-medium hover:bg-gray-600"
+                    className="flex-1 py-2 rounded-lg bg-[#1a1a1a] border border-[#333] text-gray-300 text-xs font-medium hover:bg-[#252525]"
                   >
                     {pct}%
                   </button>
@@ -4786,8 +4765,8 @@ const PerpsModal = ({
               </div>
             </div>
 
-            {/* Leverage - Avantis layout with dots */}
-            <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4 mb-3">
+            {/* Leverage - Avantis exact: label left, input+x+reset right, slider with dots */}
+            <div className="rounded-xl p-4 mb-3 bg-[#151515] border border-[#2a2a2a]">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-gray-400 text-sm">Leverage</span>
                 <div className="flex items-center gap-1">
@@ -4797,64 +4776,61 @@ const PerpsModal = ({
                     max={leverageMax}
                     value={leverage}
                     onChange={(e) => setLeverage(Math.min(leverageMax, Math.max(leverageMin, Number(e.target.value) || leverageMin)))}
-                    className="w-12 bg-gray-700 rounded px-2 py-1 text-white text-sm font-bold text-right outline-none"
+                    className="w-14 bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-white text-sm font-bold text-right outline-none"
                   />
                   <span className="text-gray-400 text-sm">x</span>
-                  <button type="button" onClick={() => setLeverage(leverageMin)} className="text-gray-500 hover:text-gray-400 p-0.5" aria-label="Reset leverage">✕</button>
+                  <button type="button" onClick={() => setLeverage(leverageMin)} className="text-gray-500 hover:text-gray-400 p-1" aria-label="Reset">✕</button>
                 </div>
               </div>
-              <div className="pt-2 pb-1">
-                <div className="relative">
-                  <input
-                    type="range"
-                    min={leverageMin}
-                    max={leverageMax}
-                    value={leverage}
-                    onChange={(e) => setLeverage(Number(e.target.value))}
-                    className="w-full h-3 rounded-full appearance-none bg-gray-700 cursor-pointer"
-                    style={{ accentColor: isLong ? '#22c55e' : '#ef4444' }}
-                  />
-                </div>
-                <div className="flex justify-between mt-1.5 gap-0.5">
+              <div className="relative pt-1 pb-2">
+                <input
+                  type="range"
+                  min={leverageMin}
+                  max={leverageMax}
+                  value={leverage}
+                  onChange={(e) => setLeverage(Number(e.target.value))}
+                  className="w-full h-2 rounded-full appearance-none bg-[#2a2a2a] cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white/20"
+                  style={{ accentColor: isLong ? '#22c55e' : '#ef4444' }}
+                />
+                <div className="flex justify-between mt-1.5 px-0.5">
                   {Array.from({ length: 11 }, (_, i) => (
-                    <span key={i} className="w-1 h-1 rounded-full bg-gray-500 flex-shrink-0" />
+                    <span key={i} className="w-1.5 h-1.5 rounded-full bg-[#404040]" />
                   ))}
                 </div>
               </div>
             </div>
 
-            {/* Position Size - Avantis layout */}
-            <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4 mb-3">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-gray-400 text-sm">Position Size</span>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-white font-medium">{positionSize > 0 ? positionSize.toLocaleString(undefined, { maximumFractionDigits: 4 }) : '0'}</span>
-                  <div className="w-5 h-5 rounded-full overflow-hidden flex items-center justify-center" style={{ backgroundColor: `${selectedMarket.color}30` }}>
+            {/* Position Size - Avantis exact: value in input with asset logo + arrows inside */}
+            <div className="rounded-xl p-4 mb-3 bg-[#151515] border border-[#2a2a2a]">
+              <div className="text-gray-400 text-sm mb-2">Position Size</div>
+              <div className="relative flex items-center bg-[#1a1a1a] border border-[#333] rounded-lg">
+                <span className="flex-1 px-3 py-3 text-white text-lg">
+                  {positionSize > 0 ? positionSize.toLocaleString(undefined, { maximumFractionDigits: 6, minimumFractionDigits: 0 }) : '0'}
+                </span>
+                <div className="flex items-center gap-1.5 pr-3">
+                  <div className="w-6 h-6 rounded-full overflow-hidden flex items-center justify-center shrink-0" style={{ backgroundColor: `${selectedMarket.color}30` }}>
                     <img src={selectedMarket.logo} alt="" className="w-4 h-4 object-contain" />
                   </div>
-                  <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
                   </svg>
                 </div>
               </div>
-              <div className="w-full bg-gray-700 rounded-lg px-3 py-3 text-white text-lg">
-                {positionSize > 0 ? positionSize.toLocaleString(undefined, { maximumFractionDigits: 6 }) : '0'}
-              </div>
               {positionSize > 0 && positionSize < MIN_POSITION_SIZE_USDC && (
                 <div className="text-red-400 text-xs mt-2">
-                  Minimum position size for this asset is {MIN_POSITION_SIZE_USDC.toFixed(2)} USDC
+                  Minimum position size for this asset is 100.00 USDC
                 </div>
               )}
             </div>
 
-            {/* Set TP/SL - Avantis layout */}
-            <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-3 mb-3">
+            {/* Set TP/SL - Avantis exact */}
+            <div className="rounded-xl p-3 mb-3 bg-[#151515] border border-[#2a2a2a]">
               <div className="flex items-center justify-between">
-                <div className="text-sm text-white font-medium">Set TP/SL</div>
+                <span className="text-sm text-white font-medium">Set TP/SL</span>
                 <button
                   type="button"
                   onClick={() => setShowTpSlInputs((v) => !v)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${showTpSlInputs ? 'bg-accent-dynamic' : 'bg-gray-600'}`}
+                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${showTpSlInputs ? 'bg-[#22c55e]' : 'bg-[#404040]'}`}
                 >
                   <span
                     className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${showTpSlInputs ? 'translate-x-6' : 'translate-x-1'}`}
@@ -4881,9 +4857,9 @@ const PerpsModal = ({
               )}
             </div>
 
-            {/* Position Summary */}
+            {/* Position Summary - Avantis style */}
             {positionSize > 0 && liquidationPrice && (
-              <div className="bg-gray-800/30 rounded-xl p-3 mb-4 text-sm space-y-2">
+              <div className="bg-[#151515] border border-[#2a2a2a] rounded-xl p-3 mb-4 text-sm space-y-2">
                 <div className="flex justify-between">
                   <span className="text-gray-400">Entry Price</span>
                   <span className="text-white">${currentPrice?.toLocaleString()}</span>
@@ -4901,14 +4877,14 @@ const PerpsModal = ({
               </div>
             )}
 
-            {/* Open Position Button */}
+            {/* Open Position Button - Avantis exact */}
             <button 
               onClick={handleOpenPosition}
               disabled={!canTrade || isLoading}
-              className={`w-full font-bold py-4 rounded-2xl transition-colors ${
+              className={`w-full font-bold py-4 rounded-xl transition-colors ${
                 canTrade && !isLoading
-                  ? isLong ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
-                  : 'bg-gray-700 text-gray-500'
+                  ? isLong ? 'bg-[#22c55e] text-white' : 'bg-[#ef4444] text-white'
+                  : 'bg-[#2a2a2a] text-gray-500'
               }`}
             >
               {isLoading ? loadingStatus : `Open ${isLong ? 'Long' : 'Short'}`}
