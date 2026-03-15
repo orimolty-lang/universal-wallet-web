@@ -5745,18 +5745,20 @@ const SearchTab = ({
             const chainLogo = getChainLogoForBlockchain(primaryContract?.blockchain);
             const offset = swipeOffsets[token.id] ?? 0;
             return (
-            <div key={token.id} className="relative overflow-hidden border-b border-gray-800/30">
-              <button
-                className="absolute right-0 top-0 bottom-0 w-16 bg-red-600/90 flex items-center justify-center z-0"
-                onClick={(e) => handleDeleteClick(e, token)}
-                aria-label="Remove from history"
-              >
-                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
+            <div key={token.id} className="relative overflow-hidden border-b border-gray-800/30 bg-[#0a0a0a]">
+              {offset < -40 && (
+                <button
+                  className="absolute right-0 top-0 bottom-0 w-16 bg-red-600 flex items-center justify-center z-10"
+                  onClick={(e) => handleDeleteClick(e, token)}
+                  aria-label="Remove from history"
+                >
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              )}
               <div
-                className="relative z-10 w-full min-w-full bg-[#0a0a0a] py-3 text-left select-none"
+                className="relative w-full min-w-full py-3 text-left select-none"
                 style={{ transform: `translateX(${offset}px)`, touchAction: 'pan-y' }}
                 onTouchStart={(e) => handleSwipeStart(e, token.id)}
                 onTouchMove={(e) => handleSwipeMove(e, token.id)}
@@ -6812,7 +6814,7 @@ const BottomNav = ({
       </svg>
     )},
     { id: "agent" as TabType, icon: () => (
-      <img src="/universal-wallet-web/omni-logo.png" alt="Omni" className="w-9 h-9 rounded-lg object-contain" />
+      <img src="/universal-wallet-web/omni-logo.png" alt="Omni" className="w-11 h-11 rounded-xl object-contain" />
     ), isAgent: true },
     { id: "trade" as TabType, icon: () => (
       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
