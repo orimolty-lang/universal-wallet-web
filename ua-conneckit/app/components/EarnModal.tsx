@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { X, Loader2, TrendingUp, ChevronDown } from "lucide-react";
+import { Loader2, TrendingUp, ChevronDown, RefreshCw } from "lucide-react";
 import BottomSheet from "../../components/BottomSheet";
 import type { UniversalAccount } from "@particle-network/universal-account-sdk";
 import { CHAIN_ID, SUPPORTED_TOKEN_TYPE } from "@particle-network/universal-account-sdk";
@@ -312,20 +312,14 @@ export default function EarnModal({
             <TrendingUp className="w-6 h-6 text-accent-dynamic" />
             Earn
           </h2>
-          <button
-            onClick={onClose}
-            className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center"
-          >
-            <X className="w-5 h-5 text-gray-400" />
-          </button>
         </div>
 
         <p className="text-gray-400 text-sm mb-3">
-          Deposit USDC into yield vaults. UA sources from your unified balance across chains.
+          Deposit into yield vaults to earn passively.
         </p>
 
         <div className="bg-zinc-900 rounded-xl px-4 py-3 border border-zinc-800 mb-4">
-          <div className="text-gray-400 text-xs mb-0.5">UA Balance</div>
+          <div className="text-gray-400 text-xs mb-0.5">Balance</div>
           <div className="text-white font-semibold text-lg">${uaBalanceUsd.toFixed(2)}</div>
         </div>
 
@@ -450,7 +444,7 @@ export default function EarnModal({
                 className="w-full bg-zinc-950 rounded-xl px-3 py-2 text-white outline-none border border-zinc-800"
               />
               <div className="flex justify-between mt-1">
-                <span className="text-gray-500 text-xs">UA Balance: ${uaBalanceUsd.toFixed(2)}</span>
+                <span className="text-gray-500 text-xs">Balance: ${uaBalanceUsd.toFixed(2)}</span>
                 <button
                   type="button"
                   onClick={() => setAmount(uaBalanceUsd.toString())}
@@ -478,9 +472,10 @@ export default function EarnModal({
                   <button
                     onClick={loadPositions}
                     disabled={isLoadingPositions}
-                    className="text-accent-dynamic text-xs disabled:opacity-50"
+                    className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center hover:bg-zinc-700 disabled:opacity-50"
+                    aria-label="Refresh"
                   >
-                    {isLoadingPositions ? "..." : "Refresh"}
+                    <RefreshCw className={`w-4 h-4 text-gray-400 ${isLoadingPositions ? "animate-spin" : ""}`} />
                   </button>
                 </div>
                 <div className="space-y-2">

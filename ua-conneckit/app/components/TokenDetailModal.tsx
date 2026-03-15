@@ -31,12 +31,15 @@ interface UserBalance {
   amountInUSD: number;
 }
 
+const WATCHLIST_STORAGE_KEY = "omni_swap_watchlist_v1";
+
 interface TokenDetailModalProps {
   token: TokenData | null;
   userBalance?: UserBalance | null;
   onClose: () => void;
   onSwap?: (token: TokenData) => void;
   onSend?: (token: TokenData) => void;
+  onWatchlistChange?: () => void;
 }
 
 // Helper functions
@@ -83,6 +86,19 @@ const CHAIN_LOGOS: Record<string, string> = {
   "bnb": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/binance/info/logo.png",
   "solana": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png",
   "avalanche": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/avalanchec/info/logo.png",
+};
+
+// Map blockchain names to block explorer token URLs (for "View on Explorer")
+const EXPLORER_TOKEN_URLS: Record<string, string> = {
+  ethereum: "https://etherscan.io/token/",
+  base: "https://basescan.org/token/",
+  arbitrum: "https://arbiscan.io/token/",
+  optimism: "https://optimistic.etherscan.io/token/",
+  polygon: "https://polygonscan.com/token/",
+  bsc: "https://bscscan.com/token/",
+  bnb: "https://bscscan.com/token/",
+  solana: "https://explorer.solana.com/address/",
+  avalanche: "https://snowtrace.io/token/",
 };
 
 // Map blockchain names to DEXScreener/GeckoTerminal network slugs
@@ -209,6 +225,7 @@ export const TokenDetailModal = ({
   onClose,
   onSwap,
   onSend,
+  onWatchlistChange,
 }: TokenDetailModalProps) => {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [fallbackMetrics, setFallbackMetrics] = useState<{ volume?: number; liquidity?: number; priceChange24h?: number } | null>(null);
@@ -216,31 +233,87 @@ export const TokenDetailModal = ({
   const startYRef = useRef<number | null>(null);
   const currentYRef = useRef<number>(0);
 
-  // Handle drag to dismiss
-  const handleTouchStart = (e: React.TouchEvent) => {
-    startYRef.current = e.touches[0].clientY;
+  const getClientY = (e: React.TouchEvent | React.MouseEvent) =>
+    "touches" in e ? (e as React.TouchEvent).touches[0]?.clientY : (e as React.MouseEvent).clientY;
+
+  const handleDragStart = (e: React.TouchEvent | React.MouseEvent) => {
+    startYRef.current = getClientY(e);
   };
 
-  const handleTouchMove = (e: React.TouchEvent) => {
+  const handleDragMove = (e: React.TouchEvent | React.MouseEvent) => {
     if (startYRef.current === null || !modalRef.current) return;
-    const deltaY = e.touches[0].clientY - startYRef.current;
+    const y = getClientY(e);
+    const deltaY = y - startYRef.current;
     if (deltaY > 0) {
       currentYRef.current = deltaY;
       modalRef.current.style.transform = `translateY(${deltaY}px)`;
     }
   };
 
-  const handleTouchEnd = () => {
+  const handleDragEnd = () => {
     if (!modalRef.current) return;
     if (currentYRef.current > 100) {
-      // Dismiss if dragged more than 100px
       onClose();
     } else {
-      // Snap back
-      modalRef.current.style.transform = '';
+      modalRef.current.style.transform = "";
     }
     startYRef.current = null;
     currentYRef.current = 0;
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    handleDragStart(e);
+    const onMouseMove = (ev: MouseEvent) => handleDragMove(ev as unknown as React.MouseEvent);
+    const onMouseUp = () => {
+      handleDragEnd();
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  };
+
+  const dragHandlers = {
+    onTouchStart: handleDragStart,
+    onTouchMove: handleDragMove,
+    onTouchEnd: handleDragEnd,
+    onMouseDown: handleMouseDown,
+  };
+
+  const handleCopyContract = (addr: string) => {
+    navigator.clipboard.writeText(addr);
+    setShowMoreMenu(false);
+  };
+
+  const handleViewOnExplorer = (contract: { address: string; blockchain: string }) => {
+    const norm = normalizeBlockchain(contract.blockchain);
+    const base = EXPLORER_TOKEN_URLS[norm] || EXPLORER_TOKEN_URLS.ethereum;
+    const url = norm === "solana" ? `${base}${contract.address}` : `${base}${contract.address}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+    setShowMoreMenu(false);
+  };
+
+  const handleAddToWatchlist = () => {
+    if (!token?.id) return;
+    try {
+      const raw = localStorage.getItem(WATCHLIST_STORAGE_KEY);
+      const tokens: Array<{ id: string; symbol: string; name: string; logo?: string; price?: number; contracts?: TokenContract[] }> = raw ? JSON.parse(raw) : [];
+      if (!tokens.some((t) => t.id === token.id)) {
+        tokens.unshift({
+          id: token.id,
+          symbol: token.symbol,
+          name: token.name,
+          logo: token.logo,
+          price: token.price,
+          contracts: token.contracts,
+        });
+        localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(tokens.slice(0, 50)));
+      }
+      onWatchlistChange?.();
+    } catch {
+      // ignore
+    }
+    setShowMoreMenu(false);
   };
 
   useEffect(() => {
@@ -321,18 +394,16 @@ export const TokenDetailModal = ({
         className="fixed inset-x-0 bottom-0 z-50 max-h-[90vh] bg-[#0a0a0a] rounded-t-3xl overflow-hidden flex flex-col animate-slide-up border-t border-white/10"
         style={{ touchAction: 'pan-y', paddingTop: 'env(safe-area-inset-top)' }}
       >
-        {/* Drag Handle - with touch events */}
+        {/* Drag handle - visible bar, larger touch target */}
         <div 
-          className="flex justify-center pt-3 pb-2 cursor-grab active:cursor-grabbing"
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
+          className="flex justify-center pt-4 pb-4 cursor-grab active:cursor-grabbing shrink-0 touch-none select-none"
+          {...dragHandlers}
         >
-          <div className="w-10 h-1 bg-white/20 rounded-full" />
+          <div className="w-12 h-1.5 bg-white/30 rounded-full" />
         </div>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto px-5 pb-24">
+        <div className="flex-1 overflow-y-auto px-5 pb-24 min-h-0 overscroll-contain">
           {/* Token Header */}
           <div className="flex items-center gap-3 mb-1">
             <div className="relative">
@@ -579,14 +650,25 @@ export const TokenDetailModal = ({
                   {token.contracts.map((contract, idx) => (
                     <div
                       key={idx}
-                      className="flex items-center justify-between py-1"
+                      className="flex items-center justify-between gap-2 py-1"
                     >
-                      <span className="text-gray-400 text-sm">
+                      <span className="text-gray-400 text-sm shrink-0">
                         {contract.blockchain}
                       </span>
-                      <span className="text-accent-dynamic font-mono text-xs">
-                        {formatAddress(contract.address)}
+                      <span className="text-accent-dynamic font-mono text-xs break-all text-right flex-1 min-w-0">
+                        {contract.address}
                       </span>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(contract.address);
+                        }}
+                        className="shrink-0 w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center hover:bg-white/20"
+                        aria-label="Copy contract"
+                      >
+                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h2m8 0h2a2 2 0 012 2v2m2 4a2 2 0 01-2 2h-2m-4-1h.01M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+                        </svg>
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -627,20 +709,28 @@ export const TokenDetailModal = ({
 
         {/* More Menu Popup */}
         {showMoreMenu && (
-          <div
-            className="absolute bottom-24 left-5 bg-white/10 backdrop-blur-lg rounded-xl p-2 shadow-xl z-50 border border-white/20"
-            onClick={() => setShowMoreMenu(false)}
-          >
-            <button className="w-full text-left px-4 py-2 text-white text-sm rounded-lg hover:bg-white/10">
-              📈 Add to Watchlist
-            </button>
-            <button className="w-full text-left px-4 py-2 text-white text-sm rounded-lg hover:bg-white/10">
-              📋 Copy Contract
-            </button>
-            <button className="w-full text-left px-4 py-2 text-white text-sm rounded-lg hover:bg-white/10">
-              🔗 View on Explorer
-            </button>
-          </div>
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setShowMoreMenu(false)}
+              aria-hidden="true"
+            />
+            <div className="absolute bottom-24 left-5 right-5 sm:right-auto sm:w-64 bg-white/10 backdrop-blur-lg rounded-xl p-2 shadow-xl z-50 border border-white/20">
+              <button onClick={handleAddToWatchlist} className="w-full text-left px-4 py-2 text-white text-sm rounded-lg hover:bg-white/10 flex items-center gap-2">
+                <span>📈</span> Add to Watchlist
+              </button>
+              {primaryContract && (
+                <>
+                  <button onClick={() => handleCopyContract(primaryContract.address)} className="w-full text-left px-4 py-2 text-white text-sm rounded-lg hover:bg-white/10 flex items-center gap-2">
+                    <span>📋</span> Copy Contract
+                  </button>
+                  <button onClick={() => handleViewOnExplorer(primaryContract)} className="w-full text-left px-4 py-2 text-white text-sm rounded-lg hover:bg-white/10 flex items-center gap-2">
+                    <span>🔗</span> View on Explorer
+                  </button>
+                </>
+              )}
+            </div>
+          </>
         )}
       </div>
 

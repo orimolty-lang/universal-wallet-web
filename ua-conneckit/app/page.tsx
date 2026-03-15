@@ -1094,6 +1094,16 @@ const SendModal = ({
     return out;
   }, [assets]);
 
+  // Default to highest UA balance when modal opens
+  const prevOpenRef = useRef(false);
+  useEffect(() => {
+    if (isOpen && !prevOpenRef.current && transferOptions.length > 0) {
+      const best = transferOptions.reduce((a, b) => (a.balance >= b.balance ? a : b));
+      setSelectedOption(best.key);
+    }
+    prevOpenRef.current = isOpen;
+  }, [isOpen, transferOptions]);
+
   const selected = transferOptions.find((o) => o.key === selectedOption);
   const canSend = selected && recipient.trim() && amount && parseFloat(amount) > 0 && parseFloat(amount) <= (selected?.balance ?? 0);
 
@@ -1158,10 +1168,7 @@ const SendModal = ({
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose}>
       <div className="px-5 pb-8 min-h-[400px]">
-        <h2 className="text-white text-xl font-bold mb-2">Send</h2>
-        <p className="text-gray-400 text-sm mb-5">
-          Transfer UA primary assets or ERC20/SPL tokens to another EVM or Solana wallet.
-        </p>
+        <h2 className="text-white text-xl font-bold mb-5">Send</h2>
 
         {txResult ? (
           <div className="space-y-4">
@@ -1188,9 +1195,9 @@ const SendModal = ({
               </div>
             )}
 
-            {/* Token + Chain Selection - Convert-style dropdown */}
+            {/* Token + Chain Selection */}
             <div className="mb-3 bg-zinc-900 rounded-xl p-3 border border-zinc-800">
-              <label className="text-gray-400 text-sm mb-2 block">Token & Network</label>
+              <label className="text-gray-400 text-sm mb-2 block">You are sending</label>
               <div className="relative">
                 <button
                   onClick={() => setSendTokenOpen(!sendTokenOpen)}
@@ -1249,7 +1256,7 @@ const SendModal = ({
                 type="text"
                 value={recipient}
                 onChange={(e) => setRecipient(e.target.value)}
-                placeholder="0x... (EVM) or base58 (Solana)"
+                placeholder=""
                 className="w-full bg-zinc-950 rounded-xl px-3 py-2 text-white outline-none border border-zinc-800"
               />
             </div>
@@ -1676,10 +1683,7 @@ const ConvertModal = ({
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose}>
       <div className="px-5 pb-8 min-h-[400px]">
-        <h2 className="text-white text-xl font-bold mb-2">Convert</h2>
-        <p className="text-gray-400 text-sm mb-4">
-          Convert primary assets between chains.
-        </p>
+        <h2 className="text-white text-xl font-bold mb-4">Convert</h2>
 
         {error && (
           <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-2 mb-2 text-red-300 text-xs">
@@ -2200,6 +2204,11 @@ const PERPS_MARKET_SYMBOL_META: Record<string, PerpsMarket> = PERPS_MARKETS.redu
 const DEFAULT_PERPS_MARKET_LOGO = '';
 
 const AVANTIS_SOCKET_API_URL = 'https://socket-api-pub.avantisfi.com/socket-api/v1/data';
+// Leverage/ZFP data source: Avantis Socket API (pairInfos[].leverages).
+// Override map for pairs where API returns incorrect values (e.g. AVNT: 10x non-ZFP only per Avantis).
+const LEVERAGE_OVERRIDES: Record<string, { standardMax: number; zfpMax: number }> = {
+  'AVNT/USD': { standardMax: 10, zfpMax: 0 },
+};
 
 const parsePairNameFromSocketSymbol = (symbol: string): string => {
   // Socket symbols are usually "Crypto.ETH/USD", "FX.EUR/USD", etc.
@@ -2739,12 +2748,16 @@ const PerpsModal = ({
           const zfpMax = Number(leverages.pnlMaxLeverage ?? standardMax);
           if (!Number.isFinite(standardMax) || standardMax <= 0) continue;
 
+          const override = LEVERAGE_OVERRIDES[pairName];
+          const finalStandardMax = override ? override.standardMax : standardMax;
+          const finalZfpMax = override ? override.zfpMax : (Number.isFinite(zfpMax) && zfpMax > 0 ? zfpMax : standardMax);
+
           limitsMap[pairName] = {
             pairIndex: Number.isFinite(parsedPairIndex) ? parsedPairIndex : undefined,
             standardMin: Number.isFinite(standardMin) && standardMin > 0 ? standardMin : 2,
-            standardMax,
+            standardMax: finalStandardMax,
             zfpMin: Number.isFinite(zfpMin) && zfpMin > 0 ? zfpMin : standardMin,
-            zfpMax: Number.isFinite(zfpMax) && zfpMax > 0 ? zfpMax : standardMax,
+            zfpMax: finalZfpMax,
             pairOI: Number.isFinite(Number(info.pairOI)) ? Number(info.pairOI) : 0,
             pairMaxOI: Number.isFinite(Number(info.pairMaxOI)) ? Number(info.pairMaxOI) : 0,
             feedId: typeof info.feed?.feedId === 'string' ? info.feed.feedId : undefined,
@@ -4578,13 +4591,12 @@ const PerpsModal = ({
           </div>
         ) : view === 'withdraw' ? (
           <div className="px-5 pb-8">
-            <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center gap-3 mb-5">
               <button onClick={() => setView('markets')} className="w-9 h-9 rounded-full bg-gray-800 flex items-center justify-center">
                 <span className="text-white">←</span>
               </button>
               <h2 className="text-white text-xl font-bold">Withdraw</h2>
             </div>
-            <p className="text-gray-400 text-sm mb-5">Transfer USDC from your EOA to your Universal Account.</p>
             {error && (
               <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-3 mb-4 text-red-300 text-sm">{error}</div>
             )}
@@ -4594,11 +4606,11 @@ const PerpsModal = ({
                 <input type="number" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} placeholder="0.00" min="0" step="0.01" className="flex-1 bg-gray-800 rounded-lg px-3 py-2 text-white outline-none" />
                 <span className="text-sm text-gray-300">USDC</span>
               </div>
-              <div className="text-[11px] text-gray-500 mt-2">EOA Balance: ${eoaUsdcBalance.toFixed(2)} USDC on Base</div>
+              <div className="text-[11px] text-gray-500 mt-2">Perps Wallet Balance: ${eoaUsdcBalance.toFixed(2)} USDC on Base</div>
               <button type="button" onClick={() => setWithdrawAmount(eoaUsdcBalance.toString())} className="text-accent-dynamic text-xs mt-1">Max</button>
             </div>
             <div className="bg-[#252525] rounded-xl px-3 py-3 mb-5">
-              <div className="text-gray-400 text-xs uppercase tracking-wide mb-2">To (UA EVM)</div>
+              <div className="text-gray-400 text-xs uppercase tracking-wide mb-2">To Omni Wallet</div>
               <div className="text-white text-sm font-mono break-all">{smartAccountAddress || "Not available"}</div>
             </div>
             <button
@@ -4678,16 +4690,16 @@ const PerpsModal = ({
             <div className="flex gap-2 mb-4">
               <button
                 onClick={() => setIsLong(true)}
-                className={`flex-1 py-3 rounded-xl font-bold transition-colors border-2 ${
-                  isLong ? 'bg-green-500/20 border-green-500 text-green-400' : 'bg-gray-800 border-gray-700 text-gray-400'
+                className={`flex-1 py-3.5 rounded-xl font-bold transition-colors border-2 ${
+                  isLong ? 'bg-green-500/15 border-green-500 text-green-400 shadow-[0_0_0_1px_rgba(34,197,94,0.3)]' : 'bg-[#1a1a1a] border-[#333] text-gray-500'
                 }`}
               >
                 Long
               </button>
               <button
                 onClick={() => setIsLong(false)}
-                className={`flex-1 py-3 rounded-xl font-bold transition-colors border-2 ${
-                  !isLong ? 'bg-red-500/20 border-red-500 text-red-400' : 'bg-gray-800 border-gray-700 text-gray-400'
+                className={`flex-1 py-3.5 rounded-xl font-bold transition-colors border-2 ${
+                  !isLong ? 'bg-red-500/15 border-red-500 text-red-400 shadow-[0_0_0_1px_rgba(239,68,68,0.3)]' : 'bg-[#1a1a1a] border-[#333] text-gray-500'
                 }`}
               >
                 Short
@@ -4696,7 +4708,7 @@ const PerpsModal = ({
 
             {/* Zero Fee Perps (ZFP) - only for ZFP-enabled markets */}
             {zfpAvailable && (
-              <div className="bg-gray-800/40 rounded-xl p-3 mb-3 border border-gray-700/60">
+              <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-3 mb-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="text-sm text-white font-medium">Zero Fee Perpetuals (ZFP)</div>
@@ -4723,11 +4735,11 @@ const PerpsModal = ({
 
             {/* Order type + Current Price - Avantis layout */}
             <div className="flex gap-3 mb-4">
-              <div className="flex-1 bg-gray-800/50 rounded-xl px-3 py-3">
+              <div className="flex-1 bg-[#1a1a1a] border border-[#333] rounded-xl px-3 py-3">
                 <div className="text-[11px] text-gray-500 uppercase tracking-wide mb-1">Order type</div>
                 <div className="text-white font-medium">{isZeroFeeMode && zfpAvailable ? 'Market Zero Fee' : 'Market'}</div>
               </div>
-              <div className="flex-1 bg-gray-800/50 rounded-xl px-3 py-3">
+              <div className="flex-1 bg-[#1a1a1a] border border-[#333] rounded-xl px-3 py-3">
                 <div className="text-[11px] text-gray-500 uppercase tracking-wide mb-1">Current Price</div>
                 <div className="text-white font-bold">
                   ${currentPrice?.toLocaleString(undefined, { minimumFractionDigits: 2 }) || '...'} USD
@@ -4736,7 +4748,7 @@ const PerpsModal = ({
             </div>
 
             {/* Collateral - Avantis layout */}
-            <div className="bg-gray-800/50 rounded-xl p-4 mb-3">
+            <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4 mb-3">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-gray-400 text-sm">Collateral</span>
                 <div className="flex items-center gap-1.5 text-xs">
@@ -4775,7 +4787,7 @@ const PerpsModal = ({
             </div>
 
             {/* Leverage - Avantis layout with dots */}
-            <div className="bg-gray-800/50 rounded-xl p-4 mb-3">
+            <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4 mb-3">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-gray-400 text-sm">Leverage</span>
                 <div className="flex items-center gap-1">
@@ -4799,7 +4811,8 @@ const PerpsModal = ({
                     max={leverageMax}
                     value={leverage}
                     onChange={(e) => setLeverage(Number(e.target.value))}
-                    className="w-full h-3 rounded-full appearance-none bg-gray-700 cursor-pointer accent-green-500"
+                    className="w-full h-3 rounded-full appearance-none bg-gray-700 cursor-pointer"
+                    style={{ accentColor: isLong ? '#22c55e' : '#ef4444' }}
                   />
                 </div>
                 <div className="flex justify-between mt-1.5 gap-0.5">
@@ -4811,7 +4824,7 @@ const PerpsModal = ({
             </div>
 
             {/* Position Size - Avantis layout */}
-            <div className="bg-gray-800/50 rounded-xl p-4 mb-3">
+            <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4 mb-3">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-gray-400 text-sm">Position Size</span>
                 <div className="flex items-center gap-1.5">
@@ -4835,7 +4848,7 @@ const PerpsModal = ({
             </div>
 
             {/* Set TP/SL - Avantis layout */}
-            <div className="bg-gray-800/40 rounded-xl p-3 mb-3 border border-gray-700/60">
+            <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-3 mb-3">
               <div className="flex items-center justify-between">
                 <div className="text-sm text-white font-medium">Set TP/SL</div>
                 <button
@@ -5567,6 +5580,32 @@ const SearchTab = ({
     });
   };
 
+  const WATCHLIST_STORAGE_KEY = "omni_swap_watchlist_v1";
+  const [watchlistTokens, setWatchlistTokens] = useState<TokenResult[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem(WATCHLIST_STORAGE_KEY);
+        return raw ? JSON.parse(raw) : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  });
+
+  const refreshWatchlist = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(WATCHLIST_STORAGE_KEY);
+      setWatchlistTokens(raw ? JSON.parse(raw) : []);
+    } catch {
+      setWatchlistTokens([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!query) refreshWatchlist();
+  }, [query, refreshWatchlist]);
+
   const [swipeOffsets, setSwipeOffsets] = useState<Record<string, number>>({});
   const touchStartRef = useRef<{ x: number; id: string } | null>(null);
 
@@ -5852,6 +5891,47 @@ const SearchTab = ({
       {error && <div className="text-red-500 text-center py-4 text-sm">Error: {error}</div>}
       
       {/* Recent Tokens - DexScreener style list, swipe left to delete */}
+      {!query && watchlistTokens.length > 0 && (
+        <div className="mb-6">
+          <div className="text-gray-500 text-xs uppercase mb-3">Watchlist</div>
+          {watchlistTokens.map((token) => {
+            const primaryContract = pickPrimaryContract(token, query);
+            const chainLogo = getChainLogoForBlockchain(primaryContract?.blockchain);
+            return (
+              <button
+                key={token.id}
+                onClick={() => setSelectedToken(token)}
+                className="w-full flex items-center justify-between py-3 border-b border-gray-800/30 hover:bg-gray-900/50 rounded-lg px-2 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    {token.logo ? (
+                      <img src={token.logo} alt={token.symbol} className="w-9 h-9 rounded-full bg-gray-800" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold">
+                        {token.symbol.slice(0, 2)}
+                      </div>
+                    )}
+                    {chainLogo && (
+                      <img src={chainLogo} alt="" className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-[#0a0a0a]" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-white font-medium text-sm">{token.symbol}</span>
+                    </div>
+                    <div className="text-gray-500 text-xs truncate max-w-[120px]">{token.name}</div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-white text-sm font-medium">{formatPrice(token.price || 0)}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {!query && recentTokens.length > 0 && (
         <div>
           <div className="text-gray-500 text-xs uppercase mb-3">History</div>
@@ -6007,6 +6087,7 @@ const SearchTab = ({
         token={selectedToken} 
         userBalance={getUserBalance(selectedToken)}
         onClose={() => setSelectedToken(null)} 
+        onWatchlistChange={refreshWatchlist}
         onSwap={(token) => { 
           setSwapTargetToken(token as TokenResult);
           setShowSwapModal(true);
