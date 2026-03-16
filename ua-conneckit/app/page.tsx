@@ -4622,240 +4622,163 @@ const PerpsModal = ({
             </button>
           </div>
         ) : (
-          /* ========== TRADE VIEW ========== */
+          /* ========== TRADE VIEW - Avantis exact copy ========== */
           <div className="px-4">
-            {/* Back Button & Header */}
-            <div className="flex items-center gap-3 mb-4">
-              <button 
-                onClick={() => setView('markets')}
-                className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center"
-              >
+            {/* Back + Market selector */}
+            <div className="flex items-center gap-3 mb-3">
+              <button onClick={() => setView('markets')} className="w-10 h-10 rounded-full bg-[#1a1a1a] flex items-center justify-center shrink-0">
                 <span className="text-white">←</span>
               </button>
-              <div className="flex items-center gap-2">
-                <div 
-                  className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden"
-                  style={{ backgroundColor: `${selectedMarket.color}20` }}
-                >
-                  <img
-                    src={selectedMarket.logo}
-                    alt={selectedMarket.symbol}
-                    className="w-6 h-6 object-contain"
-                    onError={(e) => {
-                      const img = e.currentTarget as HTMLImageElement;
-                      const fallback = buildTickerLogoDataUri(selectedMarket.symbol, selectedMarket.color);
-                      if (img.src !== fallback) {
-                        img.src = fallback;
-                        return;
-                      }
-                      img.style.display = 'none';
-                      const sibling = img.nextElementSibling as HTMLElement | null;
-                      if (sibling) sibling.style.display = 'flex';
-                    }}
-                  />
-                  <span className="hidden items-center justify-center w-full h-full text-[9px] font-bold text-gray-300">
-                    {selectedMarket.symbol.slice(0, 4)}
-                  </span>
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden shrink-0" style={{ backgroundColor: `${selectedMarket.color}20` }}>
+                  <img src={selectedMarket.logo} alt="" className="w-6 h-6 object-contain" onError={(e) => { const t = e.currentTarget; t.src = buildTickerLogoDataUri(selectedMarket.symbol, selectedMarket.color); }} />
                 </div>
-                <span className="text-white font-bold text-lg">{selectedMarket.pairName}</span>
+                <span className="text-white font-bold truncate">{selectedMarket.pairName}</span>
               </div>
             </div>
 
             {error && (
-              <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-3 mb-4 text-red-300 text-sm">
-                {error}
-              </div>
+              <div className="mb-4 p-3 rounded-lg bg-red-900/30 border border-red-500/50 text-red-300 text-sm">{error}</div>
             )}
 
-            {/* ZFP first (when available) - Avantis exact order */}
-            {zfpAvailable && (
-              <div className="flex items-center justify-between mb-4 py-2 px-3 rounded-xl bg-[#151515] border border-[#2a2a2a]">
-                <span className="text-white text-sm font-medium">Zero Fee Perpetuals (ZFP)</span>
-                <button
-                  type="button"
-                  onClick={() => setIsZeroFeeMode((prev) => !prev)}
-                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
-                    isZeroFeeMode ? 'bg-[#22c55e]' : 'bg-[#404040]'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      isZeroFeeMode ? 'translate-x-6' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
-              </div>
-            )}
-
-            {/* Long/Short - Avantis exact: green border when selected, dotted bg for long */}
-            <div className="flex gap-2 mb-4">
-              <button
-                onClick={() => setIsLong(true)}
-                className={`flex-1 py-3.5 rounded-xl font-bold text-base transition-colors border-2 ${
-                  isLong
-                    ? 'bg-green-500/10 border-green-500 text-green-400'
-                    : 'bg-[#151515] border-[#2a2a2a] text-gray-500'
-                }`}
-                style={isLong ? { backgroundImage: 'radial-gradient(circle, rgba(34,197,94,0.15) 1px, transparent 1px)', backgroundSize: '8px 8px' } : undefined}
-              >
-                Long
-              </button>
-              <button
-                onClick={() => setIsLong(false)}
-                className={`flex-1 py-3.5 rounded-xl font-bold text-base transition-colors border-2 ${
-                  !isLong
-                    ? 'bg-red-500/10 border-red-500 text-red-400'
-                    : 'bg-[#151515] border-[#2a2a2a] text-gray-500'
-                }`}
-              >
-                Short
-              </button>
-            </div>
-
-            {/* Order type + Current Price - Avantis exact layout */}
-            <div className="flex gap-3 mb-4">
-              <div className="flex-1 rounded-xl px-3 py-3 bg-[#151515] border border-[#2a2a2a]">
-                <div className="text-[11px] text-gray-500 uppercase tracking-wide mb-0.5">Order type</div>
-                <div className="text-white font-medium text-sm">{isZeroFeeMode && zfpAvailable ? 'Market Zero Fee' : 'Market'}</div>
-              </div>
-              <div className="flex-1 rounded-xl px-3 py-3 bg-[#151515] border border-[#2a2a2a]">
-                <div className="text-[11px] text-gray-500 uppercase tracking-wide mb-0.5">Current Price</div>
-                <div className="text-white font-bold text-sm">
-                  {currentPrice != null ? currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 }) : '...'} USD
+            {/* Main order card - Avantis: single dark card containing all */}
+            <div className="rounded-2xl bg-[#151515] border border-[#252525] p-4 mb-4">
+              {/* Internal market bar - logo + pair + chevron */}
+              <div className="flex items-center justify-between pb-3 mb-3 border-b border-[#2a2a2a]">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center overflow-hidden" style={{ backgroundColor: `${selectedMarket.color}25` }}>
+                    <img src={selectedMarket.logo} alt="" className="w-5 h-5 object-contain" />
+                  </div>
+                  <span className="text-white font-medium">{selectedMarket.pairName}</span>
                 </div>
+                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/></svg>
               </div>
-            </div>
 
-            {/* Collateral - Avantis exact: label row has wallet+balance+Add Funds right */}
-            <div className="rounded-xl p-4 mb-3 bg-[#151515] border border-[#2a2a2a]">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-gray-400 text-sm">Collateral</span>
-                <div className="flex items-center gap-2 text-xs">
-                  <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/>
-                  </svg>
-                  <span className="text-gray-500">{eoaUsdcBalance.toFixed(0)}</span>
-                  <button type="button" onClick={() => setView('deposit')} className="text-[#3b82f6] font-medium hover:underline">Add Funds</button>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  value={collateral}
-                  onChange={(e) => setCollateral(e.target.value)}
-                  placeholder="0"
-                  className="flex-1 bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-3 text-white outline-none text-lg"
-                />
-                <div className="flex items-center gap-1.5 text-sm text-gray-300 shrink-0">
-                  <img src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png" alt="" className="w-5 h-5 rounded-full" />
-                  <span>USDC</span>
-                </div>
-              </div>
-              <div className="flex gap-2 mt-2">
-                {[10, 25, 50, 75, 100].map((pct) => (
-                  <button
-                    key={pct}
-                    type="button"
-                    onClick={() => setCollateral((eoaUsdcBalance * pct / 100).toFixed(2))}
-                    className="flex-1 py-2 rounded-lg bg-[#1a1a1a] border border-[#333] text-gray-300 text-xs font-medium hover:bg-[#252525]"
-                  >
-                    {pct}%
+              {/* ZFP #1 - when available */}
+              {zfpAvailable && (
+                <div className="flex items-center justify-between mb-4 py-1">
+                  <span className="text-gray-400 text-sm">Zero Fee Perpetuals (ZFP)</span>
+                  <button type="button" onClick={() => setIsZeroFeeMode((p) => !p)} className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full ${isZeroFeeMode ? 'bg-[#22c55e]' : 'bg-[#404040]'}`}>
+                    <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${isZeroFeeMode ? 'translate-x-6' : 'translate-x-1'}`} />
                   </button>
-                ))}
-              </div>
-            </div>
+                </div>
+              )}
 
-            {/* Leverage - Avantis exact: label left, input+x+reset right, slider with dots */}
-            <div className="rounded-xl p-4 mb-3 bg-[#151515] border border-[#2a2a2a]">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-gray-400 text-sm">Leverage</span>
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number"
-                    min={leverageMin}
-                    max={leverageMax}
-                    value={leverage}
-                    onChange={(e) => setLeverage(Math.min(leverageMax, Math.max(leverageMin, Number(e.target.value) || leverageMin)))}
-                    className="w-14 bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-white text-sm font-bold text-right outline-none"
-                  />
-                  <span className="text-gray-400 text-sm">x</span>
-                  <button type="button" onClick={() => setLeverage(leverageMin)} className="text-gray-500 hover:text-gray-400 p-1" aria-label="Reset">✕</button>
+              {/* Long/Short - green border + dotted bg when Long selected */}
+              <div className="flex gap-2 mb-4">
+                <button onClick={() => setIsLong(true)} className={`flex-1 py-3.5 rounded-xl font-bold text-white border-2 transition-colors ${isLong ? 'border-[#22c55e] bg-[#22c55e]/5' : 'border-[#2a2a2a] bg-[#1a1a1a]'}`} style={isLong ? { backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px)', backgroundSize: '6px 6px' } : undefined}>Long</button>
+                <button onClick={() => setIsLong(false)} className={`flex-1 py-3.5 rounded-xl font-bold text-white border-2 transition-colors ${!isLong ? 'border-[#ef4444] bg-[#ef4444]/5' : 'border-[#2a2a2a] bg-[#1a1a1a]'}`}>Short</button>
+              </div>
+
+              {/* ZFP #2 - when available (Avantis shows twice) */}
+              {zfpAvailable && (
+                <div className="flex items-center justify-between mb-4 py-1">
+                  <span className="text-gray-400 text-sm">Zero Fee Perpetuals (ZFP)</span>
+                  <button type="button" onClick={() => setIsZeroFeeMode((p) => !p)} className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full ${isZeroFeeMode ? 'bg-[#22c55e]' : 'bg-[#404040]'}`}>
+                    <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${isZeroFeeMode ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
+                </div>
+              )}
+
+              {/* Order type + Current Price - white labels, dropdown chevron on Order type */}
+              <div className="flex gap-3 mb-4">
+                <div className="flex-1">
+                  <div className="text-white text-xs mb-1">Order type</div>
+                  <div className="flex items-center justify-between bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-2.5">
+                    <span className="text-white text-sm">{isZeroFeeMode && zfpAvailable ? 'Market Zero Fee' : 'Market'}</span>
+                    <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/></svg>
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <div className="text-white text-xs mb-1">Current Price</div>
+                  <div className="flex items-center gap-1 bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-2.5">
+                    <span className="text-white text-sm font-medium">{currentPrice != null ? currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 }) : '...'}</span>
+                    <span className="text-gray-500 text-xs">USD</span>
+                  </div>
                 </div>
               </div>
-              <div className="relative pt-1 pb-2">
-                <input
-                  type="range"
-                  min={leverageMin}
-                  max={leverageMax}
-                  value={leverage}
-                  onChange={(e) => setLeverage(Number(e.target.value))}
-                  className="w-full h-2 rounded-full appearance-none bg-[#2a2a2a] cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white/20"
-                  style={{ accentColor: isLong ? '#22c55e' : '#ef4444' }}
-                />
-                <div className="flex justify-between mt-1.5 px-0.5">
-                  {Array.from({ length: 11 }, (_, i) => (
-                    <span key={i} className="w-1.5 h-1.5 rounded-full bg-[#404040]" />
+
+              {/* Collateral - label row: Collateral | wallet, 0, Add Funds. Input full width. USDC + $ logo BELOW input. Then % buttons */}
+              <div className="mb-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-white text-sm">Collateral</span>
+                  <div className="flex items-center gap-2 text-xs">
+                    <svg className="w-4 h-4 text-white/70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
+                    <span className="text-white">{eoaUsdcBalance.toFixed(0)}</span>
+                    <button type="button" onClick={() => setView('deposit')} className="text-[#60a5fa] hover:underline">Add Funds</button>
+                  </div>
+                </div>
+                <input type="number" value={collateral} onChange={(e) => setCollateral(e.target.value)} placeholder="0" className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-3 text-white outline-none text-base mb-2" />
+                <div className="flex items-center gap-1.5 mb-2 text-gray-400 text-sm">
+                  <span>USDC</span>
+                  <div className="w-5 h-5 rounded-full bg-[#3b82f6] flex items-center justify-center"><span className="text-white text-[10px] font-bold">$</span></div>
+                </div>
+                <div className="flex gap-2">
+                  {[10, 25, 50, 75, 100].map((p) => (
+                    <button key={p} type="button" onClick={() => setCollateral((eoaUsdcBalance * p / 100).toFixed(2))} className="flex-1 py-2 rounded-lg bg-[#1a1a1a] border border-[#333] text-white text-xs font-medium hover:bg-[#252525]">{p}%</button>
                   ))}
                 </div>
               </div>
-            </div>
 
-            {/* Position Size - Avantis exact: value in input with asset logo + arrows inside */}
-            <div className="rounded-xl p-4 mb-3 bg-[#151515] border border-[#2a2a2a]">
-              <div className="text-gray-400 text-sm mb-2">Position Size</div>
-              <div className="relative flex items-center bg-[#1a1a1a] border border-[#333] rounded-lg">
-                <span className="flex-1 px-3 py-3 text-white text-lg">
-                  {positionSize > 0 ? positionSize.toLocaleString(undefined, { maximumFractionDigits: 6, minimumFractionDigits: 0 }) : '0'}
-                </span>
-                <div className="flex items-center gap-1.5 pr-3">
-                  <div className="w-6 h-6 rounded-full overflow-hidden flex items-center justify-center shrink-0" style={{ backgroundColor: `${selectedMarket.color}30` }}>
-                    <img src={selectedMarket.logo} alt="" className="w-4 h-4 object-contain" />
+              {/* Leverage - label | input x + reset. Slider: green fill left of thumb, dots right. Thumb = bright green circle */}
+              <div className="mb-4">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-white text-sm">Leverage</span>
+                  <div className="flex items-center gap-1">
+                    <input type="number" min={leverageMin} max={leverageMax} value={leverage} onChange={(e) => setLeverage(Math.min(leverageMax, Math.max(leverageMin, Number(e.target.value) || leverageMin)))} className="w-12 bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-white text-sm font-bold text-right outline-none" />
+                    <span className="text-gray-500 text-sm">x</span>
+                    <button type="button" onClick={() => setLeverage(leverageMin)} className="text-gray-500 p-1" aria-label="Reset">✕</button>
                   </div>
-                  <svg className="w-4 h-4 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
-                  </svg>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 relative h-6 flex items-center">
+                    <input type="range" min={leverageMin} max={leverageMax} value={leverage} onChange={(e) => setLeverage(Number(e.target.value))} className="absolute inset-0 w-full h-2 rounded-full appearance-none bg-transparent cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#22c55e] [&::-webkit-slider-thumb]:shadow-lg [&::-webkit-slider-thumb]:cursor-pointer" style={{ accentColor: isLong ? '#22c55e' : '#ef4444' }} />
+                    <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-2 flex items-center gap-0.5 pointer-events-none">
+                      {Array.from({ length: 20 }, (_, i) => (
+                        <span key={i} className="flex-1 h-1 rounded-full bg-[#404040] min-w-[2px]" />
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
-              {positionSize > 0 && positionSize < MIN_POSITION_SIZE_USDC && (
-                <div className="text-red-400 text-xs mt-2">
-                  Minimum position size for this asset is 100.00 USDC
-                </div>
-              )}
-            </div>
 
-            {/* Set TP/SL - Avantis exact */}
-            <div className="rounded-xl p-3 mb-3 bg-[#151515] border border-[#2a2a2a]">
+              {/* Position Size - red border when below min. Value + logo + arrows INSIDE field on right */}
+              <div className="mb-4">
+                <div className="text-white text-sm mb-2">Position Size</div>
+                <div className={`flex items-center bg-[#1a1a1a] rounded-lg overflow-hidden ${positionSize > 0 && positionSize < MIN_POSITION_SIZE_USDC ? 'border-2 border-red-500' : 'border border-[#333]'}`}>
+                  <span className="flex-1 px-3 py-3 text-white text-base">
+                    {positionSize > 0 ? positionSize.toLocaleString(undefined, { maximumFractionDigits: 6, minimumFractionDigits: 0 }) : '0'}
+                  </span>
+                  <div className="flex items-center gap-1.5 pr-3">
+                    <div className="w-6 h-6 rounded-full overflow-hidden flex items-center justify-center" style={{ backgroundColor: `${selectedMarket.color}30` }}>
+                      <img src={selectedMarket.logo} alt="" className="w-4 h-4 object-contain" />
+                    </div>
+                    <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
+                  </div>
+                </div>
+                {positionSize > 0 && positionSize < MIN_POSITION_SIZE_USDC && (
+                  <div className="text-red-500 text-xs mt-2">Minimum position size for this asset is 100.00 USDC</div>
+                )}
+              </div>
+
+              {/* Set TP/SL - white label, toggle right */}
               <div className="flex items-center justify-between">
-                <span className="text-sm text-white font-medium">Set TP/SL</span>
-                <button
-                  type="button"
-                  onClick={() => setShowTpSlInputs((v) => !v)}
-                  className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${showTpSlInputs ? 'bg-[#22c55e]' : 'bg-[#404040]'}`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${showTpSlInputs ? 'translate-x-6' : 'translate-x-1'}`}
-                  />
+                <span className="text-white text-sm">Set TP/SL</span>
+                <button type="button" onClick={() => setShowTpSlInputs((v) => !v)} className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full ${showTpSlInputs ? 'bg-[#22c55e]' : 'bg-[#404040]'}`}>
+                  <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${showTpSlInputs ? 'translate-x-6' : 'translate-x-1'}`} />
                 </button>
               </div>
-              {showTpSlInputs && (
-                <div className="grid grid-cols-2 gap-2 mt-3">
-                  <input
-                    type="number"
-                    value={takeProfit}
-                    onChange={(e) => setTakeProfit(e.target.value)}
-                    placeholder="Take Profit"
-                    className="bg-gray-700 rounded-lg px-3 py-2 text-white text-sm outline-none"
-                  />
-                  <input
-                    type="number"
-                    value={stopLoss}
-                    onChange={(e) => setStopLoss(e.target.value)}
-                    placeholder="Stop Loss"
-                    className="bg-gray-700 rounded-lg px-3 py-2 text-white text-sm outline-none"
-                  />
-                </div>
-              )}
             </div>
+
+            {/* TP/SL inputs when expanded */}
+            {showTpSlInputs && (
+              <div className="rounded-xl p-3 mb-3 bg-[#151515] border border-[#252525]">
+                <div className="grid grid-cols-2 gap-2">
+                  <input type="number" value={takeProfit} onChange={(e) => setTakeProfit(e.target.value)} placeholder="Take Profit" className="bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-2 text-white text-sm outline-none" />
+                  <input type="number" value={stopLoss} onChange={(e) => setStopLoss(e.target.value)} placeholder="Stop Loss" className="bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-2 text-white text-sm outline-none" />
+                </div>
+              </div>
+            )}
 
             {/* Position Summary - Avantis style */}
             {positionSize > 0 && liquidationPrice && (
