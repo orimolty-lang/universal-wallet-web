@@ -4151,7 +4151,7 @@ const PerpsModal = ({
   const totalOpenPnlUsd = displayOpenPositions.reduce((sum, p) => sum + p.pnlUsd, 0);
 
   return (
-    <BottomSheet isOpen={isOpen} onClose={() => { setView('markets'); onClose(); }}>
+    <BottomSheet isOpen={isOpen} onClose={() => { setView('markets'); onClose(); }} dark={view === 'trade'}>
       <div className="pb-8 max-h-[85vh] overflow-y-auto">
         {view === 'markets' ? (
           /* ========== MARKETS VIEW (Rainbow-style) ========== */
@@ -4622,36 +4622,25 @@ const PerpsModal = ({
             </button>
           </div>
         ) : (
-          /* ========== TRADE VIEW - Avantis exact copy ========== */
-          <div className="px-4">
-            {/* Back + Market selector */}
-            <div className="flex items-center gap-3 mb-3">
-              <button onClick={() => setView('markets')} className="w-10 h-10 rounded-full bg-[#1a1a1a] flex items-center justify-center shrink-0">
-                <span className="text-white">←</span>
-              </button>
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden shrink-0" style={{ backgroundColor: `${selectedMarket.color}20` }}>
-                  <img src={selectedMarket.logo} alt="" className="w-6 h-6 object-contain" onError={(e) => { const t = e.currentTarget; t.src = buildTickerLogoDataUri(selectedMarket.symbol, selectedMarket.color); }} />
-                </div>
-                <span className="text-white font-bold truncate">{selectedMarket.pairName}</span>
-              </div>
-            </div>
-
+          /* ========== TRADE VIEW - inner modal only (dark sheet, no outer grey) ========== */
+          <div className="px-4 pt-2 pb-6">
             {error && (
-              <div className="mb-4 p-3 rounded-lg bg-red-900/30 border border-red-500/50 text-red-300 text-sm">{error}</div>
+              <div className="mb-3 p-3 rounded-lg bg-red-900/30 border border-red-500/50 text-red-300 text-sm">{error}</div>
             )}
 
-            {/* Main order card - Avantis: single dark card containing all */}
-            <div className="rounded-2xl bg-[#151515] border border-[#252525] p-4 mb-4">
-              {/* Internal market bar - logo + pair + chevron */}
-              <div className="flex items-center justify-between pb-3 mb-3 border-b border-[#2a2a2a]">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-full flex items-center justify-center overflow-hidden" style={{ backgroundColor: `${selectedMarket.color}25` }}>
-                    <img src={selectedMarket.logo} alt="" className="w-5 h-5 object-contain" />
+            {/* Single order card - back + market name (no duplicate) */}
+            <div className="rounded-2xl bg-[#151515] border border-[#252525] p-4">
+              <div className="flex items-center justify-between mb-3 pb-3 border-b border-[#2a2a2a]">
+                <button onClick={() => setView('markets')} className="w-9 h-9 rounded-full bg-[#1a1a1a] flex items-center justify-center shrink-0">
+                  <span className="text-white text-lg">←</span>
+                </button>
+                <div className="flex items-center gap-2 min-w-0 flex-1 justify-center">
+                  <div className="w-7 h-7 rounded-full flex items-center justify-center overflow-hidden shrink-0" style={{ backgroundColor: `${selectedMarket.color}25` }}>
+                    <img src={selectedMarket.logo} alt="" className="w-5 h-5 object-contain" onError={(e) => { const t = e.currentTarget; t.src = buildTickerLogoDataUri(selectedMarket.symbol, selectedMarket.color); }} />
                   </div>
-                  <span className="text-white font-medium">{selectedMarket.pairName}</span>
+                  <span className="text-white font-medium truncate">{selectedMarket.pairName}</span>
                 </div>
-                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/></svg>
+                <div className="w-9" />
               </div>
 
               {/* ZFP #1 - when available */}
@@ -4720,7 +4709,7 @@ const PerpsModal = ({
                 </div>
               </div>
 
-              {/* Leverage - label | input x + reset. Slider: green fill left of thumb, dots right. Thumb = bright green circle */}
+              {/* Leverage - colored fill as you slide, dots track, green/red thumb */}
               <div className="mb-4">
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-white text-sm">Leverage</span>
@@ -4732,12 +4721,38 @@ const PerpsModal = ({
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex-1 relative h-6 flex items-center">
-                    <input type="range" min={leverageMin} max={leverageMax} value={leverage} onChange={(e) => setLeverage(Number(e.target.value))} className="absolute inset-0 w-full h-2 rounded-full appearance-none bg-transparent cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#22c55e] [&::-webkit-slider-thumb]:shadow-lg [&::-webkit-slider-thumb]:cursor-pointer" style={{ accentColor: isLong ? '#22c55e' : '#ef4444' }} />
-                    <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-2 flex items-center gap-0.5 pointer-events-none">
-                      {Array.from({ length: 20 }, (_, i) => (
-                        <span key={i} className="flex-1 h-1 rounded-full bg-[#404040] min-w-[2px]" />
-                      ))}
+                    {/* Colored fill from left to thumb position */}
+                    <div
+                      className="absolute left-0 top-1/2 -translate-y-1/2 h-2 rounded-l-full pointer-events-none z-0"
+                      style={{
+                        width: `${((leverage - leverageMin) / (leverageMax - leverageMin)) * 100}%`,
+                        backgroundColor: isLong ? '#22c55e' : '#ef4444',
+                      }}
+                    />
+                    {/* Dots track - each dot colored or gray based on position */}
+                    <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-2 flex items-center gap-0.5 pointer-events-none z-[1]">
+                      {Array.from({ length: 20 }, (_, i) => {
+                        const fillThreshold = ((leverage - leverageMin) / (leverageMax - leverageMin)) * 20;
+                        const isFilled = i < fillThreshold;
+                        return (
+                          <span
+                            key={i}
+                            className="flex-1 h-1.5 rounded-full min-w-[2px] transition-colors"
+                            style={{ backgroundColor: isFilled ? (isLong ? '#22c55e' : '#ef4444') : '#404040' }}
+                          />
+                        );
+                      })}
                     </div>
+                    {/* Range input - thumb styled as bright circle */}
+                    <input
+                      type="range"
+                      min={leverageMin}
+                      max={leverageMax}
+                      value={leverage}
+                      onChange={(e) => setLeverage(Number(e.target.value))}
+                      className="absolute inset-0 w-full h-6 appearance-none bg-transparent cursor-pointer z-10 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white/30 [&::-webkit-slider-thumb]:shadow-lg [&::-webkit-slider-thumb]:cursor-pointer [&::-moz-range-thumb]:w-6 [&::-moz-range-thumb]:h-6 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white/30 [&::-moz-range-thumb]:cursor-pointer"
+                      style={{ accentColor: isLong ? '#22c55e' : '#ef4444' }}
+                    />
                   </div>
                 </div>
               </div>
@@ -4793,10 +4808,13 @@ const PerpsModal = ({
                     ${liquidationPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Fee</span>
-                  <span className="text-white">~${(positionSize * 0.0006).toFixed(2)}</span>
-                </div>
+                {/* Fee row hidden for ZFP orders - zero fee perps have no trading fee */}
+                {(!isZeroFeeMode || !zfpAvailable) && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Fee</span>
+                    <span className="text-white">~${(positionSize * 0.0006).toFixed(2)}</span>
+                  </div>
+                )}
               </div>
             )}
 

@@ -7,6 +7,8 @@ interface BottomSheetProps {
   onClose: () => void;
   children: React.ReactNode;
   fullScreen?: boolean;
+  /** Use inner black modal style - no outer grey, darker sheet bg */
+  dark?: boolean;
 }
 
 export default function BottomSheet({
@@ -14,6 +16,7 @@ export default function BottomSheet({
   onClose,
   children,
   fullScreen = false,
+  dark = false,
 }: BottomSheetProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
@@ -78,7 +81,7 @@ export default function BottomSheet({
       />
       <div
         ref={sheetRef}
-        className={`relative bg-[#1a1a1a] ${fullScreen ? "h-full" : "max-h-[90vh]"} w-full max-w-md rounded-t-3xl overflow-hidden touch-auto`}
+        className={`relative ${dark ? "bg-[#0d0d0d]" : "bg-[#1a1a1a]"} ${fullScreen ? "h-full" : "max-h-[90vh]"} w-full max-w-md rounded-t-3xl overflow-hidden touch-auto`}
         style={{
           transform: isAnimating ? "translateY(0)" : "translateY(100%)",
           transition: "transform 0.5s cubic-bezier(0.32, 0.72, 0, 1)",
