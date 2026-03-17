@@ -1214,11 +1214,11 @@ const SendModal = ({
                             className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-zinc-950"
                           />
                         </div>
-                        <span className="text-sm font-medium">{selected.symbol} on {CHAIN_ID_TO_NAME_SEND[selected.chainId]}</span>
+                        <span className="text-sm font-medium">{selected.symbol}</span>
                         <span className="text-gray-500 text-xs">— {selected.balance.toFixed(4)}</span>
                       </>
                     ) : (
-                      <span className="text-gray-400 text-sm">Select token and chain</span>
+                      <span className="text-gray-400 text-sm">Select token</span>
                     )}
                   </div>
                   <span className="text-gray-400 text-xs">▼</span>
@@ -1240,7 +1240,7 @@ const SendModal = ({
                           />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="text-white text-sm">{o.symbol} on {CHAIN_ID_TO_NAME_SEND[o.chainId]}</div>
+                          <div className="text-white text-sm">{o.symbol}</div>
                           <div className="text-gray-500 text-xs">{o.balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })}</div>
                         </div>
                       </button>
