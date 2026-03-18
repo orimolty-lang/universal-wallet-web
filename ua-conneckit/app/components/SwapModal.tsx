@@ -405,11 +405,16 @@ export const SwapModal = ({
         try {
           const walletClient = primaryWallet.getWalletClient();
           
-          // Sign the root hash using personal_sign
-          const signature = await walletClient.request({
-            method: 'personal_sign',
-            params: [result.rootHash as `0x${string}`, walletClient.account?.address as `0x${string}`],
-          });
+          // Sign rootHash (demo parity): prefer signMessage(raw) path.
+          let signature: unknown;
+          if (walletClient.signMessage) {
+            signature = await walletClient.signMessage({ message: { raw: result.rootHash as `0x${string}` } });
+          } else {
+            signature = await walletClient.request({
+              method: 'personal_sign',
+              params: [result.rootHash as `0x${string}`, walletClient.account?.address as `0x${string}`],
+            });
+          }
 
           // Step 3: Send transaction (+EIP-7702 authorizations when required)
           setLoadingStatus("Sending transaction...");

@@ -3,7 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Magic as MagicBase } from "magic-sdk";
 import { EVMExtension } from "@magic-ext/evm";
-import { BrowserProvider, type Eip1193Provider } from "ethers";
+import { BrowserProvider, getBytes, type Eip1193Provider } from "ethers";
 
 type WalletClientLike = {
   account?: { address?: `0x${string}` };
@@ -197,6 +197,16 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
       signMessage: async ({ account, message }) => {
         const raw = typeof message === "string" ? message : message.raw;
         const signerAddress = account || address;
+
+        // Demo parity: sign bytes of rootHash via ethers signer first.
+        try {
+          const provider = new BrowserProvider(magicProvider);
+          const signerObj = await provider.getSigner(signerAddress);
+          return await signerObj.signMessage(getBytes(raw));
+        } catch {
+          // fallback below
+        }
+
         try {
           const sig = await request({ method: "personal_sign", params: [raw, signerAddress] });
           if (typeof sig === "string") return sig;
