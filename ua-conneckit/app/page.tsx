@@ -1766,8 +1766,8 @@ const ConvertModal = ({
         if (!ownerAddr) throw new Error('Wallet address unavailable');
 
         // Pre-delegate: if multiple chains need 7702 auth, relay may only allow 1 per txn.
-        // Try direct type-4 delegation first (no convert, no rate limit). Fallback to UA delegation tx.
         const chainsNeeding = getChainsNeedingAuth(tx);
+        addDebug(`chainsNeeding=[${chainsNeeding.join(",")}] len=${chainsNeeding.length} sign7702=${!!sign7702}`);
         if (chainsNeeding.length > 1) {
           addDebug(`Pre-delegating ${chainsNeeding.length} chains (relay: 1 delegation/txn)`);
           const walletRequest = (args: { method: string; params?: unknown[] }) =>
