@@ -30,6 +30,57 @@ export async function getEIP7702Deployments(
 }
 
 /**
+ * Handle EIP-7702 authorizations - aligned with Particle demo.
+ * No wallet_switchEthereumChain (demo doesn't switch).
+ * Uses chainId:nonce cache for multi-chain safety.
+ */
+export type Sign7702Fn = (params: {
+  contractAddress: `0x${string}`;
+  chainId: number;
+  nonce: number;
+}, options: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>;
+
+export type Eip7702Authorization = { userOpHash: string; signature: string };
+
+export async function handleEIP7702Authorizations(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  userOps: any[],
+  signAuthorization: Sign7702Fn,
+  walletAddress: string
+): Promise<Eip7702Authorization[]> {
+  const { Signature } = await import("ethers");
+  const authorizations: Eip7702Authorization[] = [];
+  const nonceMap = new Map<string, string>();
+
+  for (const userOp of userOps) {
+    if (!userOp?.eip7702Auth || userOp?.eip7702Delegated) continue;
+    const auth = userOp.eip7702Auth;
+    const chainId = Number(userOp.chainId ?? auth.chainId);
+    if (!Number.isFinite(chainId) || chainId <= 0 || chainId === 101) continue;
+    const nonceKey = `${chainId}:${auth.nonce}`;
+    let serialized = nonceMap.get(nonceKey);
+    if (!serialized) {
+      const authorization = await signAuthorization(
+        { contractAddress: auth.address as `0x${string}`, chainId, nonce: Number(auth.nonce) },
+        { address: walletAddress }
+      );
+      const sig = Signature.from({
+        r: authorization.r,
+        s: authorization.s,
+        v: authorization.v ?? BigInt(authorization.yParity),
+        yParity: authorization.yParity as 0 | 1,
+      });
+      serialized = sig.serialized;
+      nonceMap.set(nonceKey, serialized);
+    }
+    if (serialized && userOp.userOpHash) {
+      authorizations.push({ userOpHash: userOp.userOpHash, signature: serialized });
+    }
+  }
+  return authorizations;
+}
+
+/**
  * Extract EVM chains that need 7702 auth from a transaction's userOps.
  * Skips Solana (chain 101) - no 7702 there.
  * UA SDK may put userOps in tx.userOps or tx.feeQuotes[0].userOps.
@@ -65,12 +116,6 @@ export function getChainsNeedingAuth(
  * createUniversalTransaction.
  */
 export type AddDebugFn = (msg: string) => void;
-
-export type Sign7702Fn = (params: {
-  contractAddress: `0x${string}`;
-  chainId: number;
-  nonce: number;
-}, options: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>;
 
 /**
  * Delegate directly on-chain via type-4 tx (Particle 7702-create-delegated pattern).
