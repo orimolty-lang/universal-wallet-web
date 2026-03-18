@@ -33,7 +33,7 @@ import {
 import { decodeFunctionResult, encodeFunctionData } from "viem";
 import { toBeHex, Signature, formatUnits } from "ethers";
 import { useUniversalAccountWS } from "./hooks/useUniversalAccountWS";
-import { createDelegationOnlyTx, getEIP7702Deployments, delegateChainDirectly } from "../lib/eip7702";
+import { createDelegationOnlyTx, getEIP7702Deployments } from "../lib/eip7702";
 
 // Mobula API for token search
 const MOBULA_API_KEY = "a8e6a174-9dfd-4929-b0e0-9f6ece767923";
@@ -1798,24 +1798,8 @@ const ConvertModal = ({
         /* eslint-enable @typescript-eslint/no-explicit-any */
         if (chainsNeedingUnique.length >= 1) {
           addDebug(`Pre-delegating ${chainsNeedingUnique.length} chains (relay: 1 delegation/txn)`);
-          const walletRequest = (args: { method: string; params?: unknown[] }) =>
-            wc.request(args as { method: string; params?: unknown[] });
           for (const chainId of chainsNeedingUnique) {
             setLoadingStatus(`Delegating on chain ${chainId}...`);
-            if (sign7702) {
-              const ok = await delegateChainDirectly(
-                universalAccount,
-                chainId,
-                sign7702,
-                ownerAddr,
-                walletRequest,
-                addDebug
-              );
-              if (ok) {
-                await new Promise((r) => setTimeout(r, 2000));
-                continue;
-              }
-            }
             const delResult = await createDelegationOnlyTx(universalAccount, chainId, ownerAddr, addDebug);
             if (!delResult || delResult.chainsNeedingAuth.length !== 1 || delResult.chainsNeedingAuth[0] !== chainId) {
               addDebug(`Skip chain ${chainId}: delegation tx would need ${delResult?.chainsNeedingAuth?.length ?? 0} chains`);
@@ -7159,17 +7143,7 @@ const SettingsModal = ({
       const ownerAddr = wc?.account?.address as string;
       if (!ownerAddr) throw new Error("Wallet address unavailable");
 
-      // 1. Try direct type-4 delegation first (bypasses UA relay, needs ETH for gas on target chain)
-      const walletRequest = (args: { method: string; params?: unknown[] }) =>
-        wc.request(args as { method: string; params?: unknown[] });
-      const ok = await delegateChainDirectly(universalAccount, chainId, sign7702, ownerAddr, walletRequest);
-      if (ok) {
-        onDelegationSuccess?.();
-        setDeployments((prev) => prev.map((d) => (d.chainId === chainId ? { ...d, isDelegated: true } : d)));
-        return;
-      }
-
-      // 2. Fallback: UA createUniversalTransaction (official example format)
+      // Particle example: only UA flow - no eth_sendTransaction/type-4 (Privy rejects it)
       const delResult = await createDelegationOnlyTx(universalAccount, chainId, ownerAddr);
       if (!delResult || delResult.chainsNeedingAuth.length !== 1 || delResult.chainsNeedingAuth[0] !== chainId) {
         setChainError(`Could not create single-chain delegation for ${EVM_7702_CHAINS.find((c) => c.chainId === chainId)?.name ?? chainId}`);
