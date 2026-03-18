@@ -433,6 +433,9 @@ const ensure7702DelegatedForTx = async ({
 
   const deployments = await universalAccount.getEIP7702Deployments();
   for (const chainId of needsDelegationChainIds) {
+    // Hotfix: only perform on-chain pre-delegation on Base for now.
+    // Other chain delegation txs can fail in Magic due upstream RPC availability.
+    if (chainId !== 8453) continue;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const dep = (deployments as any[])?.find((d: any) => Number(d?.chainId) === chainId);
     if (dep?.isDelegated) continue;
