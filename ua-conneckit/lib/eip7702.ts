@@ -174,13 +174,14 @@ export async function createDelegationOnlyTx(
     // Fall through to no-op
   }
 
-  // 2. Fallback: no-op (0 value to self) on target chain
+  // 2. Fallback: no-op per official example - expectTokens + transactions
+  // Official: expectTokens: [{ tokenAddress/type, amount }], transactions: [{ to, data, value }]
   try {
     const tx = await universalAccount.createUniversalTransaction({
       chainId,
-      expectTokens: [],
+      expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: "0.000000000000000001" }],
       transactions: [
-        { to: _ownerAddress as `0x${string}`, data: "0x", value: "0x0" },
+        { to: _ownerAddress as `0x${string}`, data: "0x", value: "0" },
       ],
     });
     const chainsNeedingAuth = getChainsNeedingAuth(tx);

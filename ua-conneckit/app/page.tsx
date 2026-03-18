@@ -396,14 +396,20 @@ const signUniversalRootHash = async ({
   return signatureFallback;
 };
 
+type Sign7702Fn = (p: { contractAddress: `0x${string}`; chainId: number; nonce: number }, o: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>;
+
 const build7702Authorizations = async ({
   walletClient,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tx,
+  sign7702,
+  walletAddress,
 }: {
   walletClient: WalletClientLike;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tx: any;
+  sign7702?: Sign7702Fn | null;
+  walletAddress?: string;
 }): Promise<Eip7702Authorization[] | undefined> => {
   const userOps = tx?.userOps;
   if (!Array.isArray(userOps) || userOps.length === 0) return undefined;
@@ -445,34 +451,45 @@ const build7702Authorizations = async ({
         params: [{ chainId: toBeHex(Number(chainIdForAuth)) }],
       });
 
-      const payload = await walletClient.request({
-        method: 'magic_wallet_sign_7702_authorization',
-        // Demo parity: sign exact userOp auth payload for this chain.
-        params: [
+      let authObj: { r: string; s: string; v?: number | bigint; yParity: number };
+      if (sign7702 && walletAddress) {
+        // Use Privy signAuthorization directly - matches Particle 7702 example exactly
+        const authorization = await sign7702(
           {
-            contractAddress: auth.address,
+            contractAddress: auth.address as `0x${string}`,
             chainId: chainIdForAuth,
             nonce: Number(auth.nonce),
           },
-        ],
-      });
-
-      if (!payload || typeof payload !== 'object') {
-        throw new Error('Failed to sign EIP-7702 authorization');
+          { address: walletAddress }
+        );
+        authObj = {
+          r: authorization.r,
+          s: authorization.s,
+          v: authorization.v,
+          yParity: authorization.yParity,
+        };
+      } else {
+        const payload = await walletClient.request({
+          method: 'magic_wallet_sign_7702_authorization',
+          params: [
+            {
+              contractAddress: auth.address,
+              chainId: chainIdForAuth,
+              nonce: Number(auth.nonce),
+            },
+          ],
+        });
+        if (!payload || typeof payload !== 'object') {
+          throw new Error('Failed to sign EIP-7702 authorization');
+        }
+        authObj = payload as { r: string; s: string; v?: number | bigint; yParity: number };
       }
-
-      const authObj = payload as {
-        r?: `0x${string}`;
-        s?: `0x${string}`;
-        v?: number | bigint;
-        yParity?: 0 | 1 | number;
-      };
 
       if (!authObj.r || !authObj.s || (authObj.yParity !== 0 && authObj.yParity !== 1 && authObj.v === undefined)) {
         throw new Error('Invalid EIP-7702 signature payload');
       }
 
-      // Match Particle 7702 example: v ?? BigInt(yParity), always pass yParity
+      // Match Particle 7702 example: v ?? BigInt(yParity), Signature.from({ r, s, yParity })
       const sig = Signature.from({
         r: authObj.r,
         s: authObj.s,
@@ -1813,7 +1830,12 @@ const ConvertModal = ({
               signerAddress: wc.account?.address as `0x${string}` | undefined,
               blindSigningEnabled,
             });
-            const delAuths = await build7702Authorizations({ walletClient: wc, tx: delTx });
+            const delAuths = await build7702Authorizations({
+              walletClient: wc,
+              tx: delTx,
+              sign7702: sign7702 ?? undefined,
+              walletAddress: ownerAddr,
+            });
             await universalAccount.sendTransaction(delTx, delSig as string, delAuths);
             addDebug(`Delegated chain ${chainId}`);
             await new Promise((r) => setTimeout(r, 2000));
@@ -1847,7 +1869,12 @@ const ConvertModal = ({
 
         // Send transaction
         setLoadingStatus('Sending transaction...');
-        const authorizations = await build7702Authorizations({ walletClient: wc, tx });
+        const authorizations = await build7702Authorizations({
+          walletClient: wc,
+          tx,
+          sign7702: sign7702 ?? undefined,
+          walletAddress: ownerAddr,
+        });
         addDebug(`Signature ready. authList=${authorizations?.length || 0}`);
         const sendResult = await universalAccount.sendTransaction(tx, signature as string, authorizations);
         
@@ -1930,6 +1957,12 @@ const ConvertModal = ({
         {error && (
           <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-2 mb-2 text-red-300 text-xs">
             {error}
+          </div>
+        )}
+
+        {fromChain === 101 && toChain && toChain !== 101 && (
+          <div className="bg-amber-900/20 border border-amber-600/50 rounded-lg p-2 mb-2 text-amber-200 text-xs">
+            Solana→EVM: Delegate the destination chain in Settings first for best results.
           </div>
         )}
 
@@ -7125,6 +7158,18 @@ const SettingsModal = ({
       const wc = primaryWallet.getWalletClient() as unknown as WalletClientLike;
       const ownerAddr = wc?.account?.address as string;
       if (!ownerAddr) throw new Error("Wallet address unavailable");
+
+      // 1. Try direct type-4 delegation first (bypasses UA relay, needs ETH for gas on target chain)
+      const walletRequest = (args: { method: string; params?: unknown[] }) =>
+        wc.request(args as { method: string; params?: unknown[] });
+      const ok = await delegateChainDirectly(universalAccount, chainId, sign7702, ownerAddr, walletRequest);
+      if (ok) {
+        onDelegationSuccess?.();
+        setDeployments((prev) => prev.map((d) => (d.chainId === chainId ? { ...d, isDelegated: true } : d)));
+        return;
+      }
+
+      // 2. Fallback: UA createUniversalTransaction (official example format)
       const delResult = await createDelegationOnlyTx(universalAccount, chainId, ownerAddr);
       if (!delResult || delResult.chainsNeedingAuth.length !== 1 || delResult.chainsNeedingAuth[0] !== chainId) {
         setChainError(`Could not create single-chain delegation for ${EVM_7702_CHAINS.find((c) => c.chainId === chainId)?.name ?? chainId}`);
@@ -7138,7 +7183,13 @@ const SettingsModal = ({
         signerAddress: wc.account?.address as `0x${string}` | undefined,
         blindSigningEnabled,
       });
-      const delAuths = await build7702Authorizations({ walletClient: wc, tx: delResult.tx });
+      // Use Privy signAuthorization directly - matches Particle 7702 example
+      const delAuths = await build7702Authorizations({
+        walletClient: wc,
+        tx: delResult.tx,
+        sign7702,
+        walletAddress: ownerAddr,
+      });
       await universalAccount.sendTransaction(delResult.tx as Parameters<UniversalAccount["sendTransaction"]>[0], delSig as string, delAuths);
       onDelegationSuccess?.();
       setDeployments((prev) => prev.map((d) => (d.chainId === chainId ? { ...d, isDelegated: true } : d)));
