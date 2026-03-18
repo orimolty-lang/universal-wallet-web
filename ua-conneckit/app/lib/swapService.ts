@@ -895,6 +895,14 @@ export async function executeSell(params: SellParams): Promise<SwapResult> {
   console.log("[Sell] Starting sell:", { tokenAddress, tokenChainId, amountRaw });
 
   try {
+    // Temporary guard: LiFi sell path is EVM-only. Solana-token sells need Relay-specific path.
+    if (tokenChainId === 101 || tokenChainId === RELAY_CHAIN_IDS.SOLANA) {
+      return {
+        success: false,
+        error: "Solana-token sell route is temporarily unavailable in this flow (EVM-only LiFi path).",
+      };
+    }
+
     // Get smart account address
     const smartAccountOptions = await ua.getSmartAccountOptions();
     const evmSmartAccount = smartAccountOptions.smartAccountAddress;

@@ -409,6 +409,22 @@ const build7702Authorizations = async ({
   const userOps = tx?.userOps;
   if (!Array.isArray(userOps) || userOps.length === 0) return undefined;
 
+  console.log('[7702] userOps summary:', userOps.map((u: unknown) => {
+    const op = u as {
+      chainId?: number;
+      userOpHash?: string;
+      eip7702Delegated?: boolean;
+      eip7702Auth?: { nonce?: number };
+    };
+    return {
+      chainId: op?.chainId,
+      hasAuth: !!op?.eip7702Auth,
+      delegated: !!op?.eip7702Delegated,
+      nonce: op?.eip7702Auth?.nonce,
+      userOpHash: op?.userOpHash,
+    };
+  }));
+
   const authorizations: Eip7702Authorization[] = [];
   const nonceMap = new Map<string, string>();
 
@@ -1648,17 +1664,32 @@ const ConvertModal = ({
 
       console.log('[Convert] Transaction created:', tx);
       
-      // Extract and display fees from transaction
+      // Extract and display fees from transaction (prefer feeQuotes breakdown)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const txFees = (tx as any).transactionFees;
-      if (txFees) {
-        const serviceFee = parseFloat(txFees.transactionServiceFeeAmountInUSD || '0');
-        const lpFee = parseFloat(txFees.transactionLPFeeAmountInUSD || '0');
-        const totalFee = serviceFee + lpFee;
-        if (totalFee > 0) {
-          setEstimatedFee(`~$${totalFee.toFixed(2)}`);
-        } else if (txFees.freeGasFee && txFees.freeServiceFee) {
-          setEstimatedFee('Free');
+      const feeQuote = (tx as any)?.feeQuotes?.[0];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const totals = feeQuote?.fees?.totals as any;
+      if (totals) {
+        const total = Number(totals.feeTokenAmountInUSD || 0);
+        const gas = Number(totals.gasFeeTokenAmountInUSD || 0);
+        const service = Number(totals.transactionServiceFeeTokenAmountInUSD || 0);
+        const lp = Number(totals.transactionLPFeeTokenAmountInUSD || 0);
+        setEstimatedFee(
+          `Total ~$${total.toFixed(2)} (Gas ~$${gas.toFixed(2)} · Service ~$${service.toFixed(2)} · LP ~$${lp.toFixed(2)})`
+        );
+      } else {
+        // Backward compatibility fallback
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const txFees = (tx as any).transactionFees;
+        if (txFees) {
+          const serviceFee = parseFloat(txFees.transactionServiceFeeAmountInUSD || '0');
+          const lpFee = parseFloat(txFees.transactionLPFeeAmountInUSD || '0');
+          const totalFee = serviceFee + lpFee;
+          if (totalFee > 0) {
+            setEstimatedFee(`~$${totalFee.toFixed(2)}`);
+          } else if (txFees.freeGasFee && txFees.freeServiceFee) {
+            setEstimatedFee('Free');
+          }
         }
       }
       
