@@ -72,10 +72,25 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
   }, []);
 
   const login = useCallback(async () => {
-    if (!magic) throw new Error("Magic not configured");
-    const email = window.prompt("Enter email for Magic login");
-    if (!email) return;
-    await magic.auth.loginWithEmailOTP({ email });
+    if (!magic) {
+      window.alert("Magic is not configured. Set NEXT_PUBLIC_MAGIC_API_KEY and rebuild.");
+      return;
+    }
+
+    try {
+      // Prefer Magic's hosted auth UI so button click always opens a visible flow.
+      const walletWithUi = magic.wallet as unknown as { connectWithUI?: () => Promise<unknown> };
+      if (walletWithUi?.connectWithUI) {
+        await walletWithUi.connectWithUI();
+      } else {
+        const email = window.prompt("Enter email for Magic login");
+        if (!email) return;
+        await magic.auth.loginWithEmailOTP({ email });
+      }
+    } catch {
+      return;
+    }
+
     const info = await magic.user.getInfo();
     const publicAddress = info?.wallets?.ethereum?.publicAddress;
     if (publicAddress) setAddress(publicAddress as `0x${string}`);
