@@ -32,18 +32,24 @@ export async function getEIP7702Deployments(
 /**
  * Extract EVM chains that need 7702 auth from a transaction's userOps.
  * Skips Solana (chain 101) - no 7702 there.
+ * UA SDK may put userOps in tx.userOps or tx.feeQuotes[0].userOps.
  */
 export function getChainsNeedingAuth(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tx: any
 ): number[] {
-  const userOps = tx?.userOps;
+  let userOps = tx?.userOps;
+  if (!Array.isArray(userOps) || userOps.length === 0) {
+    userOps = tx?.feeQuotes?.[0]?.userOps;
+  }
   if (!Array.isArray(userOps)) return [];
 
   const chainIds = new Set<number>();
   for (const op of userOps) {
-    if (op?.eip7702Auth && !op?.eip7702Delegated) {
-      const chainId = Number(op.eip7702Auth.chainId ?? op.chainId);
+    const auth = op?.eip7702Auth;
+    const delegated = op?.eip7702Delegated;
+    if (auth && !delegated) {
+      const chainId = Number(auth.chainId ?? op.chainId);
       if (chainId > 0 && chainId !== 101) {
         chainIds.add(chainId);
       }

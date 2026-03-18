@@ -33,7 +33,7 @@ import {
 import { decodeFunctionResult, encodeFunctionData } from "viem";
 import { toBeHex, Signature, formatUnits } from "ethers";
 import { useUniversalAccountWS } from "./hooks/useUniversalAccountWS";
-import { getChainsNeedingAuth, createDelegationOnlyTx, getEIP7702Deployments, delegateChainDirectly } from "../lib/eip7702";
+import { createDelegationOnlyTx, getEIP7702Deployments, delegateChainDirectly } from "../lib/eip7702";
 
 // Mobula API for token search
 const MOBULA_API_KEY = "a8e6a174-9dfd-4929-b0e0-9f6ece767923";
@@ -1766,13 +1766,25 @@ const ConvertModal = ({
         if (!ownerAddr) throw new Error('Wallet address unavailable');
 
         // Pre-delegate: if multiple chains need 7702 auth, relay may only allow 1 per txn.
-        const chainsNeeding = getChainsNeedingAuth(tx);
-        addDebug(`chainsNeeding=[${chainsNeeding.join(",")}] len=${chainsNeeding.length} sign7702=${!!sign7702}`);
-        if (chainsNeeding.length > 1) {
-          addDebug(`Pre-delegating ${chainsNeeding.length} chains (relay: 1 delegation/txn)`);
+        // Use same userOps source as addDebug above (tx.userOps or feeQuotes[0].userOps)
+        /* eslint-disable @typescript-eslint/no-explicit-any */
+        const rawOps = (tx as any)?.userOps ?? (tx as any)?.feeQuotes?.[0]?.userOps ?? [];
+        /* eslint-enable @typescript-eslint/no-explicit-any */
+        const chainsNeeding = rawOps
+          .filter((op: { eip7702Auth?: unknown; eip7702Delegated?: unknown; chainId?: number }) =>
+            op?.eip7702Auth && !op?.eip7702Delegated
+          )
+          .map((op: { eip7702Auth?: { chainId?: number }; chainId?: number }) =>
+            Number(op.eip7702Auth?.chainId ?? op.chainId)
+          )
+          .filter((c: number) => c > 0 && c !== 101) as number[];
+        const chainsNeedingUnique: number[] = Array.from(new Set(chainsNeeding));
+        addDebug(`chainsNeeding=[${chainsNeedingUnique.join(",")}] len=${chainsNeedingUnique.length} sign7702=${!!sign7702}`);
+        if (chainsNeedingUnique.length > 1) {
+          addDebug(`Pre-delegating ${chainsNeedingUnique.length} chains (relay: 1 delegation/txn)`);
           const walletRequest = (args: { method: string; params?: unknown[] }) =>
             wc.request(args as { method: string; params?: unknown[] });
-          for (const chainId of chainsNeeding) {
+          for (const chainId of chainsNeedingUnique) {
             setLoadingStatus(`Delegating on chain ${chainId}...`);
             if (sign7702) {
               const ok = await delegateChainDirectly(
