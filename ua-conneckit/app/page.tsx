@@ -366,14 +366,16 @@ const signUniversalRootHash = async ({
     throw new Error('Signer address unavailable for UA signature');
   }
 
-  if (blindSigningEnabled && walletClient.signMessage) {
+  void blindSigningEnabled;
+
+  if (walletClient.signMessage) {
     try {
       const signature = await walletClient.signMessage({ message: { raw: rootHash } });
       if (typeof signature === 'string' && signature.startsWith('0x')) {
         return signature;
       }
     } catch {
-      // Fall back to explicit personal_sign path if blind sign path is unsupported.
+      // Fall back to explicit personal_sign path if signMessage path is unsupported.
     }
   }
 
@@ -451,8 +453,18 @@ const build7702Authorizations = async ({
         throw new Error('Failed to sign EIP-7702 authorization');
       }
 
-      const authSig = payload as Eip7702AuthorizationPayload;
-      serialized = Signature.from({ r: authSig.r, s: authSig.s, v: authSig.v }).serialized;
+      const authObj = payload as {
+        r?: `0x${string}`;
+        s?: `0x${string}`;
+        v?: number;
+        signature?: { serialized?: string };
+      };
+      if (authObj?.signature?.serialized) {
+        serialized = authObj.signature.serialized;
+      } else {
+        const authSig = payload as Eip7702AuthorizationPayload;
+        serialized = Signature.from({ r: authSig.r, s: authSig.s, v: authSig.v }).serialized;
+      }
       nonceMap.set(nonceKey, serialized);
     }
 

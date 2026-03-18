@@ -196,6 +196,33 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
         return null;
       }
 
+      // Prefer Magic native APIs for 7702 methods (demo parity).
+      if (method === "magic_wallet_sign_7702_authorization") {
+        const p = (params?.[0] || {}) as { contractAddress?: string; chainId?: number; nonce?: number };
+        const wallet = magic.wallet as unknown as {
+          sign7702Authorization?: (args: { contractAddress: string; chainId: number; nonce?: number }) => Promise<unknown>;
+        };
+        if (!wallet?.sign7702Authorization || !p.contractAddress || !p.chainId) {
+          throw new Error("Magic 7702 authorization method unavailable");
+        }
+        return wallet.sign7702Authorization({
+          contractAddress: p.contractAddress,
+          chainId: p.chainId,
+          ...(p.nonce !== undefined ? { nonce: p.nonce } : {}),
+        });
+      }
+
+      if (method === "eth_send7702Transaction") {
+        const p = (params?.[0] || {}) as { to?: string; data?: string; authorizationList?: unknown[] };
+        const wallet = magic.wallet as unknown as {
+          send7702Transaction?: (args: { to: string; data?: string; authorizationList: unknown[] }) => Promise<unknown>;
+        };
+        if (!wallet?.send7702Transaction || !p.to || !Array.isArray(p.authorizationList)) {
+          throw new Error("Magic send7702Transaction unavailable");
+        }
+        return wallet.send7702Transaction({ to: p.to, data: p.data || "0x", authorizationList: p.authorizationList });
+      }
+
       const provider = new BrowserProvider(magicProvider);
       return provider.send(method, params || []);
     };
