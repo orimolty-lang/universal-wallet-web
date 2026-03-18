@@ -40,6 +40,7 @@ const USDC_ADDRESSES: Record<number, string> = {
   [RELAY_CHAIN_IDS.ARBITRUM]: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
   [RELAY_CHAIN_IDS.OPTIMISM]: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
   [RELAY_CHAIN_IDS.POLYGON]: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+  [RELAY_CHAIN_IDS.SOLANA]: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
 };
 
 // Native ETH placeholder
@@ -895,14 +896,6 @@ export async function executeSell(params: SellParams): Promise<SwapResult> {
   console.log("[Sell] Starting sell:", { tokenAddress, tokenChainId, amountRaw });
 
   try {
-    // Temporary guard: LiFi sell path is EVM-only. Solana-token sells need Relay-specific path.
-    if (tokenChainId === 101 || tokenChainId === RELAY_CHAIN_IDS.SOLANA) {
-      return {
-        success: false,
-        error: "Solana-token sell route is temporarily unavailable in this flow (EVM-only LiFi path).",
-      };
-    }
-
     // Get smart account address
     const smartAccountOptions = await ua.getSmartAccountOptions();
     const evmSmartAccount = smartAccountOptions.smartAccountAddress;
@@ -911,8 +904,11 @@ export async function executeSell(params: SellParams): Promise<SwapResult> {
       return { success: false, error: "EVM smart account not available" };
     }
 
+    // Normalize source chain for Solana tokens
+    const sourceChainId = tokenChainId === 101 ? RELAY_CHAIN_IDS.SOLANA : tokenChainId;
+
     // Determine the USDC address on this chain (what we're selling TO)
-    const usdcAddress = USDC_ADDRESSES[tokenChainId] || USDC_ADDRESSES[RELAY_CHAIN_IDS.BASE];
+    const usdcAddress = USDC_ADDRESSES[sourceChainId] || USDC_ADDRESSES[RELAY_CHAIN_IDS.BASE];
     if (!usdcAddress) {
       return { success: false, error: "USDC not available on this chain" };
     }
@@ -922,8 +918,8 @@ export async function executeSell(params: SellParams): Promise<SwapResult> {
     // Get Li.Fi quote: Token → USDC (reversed from buy)
     const quote = await getLifiSwapQuote(
       evmSmartAccount,
-      tokenChainId,        // Source chain (where token is)
-      tokenChainId,        // Dest chain (same chain for now)
+      sourceChainId,       // Source chain (where token is)
+      sourceChainId,       // Dest chain (same chain for now)
       tokenAddress,        // Sell this token
       usdcAddress,         // Buy USDC
       amountRaw,           // Amount to sell
@@ -957,10 +953,11 @@ export async function executeSell(params: SellParams): Promise<SwapResult> {
     });
 
     // Map to UA chain ID
-    let uaChainId = tokenChainId;
-    if (tokenChainId === 8453) uaChainId = CHAIN_ID.BASE_MAINNET;
-    if (tokenChainId === 1) uaChainId = CHAIN_ID.ETHEREUM_MAINNET;
-    if (tokenChainId === 42161) uaChainId = CHAIN_ID.ARBITRUM_MAINNET_ONE;
+    let uaChainId = sourceChainId;
+    if (sourceChainId === 8453) uaChainId = CHAIN_ID.BASE_MAINNET;
+    if (sourceChainId === 1) uaChainId = CHAIN_ID.ETHEREUM_MAINNET;
+    if (sourceChainId === 42161) uaChainId = CHAIN_ID.ARBITRUM_MAINNET_ONE;
+    if (sourceChainId === RELAY_CHAIN_IDS.SOLANA) uaChainId = CHAIN_ID.SOLANA_MAINNET;
 
     // Create UA transaction (no expectTokens needed - we're selling, not buying with unified balance)
     const uaTx = await ua.createUniversalTransaction({

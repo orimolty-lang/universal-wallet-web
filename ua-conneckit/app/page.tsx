@@ -30,7 +30,7 @@ import {
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
 import { decodeFunctionResult, encodeFunctionData } from "viem";
-import { toBeHex, Signature } from "ethers";
+import { toBeHex, Signature, formatUnits } from "ethers";
 import { useUniversalAccountWS } from "./hooks/useUniversalAccountWS";
 
 // Mobula API for token search
@@ -1670,10 +1670,10 @@ const ConvertModal = ({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const totals = feeQuote?.fees?.totals as any;
       if (totals) {
-        const total = Number(totals.feeTokenAmountInUSD || 0);
-        const gas = Number(totals.gasFeeTokenAmountInUSD || 0);
-        const service = Number(totals.transactionServiceFeeTokenAmountInUSD || 0);
-        const lp = Number(totals.transactionLPFeeTokenAmountInUSD || 0);
+        const total = Number(formatUnits(BigInt(totals.feeTokenAmountInUSD || '0'), 18));
+        const gas = Number(formatUnits(BigInt(totals.gasFeeTokenAmountInUSD || '0'), 18));
+        const service = Number(formatUnits(BigInt(totals.transactionServiceFeeTokenAmountInUSD || '0'), 18));
+        const lp = Number(formatUnits(BigInt(totals.transactionLPFeeTokenAmountInUSD || '0'), 18));
         setEstimatedFee(
           `Total ~$${total.toFixed(2)} (Gas ~$${gas.toFixed(2)} · Service ~$${service.toFixed(2)} · LP ~$${lp.toFixed(2)})`
         );
