@@ -31,16 +31,20 @@ Find your credentials in the [Particle Network Dashboard](https://dashboard.part
 4. Run the development server with `yarn dev`.
 5. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-### Cloud agent setup and `gh-pages` build
+### Cloud agent setup and `gh-pages` deploy
 
 From the repo root:
 
 ```bash
 npm run setup:cloud
-npm run build:gh-pages
+npm run deploy:gh-pages
 ```
 
-This installs `ua-conneckit` dependencies, runs Next.js static export, and copies the generated site from `ua-conneckit/out` to the `gh-pages` branch root.
+This installs `ua-conneckit` dependencies, builds the static export, switches to `gh-pages`, commits, and pushes. Optional commit message:
+
+```bash
+npm run deploy:gh-pages -- "fix: your message"
+```
 
 ## Code Structure: `ua-conneckit/app/page.tsx`
 
