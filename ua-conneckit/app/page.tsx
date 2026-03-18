@@ -1434,7 +1434,21 @@ const ConvertModal = ({
   const [loadingStatus, setLoadingStatus] = useState<string>('');
   const [txResult, setTxResult] = useState<{ txId: string; status: string } | null>(null);
   const [estimatedFee, setEstimatedFee] = useState<string | null>(null);
+  const [debugOpen, setDebugOpen] = useState(false);
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const addDebug = useCallback((msg: string) => {
+    const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    setDebugLogs(prev => [...prev.slice(-79), line]);
+    console.log('[ConvertDebug]', msg);
+  }, []);
   
+  useEffect(() => {
+    if (isOpen) {
+      setDebugLogs([]);
+      addDebug('Convert modal opened');
+    }
+  }, [isOpen, addDebug]);
+
   // Auto-clear txResult after success animation and close modal
   useEffect(() => {
     if (txResult?.status === 'complete') {
@@ -1561,6 +1575,7 @@ const ConvertModal = ({
 
     setIsLoading(true);
     setError(null);
+    addDebug(`Input from=${fromAsset}@${fromChain} to=${toAsset}@${toChain} amount=${amount}`);
 
     try {
       // Calculate the amount in the target token
@@ -1663,6 +1678,11 @@ const ConvertModal = ({
       }, tradeConfig);
 
       console.log('[Convert] Transaction created:', tx);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const userOps = (tx as any)?.userOps || [];
+      addDebug(`UA tx created: userOps=${userOps.length}`);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      userOps.forEach((u: any, i: number) => addDebug(`userOp[${i}] chain=${u?.chainId} delegated=${!!u?.eip7702Delegated} hasAuth=${!!u?.eip7702Auth} nonce=${u?.eip7702Auth?.nonce}`));
       
       // Extract and display fees from transaction (prefer feeQuotes breakdown)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1720,6 +1740,7 @@ const ConvertModal = ({
         setLoadingStatus('Sending transaction...');
         const wc = walletClient as unknown as WalletClientLike;
         const authorizations = await build7702Authorizations({ walletClient: wc, tx });
+        addDebug(`Signature ready. authList=${authorizations?.length || 0}`);
         const sendResult = await universalAccount.sendTransaction(tx, signature as string, authorizations);
         
         if (sendResult?.transactionId) {
@@ -1769,6 +1790,7 @@ const ConvertModal = ({
       }
     } catch (err) {
       console.error('[Convert] Error:', err);
+      addDebug(`Error: ${err instanceof Error ? err.message : String(err)}`);
       setError(err instanceof Error ? err.message : 'Failed to convert');
     } finally {
       setIsLoading(false);
@@ -1787,7 +1809,15 @@ const ConvertModal = ({
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose}>
       <div className="px-5 pb-8 min-h-[400px]">
-        <h2 className="text-white text-xl font-bold mb-4">Convert</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-white text-xl font-bold">Convert</h2>
+          <button
+            onClick={() => setDebugOpen(true)}
+            className="text-xs px-2 py-1 rounded bg-zinc-800 text-gray-300 hover:bg-zinc-700"
+          >
+            Debug
+          </button>
+        </div>
 
         {error && (
           <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-2 mb-2 text-red-300 text-xs">
@@ -2007,6 +2037,21 @@ const ConvertModal = ({
         >
           {isLoading ? (loadingStatus || 'Processing...') : 'Convert'}
         </button>
+
+        {debugOpen && (
+          <div className="fixed inset-0 z-[120] bg-black/70 flex items-end" onClick={() => setDebugOpen(false)}>
+            <div className="w-full max-h-[75vh] rounded-t-2xl bg-zinc-950 border-t border-zinc-800 p-3" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-white font-semibold">Convert Debug</div>
+                <button onClick={() => setDebugOpen(false)} className="text-xs px-2 py-1 rounded bg-zinc-800 text-gray-300">Close</button>
+              </div>
+              <div className="text-[11px] text-gray-400 mb-2">Suggested chain ids: Base 8453, OP 10, Arbitrum 42161, Solana 101 (UI) / Relay 792703809</div>
+              <div className="bg-black/40 border border-zinc-800 rounded p-2 h-[52vh] overflow-auto text-[11px] text-gray-300 space-y-1">
+                {debugLogs.length === 0 ? <div className="text-gray-500">No logs yet.</div> : debugLogs.map((l, i) => <div key={i}>{l}</div>)}
+              </div>
+            </div>
+          </div>
+        )}
         
         {/* Transaction Result - Spinner/Checkmark Animation */}
         {txResult && (
