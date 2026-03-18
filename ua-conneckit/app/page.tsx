@@ -431,7 +431,7 @@ const build7702Authorizations = async ({
     const auth = userOp?.eip7702Auth;
     if (!auth || userOp?.eip7702Delegated) continue;
 
-    const chainIdForAuth = Number(auth.chainId || userOp.chainId);
+    const chainIdForAuth = Number(userOp.chainId ?? auth.chainId);
     if (!Number.isFinite(chainIdForAuth) || chainIdForAuth <= 0) {
       throw new Error('Invalid chainId in eip7702Auth');
     }
@@ -1765,14 +1765,9 @@ const ConvertModal = ({
         const ownerAddr = wc?.account?.address as string | undefined;
         if (!ownerAddr) throw new Error('Wallet address unavailable');
 
-        // Pre-delegate: if multiple chains need 7702 auth, relay may only allow 1 per txn.
+        // Pre-delegate: relay allows 1 delegation per txn. Run for any chain needing auth.
         /* eslint-disable @typescript-eslint/no-explicit-any */
         const rawOps = (tx as any)?.userOps ?? (tx as any)?.feeQuotes?.[0]?.userOps ?? [];
-        const op0 = rawOps[0];
-        const op0Keys = op0 ? Object.keys(op0) : [];
-        const op0Auth = op0?.eip7702Auth;
-        const op0Delegated = op0?.eip7702Delegated;
-        addDebug(`rawOps=${rawOps.length} op0Keys=${op0Keys.slice(0, 8).join(",")} auth=${!!op0Auth} del=${op0Delegated}`);
         const afterFilter = rawOps.filter((op: { eip7702Auth?: unknown; eip7702Delegated?: unknown }) =>
           op?.eip7702Auth && !op?.eip7702Delegated
         );
@@ -1782,10 +1777,9 @@ const ConvertModal = ({
         });
         const chainsNeeding = afterMap.filter((c: number) => !Number.isNaN(c) && c > 0 && c !== 101) as number[];
         const chainsNeedingUnique: number[] = Array.from(new Set(chainsNeeding));
-        addDebug(`afterFilter=${afterFilter.length} afterMap=[${afterMap.join(",")}] chains=[${chainsNeeding.join(",")}]`);
-        addDebug(`chainsNeeding=[${chainsNeedingUnique.join(",")}] len=${chainsNeedingUnique.length} sign7702=${!!sign7702}`);
+        addDebug(`chainsNeeding=[${chainsNeedingUnique.join(",")}] len=${chainsNeedingUnique.length}`);
         /* eslint-enable @typescript-eslint/no-explicit-any */
-        if (chainsNeedingUnique.length > 1) {
+        if (chainsNeedingUnique.length >= 1) {
           addDebug(`Pre-delegating ${chainsNeedingUnique.length} chains (relay: 1 delegation/txn)`);
           const walletRequest = (args: { method: string; params?: unknown[] }) =>
             wc.request(args as { method: string; params?: unknown[] });
@@ -7068,30 +7062,130 @@ const AppLockModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
   );
 };
 
+// EVM chains that support 7702 (skip Solana 101)
+const EVM_7702_CHAINS: { chainId: number; name: string }[] = [
+  { chainId: 1, name: "Ethereum" },
+  { chainId: 10, name: "Optimism" },
+  { chainId: 56, name: "BNB Chain" },
+  { chainId: 137, name: "Polygon" },
+  { chainId: 8453, name: "Base" },
+  { chainId: 42161, name: "Arbitrum" },
+  { chainId: 43114, name: "Avalanche" },
+];
+
 // Settings Modal (moved from tab)
-const SettingsModal = ({ 
-  isOpen, 
-  onClose, 
+const SettingsModal = ({
+  isOpen,
+  onClose,
   onLogout,
   blindSigningEnabled,
   onToggleBlindSigning,
   onOpenAccountSecurity,
   onOpenMasterPassword,
-  onOpenAppLock
-}: { 
-  isOpen: boolean; 
-  onClose: () => void; 
+  onOpenAppLock,
+  universalAccount,
+  primaryWallet,
+  sign7702,
+  onDelegationSuccess,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
   onLogout: () => void;
   blindSigningEnabled: boolean;
   onToggleBlindSigning: (enabled: boolean) => void;
   onOpenAccountSecurity?: () => void;
   onOpenMasterPassword?: () => void;
   onOpenAppLock?: () => void;
-}) => (
+  universalAccount: UniversalAccount | null;
+  primaryWallet: { getWalletClient: () => WalletClientLike } | undefined;
+  sign7702: ((p: { contractAddress: `0x${string}`; chainId: number; nonce: number }, o: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>) | null;
+  onDelegationSuccess?: () => void;
+}) => {
+  const [deployments, setDeployments] = useState<Array<{ chainId: number; isDelegated: boolean }>>([]);
+  const [delegatingChainId, setDelegatingChainId] = useState<number | null>(null);
+  const [chainError, setChainError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen && universalAccount) {
+      getEIP7702Deployments(universalAccount).then((d) => {
+        const arr = Array.isArray(d) ? d : [];
+        setDeployments(arr.map((x: { chainId?: number; isDelegated?: boolean }) => ({ chainId: x.chainId ?? 0, isDelegated: !!x.isDelegated })));
+      });
+    }
+  }, [isOpen, universalAccount]);
+
+  const handleDelegateChain = async (chainId: number) => {
+    if (!universalAccount || !primaryWallet || !sign7702) {
+      setChainError("Wallet not connected");
+      return;
+    }
+    setDelegatingChainId(chainId);
+    setChainError(null);
+    try {
+      const wc = primaryWallet.getWalletClient() as unknown as WalletClientLike;
+      const ownerAddr = wc?.account?.address as string;
+      if (!ownerAddr) throw new Error("Wallet address unavailable");
+      const delResult = await createDelegationOnlyTx(universalAccount, chainId, ownerAddr);
+      if (!delResult || delResult.chainsNeedingAuth.length !== 1 || delResult.chainsNeedingAuth[0] !== chainId) {
+        setChainError(`Could not create single-chain delegation for ${EVM_7702_CHAINS.find((c) => c.chainId === chainId)?.name ?? chainId}`);
+        return;
+      }
+      const delTx = delResult.tx as { rootHash?: string };
+      if (!delTx?.rootHash) throw new Error("No root hash");
+      const delSig = await signUniversalRootHash({
+        walletClient: wc,
+        rootHash: delTx.rootHash as `0x${string}`,
+        signerAddress: wc.account?.address as `0x${string}` | undefined,
+        blindSigningEnabled,
+      });
+      const delAuths = await build7702Authorizations({ walletClient: wc, tx: delResult.tx });
+      await universalAccount.sendTransaction(delResult.tx as Parameters<UniversalAccount["sendTransaction"]>[0], delSig as string, delAuths);
+      onDelegationSuccess?.();
+      setDeployments((prev) => prev.map((d) => (d.chainId === chainId ? { ...d, isDelegated: true } : d)));
+    } catch (err) {
+      setChainError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDelegatingChainId(null);
+    }
+  };
+
+  return (
   <BottomSheet isOpen={isOpen} onClose={onClose}>
     <div className="px-6 pb-8">
       <h2 className="text-white text-xl font-bold mb-6 text-center">Settings</h2>
       <div className="space-y-4">
+        {/* Chains Section - per-chain 7702 delegation */}
+        {universalAccount && (
+          <>
+            <div className="text-gray-500 text-xs uppercase tracking-wider mb-2">Chains (7702)</div>
+            <div className="text-[11px] text-gray-500 mb-2">Enable chains for multi-chain convert. One delegation per chain.</div>
+            {chainError && <div className="text-red-500 text-sm mb-2">{chainError}</div>}
+            <div className="space-y-2 mb-4">
+              {EVM_7702_CHAINS.map(({ chainId, name }) => {
+                const dep = deployments.find((d) => d.chainId === chainId);
+                const isDelegated = dep?.isDelegated ?? false;
+                const isDelegating = delegatingChainId === chainId;
+                return (
+                  <div key={chainId} className="flex items-center justify-between py-2 border-b border-gray-800">
+                    <span className="text-white">{name}</span>
+                    {isDelegated ? (
+                      <span className="text-green-500 text-sm">Delegated</span>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={isDelegating}
+                        onClick={() => handleDelegateChain(chainId)}
+                        className="px-3 py-1.5 rounded-lg bg-accent-dynamic text-black text-sm font-medium disabled:opacity-50"
+                      >
+                        {isDelegating ? "Delegating..." : "Delegate"}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
         {/* Security Section */}
         <div className="text-gray-500 text-xs uppercase tracking-wider mb-2">Security</div>
         
@@ -7166,7 +7260,8 @@ const SettingsModal = ({
       </div>
     </div>
   </BottomSheet>
-);
+  );
+};
 
 // Bottom Nav with Agent and Trade
 const BottomNav = ({ 
@@ -7272,7 +7367,8 @@ const BottomNav = ({
 
 // Main App
 const App = () => {
-  useWallets();
+  const wallets = useWallets();
+  const sign7702 = useSign7702AuthorizationCompat();
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
   const { openAccountAndSecurity, openSetMasterPassword } = useParticleAuth();
@@ -7801,6 +7897,10 @@ const App = () => {
         onOpenAccountSecurity={openAccountAndSecurity}
         onOpenMasterPassword={openSetMasterPassword}
         onOpenAppLock={() => setShowAppLockModal(true)}
+        universalAccount={universalAccountInstance}
+        primaryWallet={wallets?.[0] as { getWalletClient: () => WalletClientLike } | undefined}
+        sign7702={sign7702}
+        onDelegationSuccess={fetchAssets}
       />
       
       <AppLockModal
