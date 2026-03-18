@@ -1771,7 +1771,11 @@ const ConvertModal = ({
           for (const chainId of chainsNeeding) {
             setLoadingStatus(`Delegating on chain ${chainId}...`);
             const delResult = await createDelegationOnlyTx(universalAccount, chainId, ownerAddr);
-            if (!delResult || delResult.chainsNeedingAuth.length === 0) continue;
+            // Only run when delegation tx has exactly 1 chain (avoid AA24)
+            if (!delResult || delResult.chainsNeedingAuth.length !== 1 || delResult.chainsNeedingAuth[0] !== chainId) {
+              addDebug(`Skip chain ${chainId}: delegation tx would need ${delResult?.chainsNeedingAuth?.length ?? 0} chains`);
+              continue;
+            }
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const delTx = delResult.tx as any;
             if (!delTx?.rootHash) continue;
@@ -1784,6 +1788,8 @@ const ConvertModal = ({
             const delAuths = await build7702Authorizations({ walletClient: wc, tx: delTx });
             await universalAccount.sendTransaction(delTx, delSig as string, delAuths);
             addDebug(`Delegated chain ${chainId}`);
+            // Brief delay so backend can see delegation before re-creating convert tx
+            await new Promise((r) => setTimeout(r, 2000));
           }
           // Re-create convert tx; delegated chains should now have eip7702Delegated=true
           setLoadingStatus('Creating transaction...');

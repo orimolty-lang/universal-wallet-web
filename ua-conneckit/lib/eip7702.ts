@@ -4,6 +4,7 @@
  */
 
 import type { UniversalAccount } from "@particle-network/universal-account-sdk";
+import { SUPPORTED_TOKEN_TYPE } from "@particle-network/universal-account-sdk";
 
 export type WalletClientLike = {
   account?: { address?: `0x${string}` };
@@ -52,28 +53,41 @@ export function getChainsNeedingAuth(
 
 /**
  * Create a minimal "delegation-only" transaction for a single chain.
- * Uses createUniversalTransaction with a no-op (0 value to self) to trigger 7702 auth.
- * Goal: one userOp on one chain so we stay within "1 delegation per txn" limit.
+ * Tries createConvertTransaction (tiny amount) first - when user has balance on
+ * target chain, backend may return single-chain tx. Falls back to no-op
+ * createUniversalTransaction.
  */
 export async function createDelegationOnlyTx(
   universalAccount: UniversalAccount,
   chainId: number,
-  ownerAddress: string
+  _ownerAddress: string
 ): Promise<{ tx: unknown; chainsNeedingAuth: number[] } | null> {
+  // 1. Try minimal convert - often single-chain when user has balance on target
   try {
-    // Minimal no-op: send 0 value to self on this chain
+    const convertTx = await universalAccount.createConvertTransaction(
+      {
+        chainId,
+        expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: "0.000001" },
+      },
+      { usePrimaryTokens: [SUPPORTED_TOKEN_TYPE.USDC] }
+    );
+    const chains = getChainsNeedingAuth(convertTx);
+    if (chains.length === 1 && chains[0] === chainId) {
+      return { tx: convertTx, chainsNeedingAuth: chains };
+    }
+  } catch {
+    // Fall through to no-op
+  }
+
+  // 2. Fallback: no-op (0 value to self) on target chain
+  try {
     const tx = await universalAccount.createUniversalTransaction({
       chainId,
       expectTokens: [],
       transactions: [
-        {
-          to: ownerAddress as `0x${string}`,
-          data: "0x",
-          value: "0x0",
-        },
+        { to: _ownerAddress as `0x${string}`, data: "0x", value: "0x0" },
       ],
     });
-
     const chainsNeedingAuth = getChainsNeedingAuth(tx);
     return { tx, chainsNeedingAuth };
   } catch (err) {
