@@ -1,0 +1,244 @@
+"use strict";(self.webpackChunk_N_E=self.webpackChunk_N_E||[]).push([[1825],{54428:function(e,r,t){t.d(r,{Z:function(){return p}});var i=t(2265);let n=e=>e.replace(/([a-z0-9])([A-Z])/g,"$1-$2").toLowerCase(),o=e=>e.replace(/^([A-Z])|[\s-_]+(\w)/g,(e,r,t)=>t?t.toUpperCase():r.toLowerCase()),a=e=>{let r=o(e);return r.charAt(0).toUpperCase()+r.slice(1)},l=function(){for(var e=arguments.length,r=Array(e),t=0;t<e;t++)r[t]=arguments[t];return r.filter((e,r,t)=>!!e&&""!==e.trim()&&t.indexOf(e)===r).join(" ").trim()},s=e=>{for(let r in e)if(r.startsWith("aria-")||"role"===r||"title"===r)return!0};var c={xmlns:"http://www.w3.org/2000/svg",width:24,height:24,viewBox:"0 0 24 24",fill:"none",stroke:"currentColor",strokeWidth:2,strokeLinecap:"round",strokeLinejoin:"round"};let d=(0,i.forwardRef)((e,r)=>{let{color:t="currentColor",size:n=24,strokeWidth:o=2,absoluteStrokeWidth:a,className:d="",children:p,iconNode:u,...h}=e;return(0,i.createElement)("svg",{ref:r,...c,width:n,height:n,stroke:t,strokeWidth:a?24*Number(o)/Number(n):o,className:l("lucide",d),...!p&&!s(h)&&{"aria-hidden":"true"},...h},[...u.map(e=>{let[r,t]=e;return(0,i.createElement)(r,t)}),...Array.isArray(p)?p:[p]])}),p=(e,r)=>{let t=(0,i.forwardRef)((t,o)=>{let{className:s,...c}=t;return(0,i.createElement)(d,{ref:o,iconNode:r,className:l("lucide-".concat(n(a(e))),"lucide-".concat(e),s),...c})});return t.displayName=a(e),t}},96835:function(e,r,t){t.d(r,{Z:function(){return i}});let i=(0,t(54428).Z)("circle-x",[["circle",{cx:"12",cy:"12",r:"10",key:"1mglay"}],["path",{d:"m15 9-6 6",key:"1uzhvr"}],["path",{d:"m9 9 6 6",key:"z0biqf"}]])},51825:function(e,r,t){t.r(r),t.d(r,{EmbeddedWalletConnectingScreen:function(){return p},EmbeddedWalletConnectingView:function(){return d},default:function(){return p}});var i=t(57437),n=t(96835),o=t(2265),a=t(8969),l=t(71554),s=t(4696),c=t(7612);t(87336),t(29155),t(97048),t(64131),t(14145);let d=({connectionFailed:e,onClose:r})=>(0,i.jsx)(c.S,e?{title:"Something went wrong",subtitle:"We're on it. Please try again later.",icon:n.Z,iconVariant:"error",primaryCta:{label:"Close",onClick:r},watermark:!0}:{title:"Connecting to your wallet",subtitle:"Please wait...",iconVariant:"loading",showClose:!0,onClose:r,watermark:!1}),p={component:()=>{let{authenticated:e,user:r}=(0,s.u)(),{client:t,closePrivyModal:n,createAnalyticsEvent:c,walletProxy:p}=(0,l.u)(),{navigate:u,data:h,setModalData:v,onUserCloseViaDialogOrKeybindRef:g}=(0,s.a)(),f=(0,o.useMemo)(()=>Date.now(),[]),[x,y]=(0,o.useState)(!1),{onCompleteNavigateTo:m,onFailure:b,shouldForceMFA:w,entropyId:j,entropyIdVerifier:k,recoveryMethod:z,connectingWalletAddress:C,isUnifiedWallet:E=!1}=h?.connectWallet,S=e=>{x||(y(!0),b("string"==typeof e?Error(e):e))};return(0,o.useEffect)(()=>{let r;return e?p?((async()=>{let e=await t.getAccessToken();if(!e)return S("User must be authenticated and have a Privy wallet before it can be connected");try{if(!E){if(!j||!k)return S("For on-device first-class chain wallets, entropyId and entropyIdVerifier are required");await p.connect({accessToken:e,entropyId:j,entropyIdVerifier:k})}w&&await p.verifyMfa({accessToken:e});let t=(Date.now()-f)/1e3;"EmbeddedWalletKeyExportScreen"===m&&t<1?r=setTimeout(()=>{u(m,!1)},1e3*(1-t)):u(m,!1)}catch(e){if((0,a.e)(e)&&"privy"===z){let e=await t.getAccessToken();if(!e)return S("User must be authenticated and have a Privy wallet before it can be recovered");try{c({eventName:"embedded_wallet_pinless_recovery_started",payload:{walletAddress:C}});let r=await p?.recover({accessToken:e,entropyId:j,entropyIdVerifier:k});r?.entropyId||S(Error("Unable to recover wallet")),m?u(m):n({shouldCallAuthOnSuccess:!1}),c({eventName:"embedded_wallet_recovery_completed",payload:{walletAddress:C}}),u(m)}catch(e){S("An error has occurred, please try again.")}}else(0,a.e)(e)&&"privy"!==z&&"privy-v2"!==z?(v({...h,recoverWallet:{entropyId:j,entropyIdVerifier:k,onCompleteNavigateTo:m,onFailure:b},recoveryOAuthStatus:{provider:z,action:"recover",isInAccountCreateFlow:!1,shouldCreateEth:!1,shouldCreateSol:!1}}),u((0,a.c)(z))):S(e)}})(),()=>clearTimeout(r)):void 0:S("User must be authenticated and have a Privy wallet before it can be connected")},[e,r,p]),g.current=()=>{S("User exited before wallet could be connected"),n({shouldCallAuthOnSuccess:!1})},(0,i.jsx)(d,{connectionFailed:x,onClose:()=>n({shouldCallAuthOnSuccess:!1})})}}},74522:function(e,r,t){t.d(r,{S:function(){return j}});var i=t(57437),n=t(2265),o=t(99379),a=t(50640),l=t(15383),s=t(20278);let c=o.zo.div`
+  /* spacing tokens */
+  --screen-space: 16px; /* base 1x = 16 */
+  --screen-space-lg: calc(var(--screen-space) * 1.5); /* 24px */
+
+  position: relative;
+  overflow: hidden;
+  margin: 0 calc(-1 * var(--screen-space)); /* extends over modal padding */
+  height: 100%;
+  border-radius: var(--privy-border-radius-lg);
+`,d=o.zo.div`
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--screen-space) * 1.5);
+  width: 100%;
+  background: var(--privy-color-background);
+  padding: 0 var(--screen-space-lg) var(--screen-space);
+  height: 100%;
+  border-radius: var(--privy-border-radius-lg);
+`,p=o.zo.div`
+  position: relative;
+  display: flex;
+  flex-direction: column;
+`,u=(0,o.zo)(l.M)`
+  margin: 0 -8px;
+`,h=o.zo.div`
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+
+  /* Enable scrolling */
+  overflow-y: auto;
+
+  /* Hide scrollbar but keep functionality when scrollable */
+  /* Add padding for focus outline space, offset with negative margin */
+  padding: 3px;
+  margin: -3px;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+  scrollbar-gutter: stable both-edges;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  /* Gradient effect for scroll indication */
+  ${({$colorScheme:e})=>"light"===e?"background: linear-gradient(var(--privy-color-background), var(--privy-color-background) 70%) bottom, linear-gradient(rgba(0, 0, 0, 0) 20%, rgba(0, 0, 0, 0.06)) bottom;":"dark"===e?"background: linear-gradient(var(--privy-color-background), var(--privy-color-background) 70%) bottom, linear-gradient(rgba(255, 255, 255, 0) 20%, rgba(255, 255, 255, 0.06)) bottom;":void 0}
+
+  background-repeat: no-repeat;
+  background-size:
+    100% 32px,
+    100% 16px;
+  background-attachment: local, scroll;
+`,v=o.zo.div`
+  display: flex;
+  flex-direction: column;
+  gap: var(--screen-space-lg);
+  margin-top: 1.5rem;
+`,g=o.zo.div`
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--screen-space);
+`,f=o.zo.div`
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+`,x=o.zo.h3`
+  && {
+    font-size: 20px;
+    line-height: 32px;
+    font-weight: 500;
+    color: var(--privy-color-foreground);
+    margin: 0;
+  }
+`,y=o.zo.p`
+  && {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 300;
+    line-height: 24px;
+    color: var(--privy-color-foreground);
+  }
+`,m=o.zo.div`
+  background: ${({$variant:e})=>{switch(e){case"success":return"var(--privy-color-success-bg, #EAFCEF)";case"warning":return"var(--privy-color-warn, #FEF3C7)";case"error":return"var(--privy-color-error-bg, #FEE2E2)";case"loading":case"logo":return"transparent";default:return"var(--privy-color-background-2)"}}};
+
+  border-radius: 50%;
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+`,b=o.zo.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  img,
+  svg {
+    max-height: 90px;
+    max-width: 180px;
+  }
+`,w=o.zo.div`
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 82px;
+
+  > div {
+    position: relative;
+  }
+
+  > div > :first-child {
+    position: relative;
+  }
+
+  > div > :last-child {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
+`,j=({children:e,...r})=>(0,i.jsx)(c,{children:(0,i.jsx)(d,{...r,children:e})}),k=o.zo.div`
+  position: absolute;
+  top: 0;
+  left: calc(-1 * var(--screen-space-lg));
+  width: calc(100% + calc(var(--screen-space-lg) * 2));
+  height: 4px;
+  background: var(--privy-color-background-2);
+  border-top-left-radius: inherit;
+  border-top-right-radius: inherit;
+  overflow: hidden;
+`,z=(0,o.zo)(l.B)`
+  padding: 0;
+  && a {
+    padding: 0;
+    color: var(--privy-color-foreground-3);
+  }
+`,C=o.zo.div`
+  height: 100%;
+  width: ${({pct:e})=>e}%;
+  background: var(--privy-color-foreground-3);
+  border-radius: 2px;
+  transition: width 300ms ease-in-out;
+`,E=({step:e})=>e?(0,i.jsx)(k,{children:(0,i.jsx)(C,{pct:Math.min(100,e.current/e.total*100)})}):null;j.Header=({title:e,subtitle:r,icon:t,iconVariant:n,iconLoadingStatus:o,showBack:a,onBack:l,showInfo:s,onInfo:c,showClose:d,onClose:h,step:v,headerTitle:m,...b})=>(0,i.jsxs)(p,{...b,children:[(0,i.jsx)(u,{backFn:a?l:void 0,infoFn:s?c:void 0,onClose:d?h:void 0,title:m,closeable:d}),(t||n||e||r)&&(0,i.jsxs)(g,{children:[t||n?(0,i.jsx)(j.Icon,{icon:t,variant:n,loadingStatus:o}):null,!(!e&&!r)&&(0,i.jsxs)(f,{children:[e&&(0,i.jsx)(x,{children:e}),r&&(0,i.jsx)(y,{children:r})]})]}),v&&(0,i.jsx)(E,{step:v})]}),(j.Body=n.forwardRef(({children:e,...r},t)=>(0,i.jsx)(h,{ref:t,...r,children:e}))).displayName="Screen.Body",j.Footer=({children:e,...r})=>(0,i.jsx)(v,{id:"privy-content-footer-container",...r,children:e}),j.Actions=({children:e,...r})=>(0,i.jsx)(S,{...r,children:e}),j.HelpText=({children:e,...r})=>(0,i.jsx)(A,{...r,children:e}),j.FooterText=({children:e,...r})=>(0,i.jsx)(F,{...r,children:e}),j.Watermark=()=>(0,i.jsx)(z,{}),j.Icon=({icon:e,variant:r="subtle",loadingStatus:t})=>"logo"===r&&e?(0,i.jsx)(b,"string"==typeof e?{children:(0,i.jsx)("img",{src:e,alt:""})}:n.isValidElement(e)?{children:e}:{children:n.createElement(e)}):"loading"===r?e?(0,i.jsx)(w,{children:(0,i.jsxs)("div",{style:{display:"flex",alignItems:"center",justifyContent:"center"},children:[(0,i.jsx)(a.N,{success:t?.success,fail:t?.fail}),"string"==typeof e?(0,i.jsx)("span",{style:{background:`url('${e}') 0 0 / contain`,height:"38px",width:"38px",borderRadius:"6px",margin:"auto",backgroundSize:"contain"}}):n.isValidElement(e)?n.cloneElement(e,{style:{width:"38px",height:"38px"}}):n.createElement(e,{style:{width:"38px",height:"38px"}})]})}):(0,i.jsx)(m,{$variant:r,children:(0,i.jsx)(s.N,{size:"64px"})}):(0,i.jsx)(m,{$variant:r,children:e&&("string"==typeof e?(0,i.jsx)("img",{src:e,alt:"",style:{width:"32px",height:"32px",borderRadius:"6px"}}):n.isValidElement(e)?e:n.createElement(e,{width:32,height:32,stroke:(()=>{switch(r){case"success":return"var(--privy-color-icon-success)";case"warning":return"var(--privy-color-icon-warning)";case"error":return"var(--privy-color-icon-error)";default:return"var(--privy-color-icon-muted)"}})(),strokeWidth:2}))});let S=o.zo.div`
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--screen-space) / 2);
+`,A=o.zo.div`
+  && {
+    margin: 0;
+    width: 100%;
+    text-align: center;
+    color: var(--privy-color-foreground-2);
+    font-size: 13px;
+    line-height: 20px;
+
+    & a {
+      text-decoration: underline;
+    }
+  }
+`,F=o.zo.div`
+  && {
+    margin-top: -1rem;
+    width: 100%;
+    text-align: center;
+    color: var(--privy-color-foreground-2);
+    font-size: 0.6875rem; // 11px
+    line-height: 1rem; // 16px
+  }
+`},7612:function(e,r,t){t.d(r,{S:function(){return a}});var i=t(57437),n=t(15383),o=t(74522);let a=({primaryCta:e,secondaryCta:r,helpText:t,footerText:a,watermark:l=!0,children:s,...c})=>{let d=e||r?(0,i.jsxs)(i.Fragment,{children:[e&&(()=>{let{label:r,...t}=e,o=t.variant||"primary";return(0,i.jsx)(n.a,{...t,variant:o,style:{width:"100%",...t.style},children:r})})(),r&&(()=>{let{label:e,...t}=r,o=t.variant||"secondary";return(0,i.jsx)(n.a,{...t,variant:o,style:{width:"100%",...t.style},children:e})})()]}):null;return(0,i.jsxs)(o.S,{id:c.id,className:c.className,children:[(0,i.jsx)(o.S.Header,{...c}),s?(0,i.jsx)(o.S.Body,{children:s}):null,t||d||l?(0,i.jsxs)(o.S.Footer,{children:[t?(0,i.jsx)(o.S.HelpText,{children:t}):null,d?(0,i.jsx)(o.S.Actions,{children:d}):null,l?(0,i.jsx)(o.S.Watermark,{}):null]}):null,a?(0,i.jsx)(o.S.FooterText,{children:a}):null]})}},20278:function(e,r,t){t.d(r,{N:function(){return o}});var i=t(57437),n=t(99379);let o=({size:e,centerIcon:r})=>(0,i.jsx)(a,{$size:e,children:(0,i.jsxs)(l,{children:[(0,i.jsx)(c,{}),(0,i.jsx)(d,{}),r?(0,i.jsx)(s,{children:r}):null]})}),a=n.zo.div`
+  --spinner-size: ${e=>e.$size?e.$size:"96px"};
+
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+
+  @media all and (display-mode: standalone) {
+    margin-bottom: 30px;
+  }
+`,l=n.zo.div`
+  position: relative;
+  height: var(--spinner-size);
+  width: var(--spinner-size);
+
+  opacity: 1;
+  animation: fadein 200ms ease;
+`,s=n.zo.div`
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  svg,
+  img {
+    width: calc(var(--spinner-size) * 0.4);
+    height: calc(var(--spinner-size) * 0.4);
+    border-radius: var(--privy-border-radius-full);
+  }
+`,c=n.zo.div`
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--spinner-size);
+  height: var(--spinner-size);
+
+  && {
+    border: 4px solid var(--privy-color-border-default);
+    border-radius: 50%;
+  }
+`,d=n.zo.div`
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--spinner-size);
+  height: var(--spinner-size);
+  animation: spin 1200ms linear infinite;
+
+  && {
+    border: 4px solid;
+    border-color: var(--privy-color-icon-subtle) transparent transparent transparent;
+    border-radius: 50%;
+  }
+
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+`}}]);
