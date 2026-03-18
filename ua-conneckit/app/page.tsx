@@ -352,11 +352,13 @@ const signUniversalRootHash = async ({
   rootHash,
   signerAddress,
   blindSigningEnabled,
+  addDebug,
 }: {
   walletClient: WalletClientLike;
   rootHash: `0x${string}`;
   signerAddress?: `0x${string}`;
   blindSigningEnabled: boolean;
+  addDebug?: (msg: string) => void;
 }): Promise<string> => {
   const signer = signerAddress || walletClient.account?.address;
   if (!signer) {
@@ -365,14 +367,32 @@ const signUniversalRootHash = async ({
 
   void blindSigningEnabled;
 
+  // Root hash is a raw 32-byte hash - must use secp256k1_sign (Privy), NOT personal_sign.
+  // personal_sign adds prefix and produces wrong signature → AA24.
+  try {
+    const res = await walletClient.request({
+      method: 'secp256k1_sign',
+      params: [rootHash],
+    });
+    const sig = typeof res === 'string' ? res : (res as { signature?: string })?.signature;
+    if (typeof sig === 'string' && sig.startsWith('0x')) {
+      addDebug?.(`[7702] rootHash signed via secp256k1_sign`);
+      return sig;
+    }
+  } catch (e) {
+    addDebug?.(`[7702] secp256k1_sign failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  // Fallback: personal_sign (may produce AA24 if relay expects raw hash sig)
   if (walletClient.signMessage) {
     try {
       const signature = await walletClient.signMessage({ message: { raw: rootHash } });
       if (typeof signature === 'string' && signature.startsWith('0x')) {
+        addDebug?.(`[7702] rootHash signed via signMessage (personal_sign)`);
         return signature;
       }
     } catch {
-      // Fall back to explicit personal_sign path if signMessage path is unsupported.
+      // Fall through
     }
   }
 
@@ -383,7 +403,7 @@ const signUniversalRootHash = async ({
     });
     if (typeof signature === 'string') return signature;
   } catch {
-    // Fallback for providers that expect params as [address, message]
+    // Fallback
   }
 
   const signatureFallback = await walletClient.request({
@@ -7105,6 +7125,7 @@ const SettingsModal = ({
         rootHash: delTx.rootHash as `0x${string}`,
         signerAddress: wc.account?.address as `0x${string}` | undefined,
         blindSigningEnabled,
+        addDebug,
       });
       addDebug(`rootSig len=${delSig?.length ?? 0} prefix=${String(delSig).slice(0, 10)}...`);
 
