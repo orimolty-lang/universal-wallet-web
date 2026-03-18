@@ -1327,22 +1327,41 @@ const SendModal = ({
       // Native tokens on EVM use 0xEee...; use token address from chainAggregation when present
       const tokenAddr = selected.address || "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 
-      const tx = await universalAccount.createTransferTransaction({
+      let tx = await universalAccount.createTransferTransaction({
         token: { chainId: uaChainId, address: tokenAddr },
         amount: amount,
         receiver: rec,
       });
 
       const walletClient = primaryWallet.getWalletClient();
+      const wc = walletClient as unknown as WalletClientLike;
+
+      // Silent pre-delegation for non-delegated chains, then rebuild transfer tx.
+      const ownerAddress = wc.account?.address as `0x${string}` | undefined;
+      if (ownerAddress) {
+        const delegatedNow = await ensure7702DelegationForTx({
+          universalAccount,
+          walletClient: wc,
+          ownerAddress,
+          tx,
+        });
+        if (delegatedNow) {
+          tx = await universalAccount.createTransferTransaction({
+            token: { chainId: uaChainId, address: tokenAddr },
+            amount: amount,
+            receiver: rec,
+          });
+        }
+      }
+
       const signature = await signUniversalRootHash({
-        walletClient: walletClient as unknown as WalletClientLike,
+        walletClient: wc,
         rootHash: tx.rootHash as `0x${string}`,
-        signerAddress: walletClient?.account?.address as `0x${string}` | undefined,
+        signerAddress: wc?.account?.address as `0x${string}` | undefined,
         blindSigningEnabled,
       });
       if (!signature) throw new Error("Failed to sign");
 
-      const wc = primaryWallet.getWalletClient() as unknown as WalletClientLike;
       const authorizations = await build7702Authorizations({ walletClient: wc, tx });
       const result = await universalAccount.sendTransaction(tx, signature as string, authorizations);
       setTxResult({ txId: result.transactionId });
