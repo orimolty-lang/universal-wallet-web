@@ -32,6 +32,7 @@ import {
 import { decodeFunctionResult, encodeFunctionData } from "viem";
 import { toBeHex, Signature, formatUnits } from "ethers";
 import { useUniversalAccountWS } from "./hooks/useUniversalAccountWS";
+import { getChainsNeedingAuth, createDelegationOnlyTx, getEIP7702Deployments } from "../lib/eip7702";
 
 // Mobula API for token search
 const MOBULA_API_KEY = "a8e6a174-9dfd-4929-b0e0-9f6ece767923";
@@ -1473,11 +1474,14 @@ const ConvertModal = ({
   }, []);
   
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && universalAccount) {
       setDebugLogs([]);
       addDebug('Convert modal opened');
+      getEIP7702Deployments(universalAccount).then((d) => {
+        if (d) addDebug(`7702 deployments: ${JSON.stringify(d).slice(0, 120)}...`);
+      });
     }
-  }, [isOpen, addDebug]);
+  }, [isOpen, addDebug, universalAccount]);
 
   // Auto-clear txResult after success animation and close modal
   useEffect(() => {
@@ -1753,15 +1757,53 @@ const ConvertModal = ({
         if (!primaryWallet) {
           throw new Error('Please connect wallet first');
         }
-        
-        setLoadingStatus('Waiting for signature...');
+
         const walletClient = primaryWallet.getWalletClient();
         const wc = walletClient as unknown as WalletClientLike;
+        const ownerAddr = wc?.account?.address as string | undefined;
+        if (!ownerAddr) throw new Error('Wallet address unavailable');
 
-        // Privy flow: avoid explicit eth_send7702Transaction pre-delegation.
-        // We rely on per-userOp authorizations passed into sendTransaction.
+        // Pre-delegate: if multiple chains need 7702 auth, relay may only allow 1 per txn.
+        // Run delegation-only tx for each chain first (one chain per tx).
+        const chainsNeeding = getChainsNeedingAuth(tx);
+        if (chainsNeeding.length > 1) {
+          addDebug(`Pre-delegating ${chainsNeeding.length} chains (relay: 1 delegation/txn)`);
+          for (const chainId of chainsNeeding) {
+            setLoadingStatus(`Delegating on chain ${chainId}...`);
+            const delResult = await createDelegationOnlyTx(universalAccount, chainId, ownerAddr);
+            if (!delResult || delResult.chainsNeedingAuth.length === 0) continue;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const delTx = delResult.tx as any;
+            if (!delTx?.rootHash) continue;
+            const delSig = await signUniversalRootHash({
+              walletClient: wc,
+              rootHash: delTx.rootHash as `0x${string}`,
+              signerAddress: wc.account?.address as `0x${string}` | undefined,
+              blindSigningEnabled,
+            });
+            const delAuths = await build7702Authorizations({ walletClient: wc, tx: delTx });
+            await universalAccount.sendTransaction(delTx, delSig as string, delAuths);
+            addDebug(`Delegated chain ${chainId}`);
+          }
+          // Re-create convert tx; delegated chains should now have eip7702Delegated=true
+          setLoadingStatus('Creating transaction...');
+          const freshTx = await universalAccount.createConvertTransaction({
+            chainId: toChain,
+            expectToken: {
+              type: targetTokenType,
+              amount: outputAmount.toFixed(8),
+            },
+          }, tradeConfig);
+          /* eslint-disable @typescript-eslint/no-explicit-any */
+          if ((freshTx as any).rootHash) {
+            (tx as any).rootHash = (freshTx as any).rootHash;
+            (tx as any).userOps = (freshTx as any).userOps;
+          }
+          /* eslint-enable @typescript-eslint/no-explicit-any */
+        }
 
         // Sign the latest tx root hash
+        setLoadingStatus('Waiting for signature...');
         const signature = await signUniversalRootHash({
           walletClient: wc,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
