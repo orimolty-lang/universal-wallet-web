@@ -6,7 +6,7 @@ import BottomSheet from "../../components/BottomSheet";
 import type { UniversalAccount } from "@particle-network/universal-account-sdk";
 import { CHAIN_ID, SUPPORTED_TOKEN_TYPE } from "@particle-network/universal-account-sdk";
 import { Contract, Interface, JsonRpcProvider } from "ethers";
-import { useWallets, useAccount } from "@particle-network/connectkit";
+import { useWallets, useAccount } from "@/app/lib/connectkit-compat";
 import { AssetType, ClobClient, OrderType, Side, SignatureType } from "@polymarket/clob-client";
 import { BuilderConfig } from "@polymarket/builder-signing-sdk";
 import { RelayClient, RelayerTxType } from "@polymarket/builder-relayer-client";

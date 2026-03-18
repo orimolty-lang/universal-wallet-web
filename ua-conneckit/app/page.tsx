@@ -6,7 +6,7 @@ import {
   useWallets,
   useDisconnect,
   useParticleAuth,
-} from "@particle-network/connectkit";
+} from "@/app/lib/connectkit-compat";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   UniversalAccount,
@@ -7081,7 +7081,7 @@ const App = () => {
     projectAppUuid: process.env.NEXT_PUBLIC_APP_ID || "",
     rpcUrl: 'https://universal-rpc-staging.particle.network', // Bypass simulation for oracle-dependent contracts (Avantis perps)
     smartAccountOptions: {
-      useEIP7702: false, // Smart Account mode - 7702 requires Particle Auth (not Connect)
+      useEIP7702: true, // Magic auth + EOA signing path with UA 7702 enabled
       name: "UNIVERSAL",
       version: UNIVERSAL_ACCOUNT_VERSION,
       ownerAddress: address!,

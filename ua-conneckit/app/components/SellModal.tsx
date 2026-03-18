@@ -2,7 +2,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import type { UniversalAccount } from "@particle-network/universal-account-sdk";
-import { useWallets } from "@particle-network/connectkit";
+import { useWallets } from "@/app/lib/connectkit-compat";
 
 interface TokenToSell {
   symbol: string;

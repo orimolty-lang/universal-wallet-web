@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { IAssetsResponse, UniversalAccount } from "@particle-network/universal-account-sdk";
 import { executeSwap, executeSell, getChainIdFromBlockchain, pollTransactionDetails, getChainName } from "../lib/swapService";
-import { useWallets } from "@particle-network/connectkit";
+import { useWallets } from "@/app/lib/connectkit-compat";
 
 // Types
 interface TokenInfo {

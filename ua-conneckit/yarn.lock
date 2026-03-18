@@ -1200,6 +1200,24 @@
   dependencies:
     "@lit-labs/ssr-dom-shim" "^1.4.0"
 
+"@magic-ext/evm@^1.4.1":
+  version "1.4.1"
+  resolved "https://registry.npmjs.org/@magic-ext/evm/-/evm-1.4.1.tgz"
+  integrity sha512-z3efjiYotJfjwlV+BqGfF1ySX4MLSCCEVgYvT5p+vBZ3IFhnQFqAlCcp2QkDKgt70xVwoPCCJrMVlXzgU7B/+A==
+
+"@magic-sdk/provider@^33.6.1":
+  version "33.6.1"
+  resolved "https://registry.npmjs.org/@magic-sdk/provider/-/provider-33.6.1.tgz"
+  integrity sha512-W4qDE7/H/Y1NRwa0mGpy6vOvIU+pYXiExMdudnUmy53exk3wGy5dj9xztylHKxkHRMI//ANa6CfstnFeTL81ZA==
+  dependencies:
+    "@magic-sdk/types" "^27.6.0"
+    eventemitter3 "^4.0.4"
+
+"@magic-sdk/types@^27.6.0":
+  version "27.6.0"
+  resolved "https://registry.npmjs.org/@magic-sdk/types/-/types-27.6.0.tgz"
+  integrity sha512-qsR+zZacfYZV5VSJQsYfVkiBIhf1O0l2grO1XRLmWuPpQg3y9NPerGUJalucnLwITsSZrhghqSqooJdkelVZzA==
+
 "@metamask/abi-utils@^2.0.4":
   version "2.0.4"
   resolved "https://registry.npmjs.org/@metamask/abi-utils/-/abi-utils-2.0.4.tgz"
@@ -5049,6 +5067,11 @@ event-target-shim@^5.0.0:
   resolved "https://registry.npmjs.org/event-target-shim/-/event-target-shim-5.0.1.tgz"
   integrity sha512-i/2XbnSz/uxRCU6+NdVJgKWDTM427+MqYbkQzD321DuCQJUqOuJKIA0IM2+W2xtYHdKOmZ4dR6fExsd4SXL+WQ==
 
+eventemitter3@^4.0.4:
+  version "4.0.7"
+  resolved "https://registry.npmjs.org/eventemitter3/-/eventemitter3-4.0.7.tgz"
+  integrity sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw==
+
 eventemitter3@^4.0.7:
   version "4.0.7"
   resolved "https://registry.npmjs.org/eventemitter3/-/eventemitter3-4.0.7.tgz"
@@ -5561,6 +5584,11 @@ ignore@^7.0.0:
   resolved "https://registry.npmjs.org/ignore/-/ignore-7.0.5.tgz"
   integrity sha512-Hs59xBNfUIunMFgWAbGX5cq6893IbWg4KnrjbYwX3tx0ztorVgTDA6B2sxf8ejHJ4wz8BqGUMYlnzNBer5NvGg==
 
+immediate@~3.0.5:
+  version "3.0.6"
+  resolved "https://registry.npmjs.org/immediate/-/immediate-3.0.6.tgz"
+  integrity sha512-XXOFtyqDjNDAQxVfYxuF7g9Il/IbWmmlQg2MYKOH8ExIT1qg6xc4zyS3HaEEATgs1btfzxq15ciUiY7gjSXRGQ==
+
 import-fresh@^3.2.1:
   version "3.3.1"
   resolved "https://registry.npmjs.org/import-fresh/-/import-fresh-3.3.1.tgz"
@@ -6037,6 +6065,13 @@ libphonenumber-js@^1.10.31, libphonenumber-js@^1.10.36:
   resolved "https://registry.npmjs.org/libphonenumber-js/-/libphonenumber-js-1.12.25.tgz"
   integrity sha512-u90tUu/SEF8b+RaDKCoW7ZNFDakyBtFlX1ex3J+VH+ElWes/UaitJLt/w4jGu8uAE41lltV/s+kMVtywcMEg7g==
 
+lie@3.1.1:
+  version "3.1.1"
+  resolved "https://registry.npmjs.org/lie/-/lie-3.1.1.tgz"
+  integrity sha512-RiNhHysUjhrDQntfYSfY4MU24coXXdEOgw9WGcKHNeEwffDYbF//u87M1EWaMGzuFoSbqW0C9C6lEEhDOAswfw==
+  dependencies:
+    immediate "~3.0.5"
+
 lightweight-charts@^5.1.0:
   version "5.1.0"
   resolved "https://registry.npmjs.org/lightweight-charts/-/lightweight-charts-5.1.0.tgz"
@@ -6078,6 +6113,13 @@ lit@3.3.0:
     "@lit/reactive-element" "^2.1.0"
     lit-element "^4.2.0"
     lit-html "^3.3.0"
+
+localforage@^1.7.4:
+  version "1.10.0"
+  resolved "https://registry.npmjs.org/localforage/-/localforage-1.10.0.tgz"
+  integrity sha512-14/H1aX7hzBBmmh7sGPd+AOMkkIrHM3Z1PAyGgZigA1H1p5O5ANnMyWzvpAETtG68/dC4pC0ncy3+PPGzXZHPg==
+  dependencies:
+    lie "3.1.1"
 
 locate-path@^3.0.0:
   version "3.0.0"
@@ -6161,6 +6203,15 @@ lzutf8@^0.6.2, lzutf8@^0.6.3:
   integrity sha512-CAkF9HKrM+XpB0f3DepQ2to2iUEo0zrbh+XgBqgNBc1+k8HMM3u/YSfHI3Dr4GmoTIez2Pr/If1XFl3rU26AwA==
   dependencies:
     readable-stream "^4.0.0"
+
+magic-sdk@^33.6.1:
+  version "33.6.1"
+  resolved "https://registry.npmjs.org/magic-sdk/-/magic-sdk-33.6.1.tgz"
+  integrity sha512-F5RyTEwT2TnxlkitXPLjUXXVfShd3FbA0lOJFhqgavlda4pti7wnTG+jdFsEG7PpF/cPndKB5sOHXVj64bf93A==
+  dependencies:
+    "@magic-sdk/provider" "^33.6.1"
+    "@magic-sdk/types" "^27.6.0"
+    localforage "^1.7.4"
 
 make-error@^1.1.1:
   version "1.3.6"
