@@ -7203,7 +7203,7 @@ const App = () => {
     ownerAddress: address,
     evmAddress: accountInfo?.evmSmartAccount,
     solanaAddress: accountInfo?.solanaSmartAccount,
-    useEIP7702: false,
+    useEIP7702: true,
     onAssetUpdate: handleAssetUpdate,
     onTransactionUpdate: handleTransactionUpdate,
   });
