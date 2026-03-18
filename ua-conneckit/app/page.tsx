@@ -1766,10 +1766,13 @@ const ConvertModal = ({
         if (!ownerAddr) throw new Error('Wallet address unavailable');
 
         // Pre-delegate: if multiple chains need 7702 auth, relay may only allow 1 per txn.
-        // Use same userOps source as addDebug above (tx.userOps or feeQuotes[0].userOps)
         /* eslint-disable @typescript-eslint/no-explicit-any */
         const rawOps = (tx as any)?.userOps ?? (tx as any)?.feeQuotes?.[0]?.userOps ?? [];
-        /* eslint-enable @typescript-eslint/no-explicit-any */
+        const op0 = rawOps[0];
+        const op0Keys = op0 ? Object.keys(op0) : [];
+        const op0Auth = op0?.eip7702Auth;
+        const op0Delegated = op0?.eip7702Delegated;
+        addDebug(`rawOps=${rawOps.length} op0Keys=${op0Keys.slice(0, 8).join(",")} auth=${!!op0Auth} del=${op0Delegated}`);
         const chainsNeeding = rawOps
           .filter((op: { eip7702Auth?: unknown; eip7702Delegated?: unknown; chainId?: number }) =>
             op?.eip7702Auth && !op?.eip7702Delegated
@@ -1780,6 +1783,7 @@ const ConvertModal = ({
           .filter((c: number) => c > 0 && c !== 101) as number[];
         const chainsNeedingUnique: number[] = Array.from(new Set(chainsNeeding));
         addDebug(`chainsNeeding=[${chainsNeedingUnique.join(",")}] len=${chainsNeedingUnique.length} sign7702=${!!sign7702}`);
+        /* eslint-enable @typescript-eslint/no-explicit-any */
         if (chainsNeedingUnique.length > 1) {
           addDebug(`Pre-delegating ${chainsNeedingUnique.length} chains (relay: 1 delegation/txn)`);
           const walletRequest = (args: { method: string; params?: unknown[] }) =>
