@@ -12,6 +12,7 @@
     "@ethersproject/providers": "^5.8.0",
     "@ethersproject/wallet": "^5.8.0",
     "@magic-ext/evm": "^1.4.1",
+    "@magic-ext/webauthn": "^27.5.1",
     "@particle-network/auth-core": "^2.1.1",
     "@particle-network/authkit": "^2.1.1",
     "@particle-network/connectkit": "^2.1.3",

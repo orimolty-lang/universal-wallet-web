@@ -1205,6 +1205,11 @@
   resolved "https://registry.npmjs.org/@magic-ext/evm/-/evm-1.4.1.tgz"
   integrity sha512-z3efjiYotJfjwlV+BqGfF1ySX4MLSCCEVgYvT5p+vBZ3IFhnQFqAlCcp2QkDKgt70xVwoPCCJrMVlXzgU7B/+A==
 
+"@magic-ext/webauthn@^27.5.1":
+  version "27.5.1"
+  resolved "https://registry.npmjs.org/@magic-ext/webauthn/-/webauthn-27.5.1.tgz"
+  integrity sha512-983b6vccYCiCWZFc0EpHjhNYavjkCZxIjtDp7nuJOeMvN5DSgI/jCGv1fpCoyiYfIBrHnnSYHzWrsE4Wk3V30Q==
+
 "@magic-sdk/provider@^33.6.1":
   version "33.6.1"
   resolved "https://registry.npmjs.org/@magic-sdk/provider/-/provider-33.6.1.tgz"

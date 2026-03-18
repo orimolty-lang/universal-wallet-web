@@ -3,6 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Magic as MagicBase } from "magic-sdk";
 import { EVMExtension } from "@magic-ext/evm";
+import { WebAuthnExtension } from "@magic-ext/webauthn";
 import { BrowserProvider, type Eip1193Provider } from "ethers";
 
 type WalletClientLike = {
@@ -36,7 +37,7 @@ const CompatContext = createContext<CompatContextType>({
 });
 
 export function MagicAuthProvider({ children }: React.PropsWithChildren) {
-  const [magic, setMagic] = useState<MagicBase<[EVMExtension]> | null>(null);
+  const [magic, setMagic] = useState<MagicBase<[EVMExtension, WebAuthnExtension]> | null>(null);
   const [address, setAddress] = useState<`0x${string}` | undefined>(undefined);
 
   useEffect(() => {
@@ -53,6 +54,7 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
           { chainId: 10, rpcUrl: "https://mainnet.optimism.io" },
           { chainId: 43114, rpcUrl: "https://api.avax.network/ext/bc/C/rpc" },
         ]),
+        new WebAuthnExtension(),
       ],
     });
     setMagic(m);
@@ -77,14 +79,36 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
     }
 
     try {
-      // Prefer Magic's hosted auth UI so button click always opens a visible flow.
-      const walletWithUi = magic.wallet as unknown as { connectWithUI?: () => Promise<unknown> };
-      if (walletWithUi?.connectWithUI) {
-        await walletWithUi.connectWithUI();
-      } else {
+      const method = (window.prompt("Login method: passkey / email / ui", "ui") || "ui").toLowerCase().trim();
+
+      if (method === "passkey" || method === "webauthn") {
+        const username = window.prompt("Passkey username (required)");
+        if (!username) return;
+        const webauthn = magic.webauthn as unknown as {
+          login: (args: { username: string }) => Promise<unknown>;
+          registerNewUser: (args: { username: string }) => Promise<unknown>;
+        };
+        try {
+          await webauthn.login({ username });
+        } catch {
+          const shouldRegister = window.confirm("No passkey found. Register new passkey for this username?");
+          if (!shouldRegister) return;
+          await webauthn.registerNewUser({ username });
+        }
+      } else if (method === "email") {
         const email = window.prompt("Enter email for Magic login");
         if (!email) return;
         await magic.auth.loginWithEmailOTP({ email });
+      } else {
+        // Prefer Magic's hosted auth UI so button click always opens a visible flow.
+        const walletWithUi = magic.wallet as unknown as { connectWithUI?: () => Promise<unknown> };
+        if (walletWithUi?.connectWithUI) {
+          await walletWithUi.connectWithUI();
+        } else {
+          const email = window.prompt("Enter email for Magic login");
+          if (!email) return;
+          await magic.auth.loginWithEmailOTP({ email });
+        }
       }
     } catch {
       return;
