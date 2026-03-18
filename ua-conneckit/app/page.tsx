@@ -402,18 +402,20 @@ const build7702Authorizations = async ({
   tx,
   sign7702,
   walletAddress,
+  addDebug,
 }: {
   walletClient: WalletClientLike;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tx: any;
   sign7702?: ((p: { contractAddress: `0x${string}`; chainId: number; nonce: number }, o: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>) | null;
   walletAddress?: string;
+  addDebug?: (msg: string) => void;
 }): Promise<Eip7702Authorization[] | undefined> => {
   const userOps = tx?.userOps;
   if (!Array.isArray(userOps) || userOps.length === 0) return undefined;
 
   if (sign7702 && walletAddress) {
-    return handleEIP7702Authorizations(userOps, sign7702, walletAddress);
+    return handleEIP7702Authorizations(userOps, sign7702, walletAddress, addDebug);
   }
   const authorizations: Eip7702Authorization[] = [];
   const nonceMap = new Map<string, string>();
@@ -7058,6 +7060,8 @@ const SettingsModal = ({
   const [deployments, setDeployments] = useState<Array<{ chainId: number; isDelegated: boolean }>>([]);
   const [delegatingChainId, setDelegatingChainId] = useState<number | null>(null);
   const [chainError, setChainError] = useState<string | null>(null);
+  const [chainDebugLogs, setChainDebugLogs] = useState<string[]>([]);
+  const [showChainDebug, setShowChainDebug] = useState(false);
 
   useEffect(() => {
     if (isOpen && universalAccount) {
@@ -7075,37 +7079,53 @@ const SettingsModal = ({
     }
     setDelegatingChainId(chainId);
     setChainError(null);
+    setChainDebugLogs([]);
+    const addDebug = (msg: string) => {
+      setChainDebugLogs((prev) => [...prev.slice(-98), msg]);
+      console.log("[Delegate]", msg);
+    };
     try {
       const wc = primaryWallet.getWalletClient() as unknown as WalletClientLike;
       const ownerAddr = wc?.account?.address as string;
       if (!ownerAddr) throw new Error("Wallet address unavailable");
+      addDebug(`Start chain=${chainId} owner=${ownerAddr.slice(0, 10)}...`);
 
-      // Particle example: only UA flow - no eth_sendTransaction/type-4 (Privy rejects it)
-      const delResult = await createDelegationOnlyTx(universalAccount, chainId, ownerAddr);
+      const delResult = await createDelegationOnlyTx(universalAccount, chainId, ownerAddr, addDebug);
       if (!delResult || delResult.chainsNeedingAuth.length !== 1 || delResult.chainsNeedingAuth[0] !== chainId) {
         setChainError(`Could not create single-chain delegation for ${EVM_7702_CHAINS.find((c) => c.chainId === chainId)?.name ?? chainId}`);
         return;
       }
-      const delTx = delResult.tx as { rootHash?: string };
+      const delTx = delResult.tx as { rootHash?: string; userOps?: unknown[] };
       if (!delTx?.rootHash) throw new Error("No root hash");
+      addDebug(`rootHash=${String(delTx.rootHash).slice(0, 24)}... userOps=${delTx.userOps?.length ?? 0}`);
+      addDebug(`userOp[0] chain=${(delTx.userOps?.[0] as { chainId?: number })?.chainId} hash=${((delTx.userOps?.[0] as { userOpHash?: string })?.userOpHash ?? "").slice(0, 18)}...`);
+
       const delSig = await signUniversalRootHash({
         walletClient: wc,
         rootHash: delTx.rootHash as `0x${string}`,
         signerAddress: wc.account?.address as `0x${string}` | undefined,
         blindSigningEnabled,
       });
-      // Use Privy signAuthorization directly - matches Particle 7702 example
+      addDebug(`rootSig len=${delSig?.length ?? 0} prefix=${String(delSig).slice(0, 10)}...`);
+
       const delAuths = await build7702Authorizations({
         walletClient: wc,
         tx: delResult.tx,
         sign7702,
         walletAddress: ownerAddr,
+        addDebug,
       });
+      addDebug(`sendTransaction auths=${delAuths?.length ?? 0}`);
+
       await universalAccount.sendTransaction(delResult.tx as Parameters<UniversalAccount["sendTransaction"]>[0], delSig as string, delAuths);
+      addDebug("sendTransaction OK");
       onDelegationSuccess?.();
       setDeployments((prev) => prev.map((d) => (d.chainId === chainId ? { ...d, isDelegated: true } : d)));
     } catch (err) {
-      setChainError(err instanceof Error ? err.message : String(err));
+      const msg = err instanceof Error ? err.message : String(err);
+      addDebug(`ERROR: ${msg}`);
+      setChainError(msg);
+      setShowChainDebug(true);
     } finally {
       setDelegatingChainId(null);
     }
@@ -7119,9 +7139,27 @@ const SettingsModal = ({
         {/* Chains Section - per-chain 7702 delegation */}
         {universalAccount && (
           <>
-            <div className="text-gray-500 text-xs uppercase tracking-wider mb-2">Chains (7702)</div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-gray-500 text-xs uppercase tracking-wider">Chains (7702)</div>
+              <button
+                type="button"
+                onClick={() => setShowChainDebug(!showChainDebug)}
+                className="text-xs px-2 py-0.5 rounded bg-zinc-800 text-gray-400 hover:bg-zinc-700"
+              >
+                {showChainDebug ? "Hide" : "Debug"}
+              </button>
+            </div>
             <div className="text-[11px] text-gray-500 mb-2">Enable chains for multi-chain convert. One delegation per chain.</div>
             {chainError && <div className="text-red-500 text-sm mb-2">{chainError}</div>}
+            {showChainDebug && chainDebugLogs.length > 0 && (
+              <div className="mb-3 p-2 rounded bg-zinc-950 border border-zinc-700 max-h-32 overflow-y-auto">
+                <div className="text-[10px] font-mono text-gray-400 space-y-0.5">
+                  {chainDebugLogs.map((log, i) => (
+                    <div key={i}>{log}</div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="space-y-2 mb-4">
               {EVM_7702_CHAINS.map(({ chainId, name }) => {
                 const dep = deployments.find((d) => d.chainId === chainId);
