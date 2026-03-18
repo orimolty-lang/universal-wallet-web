@@ -49,7 +49,7 @@ export function getChainsNeedingAuth(
     const auth = op?.eip7702Auth;
     const delegated = op?.eip7702Delegated;
     if (auth && !delegated) {
-      const chainId = Number(auth.chainId ?? op.chainId);
+      const chainId = Number(op.chainId ?? auth.chainId);
       if (chainId > 0 && chainId !== 101) {
         chainIds.add(chainId);
       }

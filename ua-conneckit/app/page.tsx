@@ -1777,7 +1777,7 @@ const ConvertModal = ({
           op?.eip7702Auth && !op?.eip7702Delegated
         );
         const afterMap = afterFilter.map((op: { eip7702Auth?: { chainId?: unknown }; chainId?: unknown }) => {
-          const c = op.eip7702Auth?.chainId ?? op.chainId;
+          const c = op.chainId ?? op.eip7702Auth?.chainId;
           return typeof c === "number" ? c : typeof c === "string" ? parseInt(c, 10) : Number(c);
         });
         const chainsNeeding = afterMap.filter((c: number) => !Number.isNaN(c) && c > 0 && c !== 101) as number[];
