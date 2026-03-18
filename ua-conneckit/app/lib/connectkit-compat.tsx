@@ -3,7 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Magic as MagicBase } from "magic-sdk";
 import { EVMExtension } from "@magic-ext/evm";
-import { WebAuthnExtension } from "@magic-ext/webauthn";
+
 import { BrowserProvider, type Eip1193Provider } from "ethers";
 
 type WalletClientLike = {
@@ -37,7 +37,7 @@ const CompatContext = createContext<CompatContextType>({
 });
 
 export function MagicAuthProvider({ children }: React.PropsWithChildren) {
-  const [magic, setMagic] = useState<MagicBase<[EVMExtension, WebAuthnExtension]> | null>(null);
+  const [magic, setMagic] = useState<MagicBase<[EVMExtension]> | null>(null);
   const [address, setAddress] = useState<`0x${string}` | undefined>(undefined);
 
   useEffect(() => {
@@ -54,7 +54,6 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
           { chainId: 10, rpcUrl: "https://mainnet.optimism.io" },
           { chainId: 43114, rpcUrl: "https://api.avax.network/ext/bc/C/rpc" },
         ]),
-        new WebAuthnExtension(),
       ],
     });
     setMagic(m);
@@ -73,9 +72,7 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
   }, []);
 
   const [loginModalOpen, setLoginModalOpen] = useState(false);
-  const [loginMode, setLoginMode] = useState<"email" | "passkey" | "ui">("email");
   const [emailInput, setEmailInput] = useState("");
-  const [usernameInput, setUsernameInput] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginBusy, setLoginBusy] = useState(false);
 
@@ -91,19 +88,9 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
       window.alert("Magic is not configured. Set NEXT_PUBLIC_MAGIC_API_KEY and rebuild.");
       return;
     }
-
-    try {
-      const walletWithUi = magic.wallet as unknown as { connectWithUI?: () => Promise<unknown> };
-      if (walletWithUi?.connectWithUI) {
-        await walletWithUi.connectWithUI();
-      } else {
-        throw new Error("Hosted auth UI not available");
-      }
-      await refreshAddress();
-    } catch (e) {
-      setLoginError(e instanceof Error ? e.message : "Login failed");
-    }
-  }, [magic, refreshAddress]);
+    setLoginError(null);
+    setLoginModalOpen(true);
+  }, [magic]);
 
   const submitLogin = useCallback(async () => {
     if (!magic) return;
@@ -111,39 +98,17 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
     setLoginError(null);
 
     try {
-      if (loginMode === "email") {
-        if (!emailInput.trim()) throw new Error("Email is required");
-        await magic.auth.loginWithEmailOTP({ email: emailInput.trim() });
-      } else if (loginMode === "passkey") {
-        if (!usernameInput.trim()) throw new Error("Username is required for passkey login");
-        const webauthn = magic.webauthn as unknown as {
-          login: (args: { username: string }) => Promise<unknown>;
-          registerNewUser: (args: { username: string }) => Promise<unknown>;
-        };
-        try {
-          await webauthn.login({ username: usernameInput.trim() });
-        } catch {
-          await webauthn.registerNewUser({ username: usernameInput.trim() });
-        }
-      } else {
-        const walletWithUi = magic.wallet as unknown as { connectWithUI?: () => Promise<unknown> };
-        if (walletWithUi?.connectWithUI) {
-          await walletWithUi.connectWithUI();
-        } else {
-          throw new Error("Hosted auth UI not available");
-        }
-      }
-
+      if (!emailInput.trim()) throw new Error("Email is required");
+      await magic.auth.loginWithEmailOTP({ email: emailInput.trim(), showUI: false });
       await refreshAddress();
       setLoginModalOpen(false);
       setEmailInput("");
-      setUsernameInput("");
     } catch (e) {
       setLoginError(e instanceof Error ? e.message : "Login failed");
     } finally {
       setLoginBusy(false);
     }
-  }, [magic, loginMode, emailInput, usernameInput, refreshAddress]);
+  }, [magic, emailInput, refreshAddress]);
 
   const logout = useCallback(async () => {
     if (!magic) return;
@@ -188,58 +153,40 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
       {children}
 
       {loginModalOpen && (
-        <div className="fixed inset-0 z-[120] bg-black/70 flex items-center justify-center p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-[#151515] border border-zinc-800 p-4 space-y-3">
-            <div className="text-white font-bold text-lg">Login</div>
+        <div className="fixed inset-0 z-[120] bg-black/70" onClick={() => !loginBusy && setLoginModalOpen(false)}>
+          <div
+            className="absolute bottom-0 left-0 right-0 rounded-t-3xl bg-[#151515] border-t border-zinc-800 px-4 pt-3 pb-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-12 h-1.5 rounded-full bg-zinc-600 mx-auto mb-4" />
+            <div className="text-white font-bold text-lg mb-2">Continue with email</div>
+            <div className="text-gray-400 text-sm mb-3">We’ll send a one-time code to sign you in.</div>
 
-            <div className="grid grid-cols-3 gap-2">
-              {(["email", "passkey", "ui"] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setLoginMode(m)}
-                  className={`py-2 rounded-lg text-sm ${loginMode === m ? "bg-accent-dynamic text-black font-semibold" : "bg-zinc-800 text-gray-300"}`}
-                >
-                  {m === "ui" ? "social" : m}
-                </button>
-              ))}
-            </div>
+            <input
+              type="email"
+              value={emailInput}
+              onChange={(e) => setEmailInput(e.target.value)}
+              placeholder="you@example.com"
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-3 text-white outline-none"
+              autoFocus
+            />
 
-            {loginMode === "email" && (
-              <input
-                type="email"
-                value={emailInput}
-                onChange={(e) => setEmailInput(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-white outline-none"
-              />
-            )}
+            {loginError && <div className="text-red-400 text-xs mt-2">{loginError}</div>}
 
-            {loginMode === "passkey" && (
-              <input
-                type="text"
-                value={usernameInput}
-                onChange={(e) => setUsernameInput(e.target.value)}
-                placeholder="passkey username"
-                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-white outline-none"
-              />
-            )}
-
-            {loginError && <div className="text-red-400 text-xs">{loginError}</div>}
-
-            <div className="flex gap-2 pt-1">
+            <div className="flex gap-2 pt-3">
               <button
                 onClick={() => setLoginModalOpen(false)}
-                className="flex-1 py-2 rounded-lg bg-zinc-800 text-gray-300"
+                className="flex-1 py-3 rounded-lg bg-zinc-800 text-gray-300"
                 disabled={loginBusy}
               >
                 Cancel
               </button>
               <button
                 onClick={submitLogin}
-                className="flex-1 py-2 rounded-lg bg-accent-dynamic text-black font-semibold disabled:opacity-60"
+                className="flex-1 py-3 rounded-lg bg-accent-dynamic text-black font-semibold disabled:opacity-60"
                 disabled={loginBusy}
               >
-                {loginBusy ? "Working..." : "Continue"}
+                {loginBusy ? "Sending code..." : "Continue"}
               </button>
             </div>
           </div>
