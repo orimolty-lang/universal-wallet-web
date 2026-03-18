@@ -342,12 +342,6 @@ type WalletClientLike = {
   signMessage?: (args: { message: string | { raw: `0x${string}` } }) => Promise<unknown>;
 };
 
-type Eip7702AuthorizationPayload = {
-  r: `0x${string}`;
-  s: `0x${string}`;
-  v: number;
-};
-
 type Eip7702Authorization = { userOpHash: string; signature: string };
 
 
@@ -429,7 +423,7 @@ const build7702Authorizations = async ({
   }));
 
   const authorizations: Eip7702Authorization[] = [];
-  const nonceMap = new Map<string, string>();
+  const nonceMap = new Map<number, string>();
 
   for (const userOp of userOps) {
     const auth = userOp?.eip7702Auth;
@@ -439,7 +433,7 @@ const build7702Authorizations = async ({
     if (!Number.isFinite(chainIdForAuth) || chainIdForAuth <= 0) {
       throw new Error('Invalid chainId in eip7702Auth');
     }
-    const nonceKey = `${chainIdForAuth}:${auth.nonce}:${auth.address}`;
+    const nonceKey = Number(auth.nonce);
     let serialized = nonceMap.get(nonceKey);
 
     if (!serialized) {
@@ -451,13 +445,12 @@ const build7702Authorizations = async ({
 
       const payload = await walletClient.request({
         method: 'magic_wallet_sign_7702_authorization',
-        // Pass full auth object (demo-style parity) with explicit fallbacks.
+        // Demo parity: sign exact userOp auth payload for this chain.
         params: [
           {
-            ...auth,
             contractAddress: auth.address,
             chainId: chainIdForAuth,
-            nonce: auth.nonce,
+            nonce: Number(auth.nonce),
           },
         ],
       });
@@ -469,19 +462,24 @@ const build7702Authorizations = async ({
       const authObj = payload as {
         r?: `0x${string}`;
         s?: `0x${string}`;
-        v?: number;
+        v?: number | bigint;
         yParity?: 0 | 1 | number;
-        signature?: { serialized?: string };
       };
-      if (authObj?.signature?.serialized) {
-        serialized = authObj.signature.serialized;
-      } else if (authObj?.r && authObj?.s && (authObj?.yParity === 0 || authObj?.yParity === 1)) {
-        // Privy demo parity: prefer yParity-based signature reconstruction.
-        serialized = Signature.from({ r: authObj.r, s: authObj.s, yParity: authObj.yParity as 0 | 1 }).serialized;
-      } else {
-        const authSig = payload as Eip7702AuthorizationPayload;
-        serialized = Signature.from({ r: authSig.r, s: authSig.s, v: authSig.v }).serialized;
+
+      if (!authObj.r || !authObj.s || (authObj.yParity !== 0 && authObj.yParity !== 1 && authObj.v === undefined)) {
+        throw new Error('Invalid EIP-7702 signature payload');
       }
+
+      const sig = Signature.from({
+        r: authObj.r,
+        s: authObj.s,
+        ...(authObj.v !== undefined
+          ? { v: typeof authObj.v === 'bigint' ? authObj.v : BigInt(authObj.v) }
+          : { yParity: authObj.yParity as 0 | 1 }),
+        ...(authObj.yParity === 0 || authObj.yParity === 1 ? { yParity: authObj.yParity as 0 | 1 } : {}),
+      });
+
+      serialized = sig.serialized;
       nonceMap.set(nonceKey, serialized);
     }
 
