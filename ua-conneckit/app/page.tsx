@@ -423,7 +423,7 @@ const build7702Authorizations = async ({
   }));
 
   const authorizations: Eip7702Authorization[] = [];
-  const nonceMap = new Map<number, string>();
+  const nonceMap = new Map<string, string>();
 
   for (const userOp of userOps) {
     const auth = userOp?.eip7702Auth;
@@ -433,7 +433,7 @@ const build7702Authorizations = async ({
     if (!Number.isFinite(chainIdForAuth) || chainIdForAuth <= 0) {
       throw new Error('Invalid chainId in eip7702Auth');
     }
-    const nonceKey = Number(auth.nonce);
+    const nonceKey = `${chainIdForAuth}:${auth.nonce}`;
     let serialized = nonceMap.get(nonceKey);
 
     if (!serialized) {
