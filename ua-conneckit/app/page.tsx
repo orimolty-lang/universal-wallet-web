@@ -30,7 +30,7 @@ import {
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
 import { decodeFunctionResult, encodeFunctionData } from "viem";
-import { toBeHex } from "ethers";
+import { toBeHex, Signature } from "ethers";
 import { useUniversalAccountWS } from "./hooks/useUniversalAccountWS";
 
 // Mobula API for token search
@@ -342,6 +342,14 @@ type WalletClientLike = {
   signMessage?: (args: { message: string | { raw: `0x${string}` } }) => Promise<unknown>;
 };
 
+type Eip7702AuthorizationPayload = {
+  r: `0x${string}`;
+  s: `0x${string}`;
+  v: number;
+};
+
+type Eip7702Authorization = { userOpHash: string; signature: string };
+
 const signUniversalRootHash = async ({
   walletClient,
   rootHash,
@@ -387,6 +395,57 @@ const signUniversalRootHash = async ({
     throw new Error('Invalid signature response from wallet');
   }
   return signatureFallback;
+};
+
+const build7702Authorizations = async ({
+  walletClient,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx,
+}: {
+  walletClient: WalletClientLike;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx: any;
+}): Promise<Eip7702Authorization[] | undefined> => {
+  const userOps = tx?.userOps;
+  if (!Array.isArray(userOps) || userOps.length === 0) return undefined;
+
+  const authorizations: Eip7702Authorization[] = [];
+  const nonceMap = new Map<string, string>();
+
+  for (const userOp of userOps) {
+    const auth = userOp?.eip7702Auth;
+    if (!auth || userOp?.eip7702Delegated) continue;
+
+    const nonceKey = `${auth.chainId || userOp.chainId}:${auth.nonce}`;
+    let serialized = nonceMap.get(nonceKey);
+
+    if (!serialized) {
+      const payload = await walletClient.request({
+        method: 'magic_wallet_sign_7702_authorization',
+        params: [
+          {
+            contractAddress: auth.address,
+            chainId: auth.chainId || userOp.chainId,
+            nonce: auth.nonce,
+          },
+        ],
+      });
+
+      if (!payload || typeof payload !== 'object') {
+        throw new Error('Failed to sign EIP-7702 authorization');
+      }
+
+      const authSig = payload as Eip7702AuthorizationPayload;
+      serialized = Signature.from({ r: authSig.r, s: authSig.s, v: authSig.v }).serialized;
+      nonceMap.set(nonceKey, serialized);
+    }
+
+    if (serialized && userOp?.userOpHash) {
+      authorizations.push({ userOpHash: userOp.userOpHash, signature: serialized });
+    }
+  }
+
+  return authorizations.length ? authorizations : undefined;
 };
 
 // Token icon mapping
@@ -1157,7 +1216,8 @@ const SendModal = ({
       });
       if (!signature) throw new Error("Failed to sign");
 
-      const result = await universalAccount.sendTransaction(tx, signature as string);
+      const authorizations = await build7702Authorizations({ walletClient: primaryWallet.getWalletClient() as unknown as WalletClientLike, tx });
+      const result = await universalAccount.sendTransaction(tx, signature as string, authorizations);
       setTxResult({ txId: result.transactionId });
       onSuccess?.();
     } catch (err) {
@@ -1626,7 +1686,8 @@ const ConvertModal = ({
 
         // Send transaction
         setLoadingStatus('Sending transaction...');
-        const sendResult = await universalAccount.sendTransaction(tx, signature as string);
+        const authorizations = await build7702Authorizations({ walletClient: walletClient as unknown as WalletClientLike, tx });
+        const sendResult = await universalAccount.sendTransaction(tx, signature as string, authorizations);
         
         if (sendResult?.transactionId) {
           console.log('[Convert] Transaction sent:', sendResult.transactionId);
@@ -3240,7 +3301,8 @@ const PerpsModal = ({
               signerAddress: ownerEOA as `0x${string}`,
               blindSigningEnabled,
             });
-            const res = await universalAccount.sendTransaction(tx, signature as string);
+            const authorizations = await build7702Authorizations({ walletClient: walletClient as unknown as WalletClientLike, tx });
+            const res = await universalAccount.sendTransaction(tx, signature as string, authorizations);
             addDebug(`${label} sent: ${res?.transactionId || 'txid-missing'}`);
             return res;
           } catch (e) {
