@@ -5,6 +5,7 @@
 
 import type { UniversalAccount } from "@particle-network/universal-account-sdk";
 import { SUPPORTED_TOKEN_TYPE } from "@particle-network/universal-account-sdk";
+import { toBeHex } from "ethers";
 
 export type WalletClientLike = {
   account?: { address?: `0x${string}` };
@@ -57,10 +58,98 @@ export function getChainsNeedingAuth(
  * target chain, backend may return single-chain tx. Falls back to no-op
  * createUniversalTransaction.
  */
+export type AddDebugFn = (msg: string) => void;
+
+export type Sign7702Fn = (params: {
+  contractAddress: `0x${string}`;
+  chainId: number;
+  nonce: number;
+}, options: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>;
+
+/**
+ * Delegate directly on-chain via type-4 tx (Particle 7702-create-delegated pattern).
+ * Bypasses UA relay - no convert, no rate limit.
+ */
+export async function delegateChainDirectly(
+  universalAccount: UniversalAccount,
+  chainId: number,
+  signAuthorization: Sign7702Fn,
+  walletAddress: string,
+  walletRequest: (args: { method: string; params?: unknown[] }) => Promise<unknown>,
+  addDebug?: AddDebugFn
+): Promise<boolean> {
+  try {
+    const auths = await universalAccount.getEIP7702Auth([chainId]);
+    const auth = Array.isArray(auths) ? auths[0] : null;
+    if (!auth?.address || auth?.chainId == null || auth?.nonce == null) {
+      addDebug?.(`[7702] getEIP7702Auth returned no auth for chain ${chainId}`);
+      return false;
+    }
+
+    addDebug?.(`[7702] Signing direct delegation for chain ${chainId}...`);
+    const sig = await signAuthorization(
+      {
+        contractAddress: auth.address as `0x${string}`,
+        chainId: Number(auth.chainId),
+        nonce: Number(auth.nonce),
+      },
+      { address: walletAddress }
+    );
+
+    const signedAuth = {
+      address: auth.address,
+      chainId: Number(auth.chainId),
+      nonce: Number(auth.nonce),
+      r: sig.r.startsWith("0x") ? sig.r : `0x${sig.r}`,
+      s: sig.s.startsWith("0x") ? sig.s : `0x${sig.s}`,
+      yParity: sig.yParity as 0 | 1,
+    };
+
+    await walletRequest({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: toBeHex(chainId) }],
+    });
+
+    const nonceHex = await walletRequest({
+      method: "eth_getTransactionCount",
+      params: [walletAddress, "latest"],
+    });
+    const nonce = typeof nonceHex === "string" ? parseInt(nonceHex, 16) : 0;
+
+    const txHash = await walletRequest({
+      method: "eth_sendTransaction",
+      params: [
+        {
+          from: walletAddress,
+          to: "0x0000000000000000000000000000000000000000",
+          type: "0x4",
+          authorizationList: [signedAuth],
+          accessList: [],
+          nonce: toBeHex(nonce),
+          maxFeePerGas: toBeHex(BigInt(0.1 * 1e9)),
+          maxPriorityFeePerGas: toBeHex(BigInt(0.1 * 1e9)),
+          gas: toBeHex(BigInt(21000)),
+        },
+      ],
+    });
+
+    if (txHash && typeof txHash === "string") {
+      addDebug?.(`[7702] Delegated chain ${chainId} tx=${txHash.slice(0, 18)}...`);
+      return true;
+    }
+    return false;
+  } catch (err) {
+    addDebug?.(`[7702] delegateChainDirectly failed: ${err instanceof Error ? err.message : String(err)}`);
+    console.warn("[7702] delegateChainDirectly failed:", err);
+    return false;
+  }
+}
+
 export async function createDelegationOnlyTx(
   universalAccount: UniversalAccount,
   chainId: number,
-  _ownerAddress: string
+  _ownerAddress: string,
+  addDebug?: AddDebugFn
 ): Promise<{ tx: unknown; chainsNeedingAuth: number[] } | null> {
   // 1. Try minimal convert - often single-chain when user has balance on target
   try {
@@ -89,6 +178,11 @@ export async function createDelegationOnlyTx(
       ],
     });
     const chainsNeedingAuth = getChainsNeedingAuth(tx);
+    const userOps = (tx as { userOps?: unknown[] })?.userOps ?? [];
+    const hasAuth = userOps.some((u: unknown) => !!(u as Record<string, unknown>)?.eip7702Auth);
+    const summary = `no-op chain=${chainId} userOps=${userOps.length} hasAuth=${hasAuth} chainsNeeding=${chainsNeedingAuth.join(",") || "none"}`;
+    console.log("[7702] createUniversalTransaction no-op:", summary);
+    addDebug?.(`[7702] ${summary}`);
     return { tx, chainsNeedingAuth };
   } catch (err) {
     console.warn("[7702] createDelegationOnlyTx failed:", err);

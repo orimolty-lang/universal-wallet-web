@@ -6,6 +6,7 @@ import {
   useWallets,
   useDisconnect,
   useParticleAuth,
+  useSign7702AuthorizationCompat,
 } from "@/app/lib/connectkit-compat";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
@@ -32,7 +33,7 @@ import {
 import { decodeFunctionResult, encodeFunctionData } from "viem";
 import { toBeHex, Signature, formatUnits } from "ethers";
 import { useUniversalAccountWS } from "./hooks/useUniversalAccountWS";
-import { getChainsNeedingAuth, createDelegationOnlyTx, getEIP7702Deployments } from "../lib/eip7702";
+import { getChainsNeedingAuth, createDelegationOnlyTx, getEIP7702Deployments, delegateChainDirectly } from "../lib/eip7702";
 
 // Mobula API for token search
 const MOBULA_API_KEY = "a8e6a174-9dfd-4929-b0e0-9f6ece767923";
@@ -1454,6 +1455,7 @@ const ConvertModal = ({
   onSuccess?: () => void; // Callback to refresh balances
 }) => {
   const [primaryWallet] = useWallets();
+  const sign7702 = useSign7702AuthorizationCompat();
   const [fromAsset, setFromAsset] = useState<string>('');
   const [fromChain, setFromChain] = useState<number | null>(null);
   const [toAsset, setToAsset] = useState<string>('');
@@ -1764,14 +1766,29 @@ const ConvertModal = ({
         if (!ownerAddr) throw new Error('Wallet address unavailable');
 
         // Pre-delegate: if multiple chains need 7702 auth, relay may only allow 1 per txn.
-        // Run delegation-only tx for each chain first (one chain per tx).
+        // Try direct type-4 delegation first (no convert, no rate limit). Fallback to UA delegation tx.
         const chainsNeeding = getChainsNeedingAuth(tx);
         if (chainsNeeding.length > 1) {
           addDebug(`Pre-delegating ${chainsNeeding.length} chains (relay: 1 delegation/txn)`);
+          const walletRequest = (args: { method: string; params?: unknown[] }) =>
+            wc.request(args as { method: string; params?: unknown[] });
           for (const chainId of chainsNeeding) {
             setLoadingStatus(`Delegating on chain ${chainId}...`);
-            const delResult = await createDelegationOnlyTx(universalAccount, chainId, ownerAddr);
-            // Only run when delegation tx has exactly 1 chain (avoid AA24)
+            if (sign7702) {
+              const ok = await delegateChainDirectly(
+                universalAccount,
+                chainId,
+                sign7702,
+                ownerAddr,
+                walletRequest,
+                addDebug
+              );
+              if (ok) {
+                await new Promise((r) => setTimeout(r, 2000));
+                continue;
+              }
+            }
+            const delResult = await createDelegationOnlyTx(universalAccount, chainId, ownerAddr, addDebug);
             if (!delResult || delResult.chainsNeedingAuth.length !== 1 || delResult.chainsNeedingAuth[0] !== chainId) {
               addDebug(`Skip chain ${chainId}: delegation tx would need ${delResult?.chainsNeedingAuth?.length ?? 0} chains`);
               continue;
@@ -1788,7 +1805,6 @@ const ConvertModal = ({
             const delAuths = await build7702Authorizations({ walletClient: wc, tx: delTx });
             await universalAccount.sendTransaction(delTx, delSig as string, delAuths);
             addDebug(`Delegated chain ${chainId}`);
-            // Brief delay so backend can see delegation before re-creating convert tx
             await new Promise((r) => setTimeout(r, 2000));
           }
           // Re-create convert tx; delegated chains should now have eip7702Delegated=true

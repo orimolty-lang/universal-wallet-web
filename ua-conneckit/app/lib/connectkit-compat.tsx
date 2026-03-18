@@ -23,12 +23,19 @@ type WalletClientLike = {
   }) => Promise<string>;
 };
 
+type Sign7702Fn = (params: {
+  contractAddress: `0x${string}`;
+  chainId: number;
+  nonce: number;
+}, options: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>;
+
 type CompatContextType = {
   isConnected: boolean;
   address?: `0x${string}`;
   login: () => Promise<void>;
   logout: () => Promise<void>;
   getWalletClient: () => WalletClientLike;
+  sign7702Authorization: Sign7702Fn | null;
 };
 
 const CompatContext = createContext<CompatContextType>({
@@ -39,6 +46,7 @@ const CompatContext = createContext<CompatContextType>({
   getWalletClient: () => {
     throw new Error("Wallet not connected");
   },
+  sign7702Authorization: null,
 });
 
 function PrivyAuthInner({ children }: React.PropsWithChildren) {
@@ -117,9 +125,25 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
     };
   }, [embeddedWallet, address, signAuthorization]);
 
+  const sign7702Authorization = useCallback<Sign7702Fn>(
+    (params, options) =>
+      signAuthorization(
+        { contractAddress: params.contractAddress, chainId: params.chainId, nonce: params.nonce },
+        { address: options.address }
+      ),
+    [signAuthorization]
+  );
+
   const value = useMemo(
-    () => ({ isConnected: !!(ready && authenticated && address), address, login: doLogin, logout: doLogout, getWalletClient }),
-    [ready, authenticated, address, doLogin, doLogout, getWalletClient]
+    () => ({
+      isConnected: !!(ready && authenticated && address),
+      address,
+      login: doLogin,
+      logout: doLogout,
+      getWalletClient,
+      sign7702Authorization: address ? sign7702Authorization : null,
+    }),
+    [ready, authenticated, address, doLogin, doLogout, getWalletClient, sign7702Authorization]
   );
 
   return <CompatContext.Provider value={value}>{children}</CompatContext.Provider>;
@@ -152,6 +176,11 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
 export function useAccount() {
   const { isConnected, address } = useContext(CompatContext);
   return { isConnected, address };
+}
+
+export function useSign7702AuthorizationCompat() {
+  const { sign7702Authorization } = useContext(CompatContext);
+  return sign7702Authorization;
 }
 
 type CompatWallet = { getWalletClient: () => WalletClientLike };
