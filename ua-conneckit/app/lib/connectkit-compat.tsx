@@ -72,52 +72,69 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
     })();
   }, []);
 
+  const [loginModalOpen, setLoginModalOpen] = useState(false);
+  const [loginMode, setLoginMode] = useState<"email" | "passkey" | "ui">("email");
+  const [emailInput, setEmailInput] = useState("");
+  const [usernameInput, setUsernameInput] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginBusy, setLoginBusy] = useState(false);
+
+  const refreshAddress = useCallback(async () => {
+    if (!magic) return;
+    const info = await magic.user.getInfo();
+    const publicAddress = info?.wallets?.ethereum?.publicAddress;
+    if (publicAddress) setAddress(publicAddress as `0x${string}`);
+  }, [magic]);
+
   const login = useCallback(async () => {
     if (!magic) {
       window.alert("Magic is not configured. Set NEXT_PUBLIC_MAGIC_API_KEY and rebuild.");
       return;
     }
+    setLoginError(null);
+    setLoginMode("email");
+    setLoginModalOpen(true);
+  }, [magic]);
+
+  const submitLogin = useCallback(async () => {
+    if (!magic) return;
+    setLoginBusy(true);
+    setLoginError(null);
 
     try {
-      const method = (window.prompt("Login method: passkey / email / ui", "ui") || "ui").toLowerCase().trim();
-
-      if (method === "passkey" || method === "webauthn") {
-        const username = window.prompt("Passkey username (required)");
-        if (!username) return;
+      if (loginMode === "email") {
+        if (!emailInput.trim()) throw new Error("Email is required");
+        await magic.auth.loginWithEmailOTP({ email: emailInput.trim() });
+      } else if (loginMode === "passkey") {
+        if (!usernameInput.trim()) throw new Error("Username is required for passkey login");
         const webauthn = magic.webauthn as unknown as {
           login: (args: { username: string }) => Promise<unknown>;
           registerNewUser: (args: { username: string }) => Promise<unknown>;
         };
         try {
-          await webauthn.login({ username });
+          await webauthn.login({ username: usernameInput.trim() });
         } catch {
-          const shouldRegister = window.confirm("No passkey found. Register new passkey for this username?");
-          if (!shouldRegister) return;
-          await webauthn.registerNewUser({ username });
+          await webauthn.registerNewUser({ username: usernameInput.trim() });
         }
-      } else if (method === "email") {
-        const email = window.prompt("Enter email for Magic login");
-        if (!email) return;
-        await magic.auth.loginWithEmailOTP({ email });
       } else {
-        // Prefer Magic's hosted auth UI so button click always opens a visible flow.
         const walletWithUi = magic.wallet as unknown as { connectWithUI?: () => Promise<unknown> };
         if (walletWithUi?.connectWithUI) {
           await walletWithUi.connectWithUI();
         } else {
-          const email = window.prompt("Enter email for Magic login");
-          if (!email) return;
-          await magic.auth.loginWithEmailOTP({ email });
+          throw new Error("Hosted auth UI not available");
         }
       }
-    } catch {
-      return;
-    }
 
-    const info = await magic.user.getInfo();
-    const publicAddress = info?.wallets?.ethereum?.publicAddress;
-    if (publicAddress) setAddress(publicAddress as `0x${string}`);
-  }, [magic]);
+      await refreshAddress();
+      setLoginModalOpen(false);
+      setEmailInput("");
+      setUsernameInput("");
+    } catch (e) {
+      setLoginError(e instanceof Error ? e.message : "Login failed");
+    } finally {
+      setLoginBusy(false);
+    }
+  }, [magic, loginMode, emailInput, usernameInput, refreshAddress]);
 
   const logout = useCallback(async () => {
     if (!magic) return;
@@ -157,7 +174,70 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
     [address, login, logout, getWalletClient]
   );
 
-  return <CompatContext.Provider value={value}>{children}</CompatContext.Provider>;
+  return (
+    <CompatContext.Provider value={value}>
+      {children}
+
+      {loginModalOpen && (
+        <div className="fixed inset-0 z-[120] bg-black/70 flex items-center justify-center p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-[#151515] border border-zinc-800 p-4 space-y-3">
+            <div className="text-white font-bold text-lg">Login</div>
+
+            <div className="grid grid-cols-3 gap-2">
+              {(["email", "passkey", "ui"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setLoginMode(m)}
+                  className={`py-2 rounded-lg text-sm ${loginMode === m ? "bg-accent-dynamic text-black font-semibold" : "bg-zinc-800 text-gray-300"}`}
+                >
+                  {m === "ui" ? "social" : m}
+                </button>
+              ))}
+            </div>
+
+            {loginMode === "email" && (
+              <input
+                type="email"
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
+                placeholder="you@example.com"
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-white outline-none"
+              />
+            )}
+
+            {loginMode === "passkey" && (
+              <input
+                type="text"
+                value={usernameInput}
+                onChange={(e) => setUsernameInput(e.target.value)}
+                placeholder="passkey username"
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-white outline-none"
+              />
+            )}
+
+            {loginError && <div className="text-red-400 text-xs">{loginError}</div>}
+
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setLoginModalOpen(false)}
+                className="flex-1 py-2 rounded-lg bg-zinc-800 text-gray-300"
+                disabled={loginBusy}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitLogin}
+                className="flex-1 py-2 rounded-lg bg-accent-dynamic text-black font-semibold disabled:opacity-60"
+                disabled={loginBusy}
+              >
+                {loginBusy ? "Working..." : "Continue"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </CompatContext.Provider>
+  );
 }
 
 export function useAccount() {
