@@ -437,12 +437,6 @@ const build7702Authorizations = async ({
     let serialized = nonceMap.get(nonceKey);
 
     if (!serialized) {
-      // Ensure wallet is on the chain of the userOp auth before signing.
-      await walletClient.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: toBeHex(Number(chainIdForAuth)) }],
-      });
-
       const payload = await walletClient.request({
         method: 'magic_wallet_sign_7702_authorization',
         // Demo parity: sign exact userOp auth payload for this chain.
@@ -470,13 +464,12 @@ const build7702Authorizations = async ({
         throw new Error('Invalid EIP-7702 signature payload');
       }
 
+      // Match Particle 7702 example: v ?? BigInt(yParity), always pass yParity
       const sig = Signature.from({
         r: authObj.r,
         s: authObj.s,
-        ...(authObj.v !== undefined
-          ? { v: typeof authObj.v === 'bigint' ? authObj.v : BigInt(authObj.v) }
-          : { yParity: authObj.yParity as 0 | 1 }),
-        ...(authObj.yParity === 0 || authObj.yParity === 1 ? { yParity: authObj.yParity as 0 | 1 } : {}),
+        v: authObj.v !== undefined ? (typeof authObj.v === 'bigint' ? authObj.v : BigInt(authObj.v)) : BigInt(authObj.yParity as 0 | 1),
+        yParity: authObj.yParity as 0 | 1,
       });
 
       serialized = sig.serialized;
