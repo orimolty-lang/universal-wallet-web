@@ -187,6 +187,15 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
     const magicProvider = (magic as unknown as { rpcProvider: Eip1193Provider }).rpcProvider;
 
     const request = async ({ method, params }: { method: string; params?: unknown[] }) => {
+      // Magic does not support wallet_switchEthereumChain over raw RPC.
+      if (method === "wallet_switchEthereumChain") {
+        const chainHex = (params?.[0] as { chainId?: string } | undefined)?.chainId;
+        const chainId = chainHex ? Number(chainHex) : NaN;
+        if (!Number.isFinite(chainId)) throw new Error("Invalid chainId for wallet_switchEthereumChain");
+        await magic.evm.switchChain(chainId);
+        return null;
+      }
+
       const provider = new BrowserProvider(magicProvider);
       return provider.send(method, params || []);
     };
