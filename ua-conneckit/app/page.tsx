@@ -437,6 +437,12 @@ const build7702Authorizations = async ({
     let serialized = nonceMap.get(nonceKey);
 
     if (!serialized) {
+      // Switch to auth chain before signing (Privy embedded wallet may need correct chain context)
+      await walletClient.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: toBeHex(Number(chainIdForAuth)) }],
+      });
+
       const payload = await walletClient.request({
         method: 'magic_wallet_sign_7702_authorization',
         // Demo parity: sign exact userOp auth payload for this chain.
