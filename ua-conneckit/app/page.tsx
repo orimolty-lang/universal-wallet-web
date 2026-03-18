@@ -7,6 +7,7 @@ import {
   useDisconnect,
   useParticleAuth,
   useSign7702AuthorizationCompat,
+  useSignMessageCompat,
 } from "@/app/lib/connectkit-compat";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
@@ -7062,6 +7063,7 @@ const SettingsModal = ({
   universalAccount,
   primaryWallet,
   sign7702,
+  signMessage,
   onDelegationSuccess,
 }: {
   isOpen: boolean;
@@ -7075,6 +7077,7 @@ const SettingsModal = ({
   universalAccount: UniversalAccount | null;
   primaryWallet: { getWalletClient: () => WalletClientLike } | undefined;
   sign7702: ((p: { contractAddress: `0x${string}`; chainId: number; nonce: number }, o: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>) | null;
+  signMessage: ((p: { message: string }, o: { uiOptions?: { title?: string }; address: string }) => Promise<{ signature: string }>) | null;
   onDelegationSuccess?: () => void;
 }) => {
   const [deployments, setDeployments] = useState<Array<{ chainId: number; isDelegated: boolean }>>([]);
@@ -7093,7 +7096,7 @@ const SettingsModal = ({
   }, [isOpen, universalAccount]);
 
   const handleDelegateChain = async (chainId: number) => {
-    if (!universalAccount || !primaryWallet || !sign7702) {
+    if (!universalAccount || !primaryWallet || !sign7702 || !signMessage) {
       setChainError("Wallet not connected");
       return;
     }
@@ -7120,14 +7123,13 @@ const SettingsModal = ({
       addDebug(`rootHash=${String(delTx.rootHash).slice(0, 24)}... userOps=${delTx.userOps?.length ?? 0}`);
       addDebug(`userOp[0] chain=${(delTx.userOps?.[0] as { chainId?: number })?.chainId} hash=${((delTx.userOps?.[0] as { userOpHash?: string })?.userOpHash ?? "").slice(0, 18)}...`);
 
-      const delSig = await signUniversalRootHash({
-        walletClient: wc,
-        rootHash: delTx.rootHash as `0x${string}`,
-        signerAddress: wc.account?.address as `0x${string}` | undefined,
-        blindSigningEnabled,
-        addDebug,
-      });
-      addDebug(`rootSig len=${delSig?.length ?? 0} prefix=${String(delSig).slice(0, 10)}...`);
+      // Particle demo: use Privy signMessage({ message: rootHash }) - NOT secp256k1_sign
+      const chainName = EVM_7702_CHAINS.find((c) => c.chainId === chainId)?.name ?? `Chain ${chainId}`;
+      const { signature: delSig } = await signMessage(
+        { message: delTx.rootHash },
+        { uiOptions: { title: `Delegate ${chainName}` }, address: ownerAddr }
+      );
+      addDebug(`rootSig via Privy signMessage len=${delSig?.length ?? 0} prefix=${String(delSig).slice(0, 10)}...`);
 
       const delAuths = await build7702Authorizations({
         walletClient: wc,
@@ -7390,6 +7392,7 @@ const BottomNav = ({
 const App = () => {
   const wallets = useWallets();
   const sign7702 = useSign7702AuthorizationCompat();
+  const signMessage = useSignMessageCompat();
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
   const { openAccountAndSecurity, openSetMasterPassword } = useParticleAuth();
@@ -7921,6 +7924,7 @@ const App = () => {
         universalAccount={universalAccountInstance}
         primaryWallet={wallets?.[0] as { getWalletClient: () => WalletClientLike } | undefined}
         sign7702={sign7702}
+        signMessage={signMessage}
         onDelegationSuccess={fetchAssets}
       />
       
