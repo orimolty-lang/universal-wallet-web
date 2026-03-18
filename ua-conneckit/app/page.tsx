@@ -1773,15 +1773,16 @@ const ConvertModal = ({
         const op0Auth = op0?.eip7702Auth;
         const op0Delegated = op0?.eip7702Delegated;
         addDebug(`rawOps=${rawOps.length} op0Keys=${op0Keys.slice(0, 8).join(",")} auth=${!!op0Auth} del=${op0Delegated}`);
-        const chainsNeeding = rawOps
-          .filter((op: { eip7702Auth?: unknown; eip7702Delegated?: unknown; chainId?: number }) =>
-            op?.eip7702Auth && !op?.eip7702Delegated
-          )
-          .map((op: { eip7702Auth?: { chainId?: number }; chainId?: number }) =>
-            Number(op.eip7702Auth?.chainId ?? op.chainId)
-          )
-          .filter((c: number) => c > 0 && c !== 101) as number[];
+        const afterFilter = rawOps.filter((op: { eip7702Auth?: unknown; eip7702Delegated?: unknown }) =>
+          op?.eip7702Auth && !op?.eip7702Delegated
+        );
+        const afterMap = afterFilter.map((op: { eip7702Auth?: { chainId?: unknown }; chainId?: unknown }) => {
+          const c = op.eip7702Auth?.chainId ?? op.chainId;
+          return typeof c === "number" ? c : typeof c === "string" ? parseInt(c, 10) : Number(c);
+        });
+        const chainsNeeding = afterMap.filter((c: number) => !Number.isNaN(c) && c > 0 && c !== 101) as number[];
         const chainsNeedingUnique: number[] = Array.from(new Set(chainsNeeding));
+        addDebug(`afterFilter=${afterFilter.length} afterMap=[${afterMap.join(",")}] chains=[${chainsNeeding.join(",")}]`);
         addDebug(`chainsNeeding=[${chainsNeedingUnique.join(",")}] len=${chainsNeedingUnique.length} sign7702=${!!sign7702}`);
         /* eslint-enable @typescript-eslint/no-explicit-any */
         if (chainsNeedingUnique.length > 1) {
