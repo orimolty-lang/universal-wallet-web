@@ -40,8 +40,7 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
   const [address, setAddress] = useState<`0x${string}` | undefined>(undefined);
 
   useEffect(() => {
-    const key = process.env.NEXT_PUBLIC_MAGIC_API_KEY;
-    if (!key) return;
+    const key = process.env.NEXT_PUBLIC_MAGIC_API_KEY || "pk_live_AB1F8BDA7B5395CC";
 
     const m = new MagicBase(key, {
       extensions: [
@@ -164,7 +163,7 @@ export function useParticleAuth() {
 
 export function ConnectButton({ label = "Connect" }: { label?: string }) {
   const { isConnected, address, login, logout } = useContext(CompatContext);
-  const magicConfigured = !!process.env.NEXT_PUBLIC_MAGIC_API_KEY;
+  const magicConfigured = !!(process.env.NEXT_PUBLIC_MAGIC_API_KEY || "pk_live_AB1F8BDA7B5395CC");
   return (
     <button
       onClick={isConnected ? logout : login}
