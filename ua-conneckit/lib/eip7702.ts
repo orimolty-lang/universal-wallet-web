@@ -109,11 +109,20 @@ export function getChainsNeedingAuth(
   return Array.from(chainIds);
 }
 
+/** USDC addresses per chain - same as Particle demo TransferCard */
+const CHAIN_USDC: Record<number, string> = {
+  1: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+  10: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+  56: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+  137: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+  8453: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  42161: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+  43114: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
+};
+
 /**
- * Create a minimal "delegation-only" transaction for a single chain.
- * Tries createConvertTransaction (tiny amount) first - when user has balance on
- * target chain, backend may return single-chain tx. Falls back to no-op
- * createUniversalTransaction.
+ * Create delegation tx - use REAL transaction like Particle demo (USDC transfer to self).
+ * Demo does createUniversalTransaction with expectTokens + ERC20 transfer. No-op fails AA24.
  */
 export type AddDebugFn = (msg: string) => void;
 
@@ -199,45 +208,49 @@ export async function delegateChainDirectly(
 export async function createDelegationOnlyTx(
   universalAccount: UniversalAccount,
   chainId: number,
-  _ownerAddress: string,
+  ownerAddress: string,
   addDebug?: AddDebugFn
 ): Promise<{ tx: unknown; chainsNeedingAuth: number[] } | null> {
-  // 1. Try minimal convert - often single-chain when user has balance on target
-  try {
-    const convertTx = await universalAccount.createConvertTransaction(
-      {
+  const usdcAddr = CHAIN_USDC[chainId];
+  const { Interface, parseUnits } = await import("ethers");
+  const erc20 = new Interface(["function transfer(address to, uint256 amount) returns (bool)"]);
+  const amount6 = parseUnits("0.000001", 6);
+
+  // 1. Try real USDC transfer like Particle demo (user needs 0.000001 USDC on chain)
+  if (usdcAddr) {
+    try {
+      const tx = await universalAccount.createUniversalTransaction({
         chainId,
-        expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: "0.000001" },
-      },
-      { usePrimaryTokens: [SUPPORTED_TOKEN_TYPE.USDC] }
-    );
-    const chains = getChainsNeedingAuth(convertTx);
-    if (chains.length === 1 && chains[0] === chainId) {
-      return { tx: convertTx, chainsNeedingAuth: chains };
+        expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.USDC, amount: "0.000001" }],
+        transactions: [
+          { to: usdcAddr as `0x${string}`, data: erc20.encodeFunctionData("transfer", [ownerAddress, amount6]) },
+        ],
+      });
+      const chains = getChainsNeedingAuth(tx);
+      if (chains.length === 1 && chains[0] === chainId) {
+        addDebug?.(`[7702] USDC transfer chain=${chainId} (demo-aligned)`);
+        return { tx, chainsNeedingAuth: chains };
+      }
+    } catch {
+      // Fall through to ETH
     }
-  } catch {
-    // Fall through to no-op
   }
 
-  // 2. Fallback: no-op per official example - expectTokens + transactions
-  // Official: expectTokens: [{ tokenAddress/type, amount }], transactions: [{ to, data, value }]
+  // 2. Fallback: 1 wei ETH to self (user needs any ETH on chain)
   try {
     const tx = await universalAccount.createUniversalTransaction({
       chainId,
       expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: "0.000000000000000001" }],
-      transactions: [
-        { to: _ownerAddress as `0x${string}`, data: "0x", value: "0" },
-      ],
+      transactions: [{ to: ownerAddress as `0x${string}`, data: "0x", value: "0x1" }],
     });
-    const chainsNeedingAuth = getChainsNeedingAuth(tx);
-    const userOps = (tx as { userOps?: unknown[] })?.userOps ?? [];
-    const hasAuth = userOps.some((u: unknown) => !!(u as Record<string, unknown>)?.eip7702Auth);
-    const summary = `no-op chain=${chainId} userOps=${userOps.length} hasAuth=${hasAuth} chainsNeeding=${chainsNeedingAuth.join(",") || "none"}`;
-    console.log("[7702] createUniversalTransaction no-op:", summary);
-    addDebug?.(`[7702] ${summary}`);
-    return { tx, chainsNeedingAuth };
+    const chains = getChainsNeedingAuth(tx);
+    if (chains.length === 1 && chains[0] === chainId) {
+      addDebug?.(`[7702] ETH 1wei transfer chain=${chainId}`);
+      return { tx, chainsNeedingAuth: chains };
+    }
   } catch (err) {
+    addDebug?.(`[7702] createDelegationOnlyTx failed: ${err instanceof Error ? err.message : String(err)}`);
     console.warn("[7702] createDelegationOnlyTx failed:", err);
-    return null;
   }
+  return null;
 }
