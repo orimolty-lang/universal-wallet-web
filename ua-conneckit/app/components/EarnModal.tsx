@@ -42,12 +42,22 @@ const signUniversalRootHash = async (
     }
   }
 
-  const sig = await walletClient.request({
+  try {
+    const sig = await walletClient.request({
+      method: "personal_sign",
+      params: [rootHash, signer],
+    });
+    if (typeof sig === "string") return sig;
+  } catch {
+    // fallback for providers that expect [address, message]
+  }
+
+  const sigFallback = await walletClient.request({
     method: "personal_sign",
-    params: [rootHash, signer],
+    params: [signer, rootHash],
   });
-  if (typeof sig !== "string") throw new Error("Invalid signature");
-  return sig;
+  if (typeof sigFallback !== "string") throw new Error("Invalid signature");
+  return sigFallback;
 };
 
 const CHAIN_ID_MAP: Record<number, number> = {

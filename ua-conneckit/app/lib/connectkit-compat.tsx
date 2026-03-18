@@ -197,9 +197,16 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
       signMessage: async ({ account, message }) => {
         const raw = typeof message === "string" ? message : message.raw;
         const signerAddress = account || address;
-        const sig = await request({ method: "personal_sign", params: [raw, signerAddress] });
-        if (typeof sig !== "string") throw new Error("Invalid signature response");
-        return sig;
+        try {
+          const sig = await request({ method: "personal_sign", params: [raw, signerAddress] });
+          if (typeof sig === "string") return sig;
+        } catch {
+          // fallback below
+        }
+
+        const sigFallback = await request({ method: "personal_sign", params: [signerAddress, raw] });
+        if (typeof sigFallback !== "string") throw new Error("Invalid signature response");
+        return sigFallback;
       },
       signTypedData: async ({ domain, types, message }) => {
         const provider = new BrowserProvider(magicProvider);

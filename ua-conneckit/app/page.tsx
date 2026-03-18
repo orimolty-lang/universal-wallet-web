@@ -369,14 +369,24 @@ const signUniversalRootHash = async ({
     }
   }
 
-  const signature = await walletClient.request({
+  try {
+    const signature = await walletClient.request({
+      method: 'personal_sign',
+      params: [rootHash, signer],
+    });
+    if (typeof signature === 'string') return signature;
+  } catch {
+    // Fallback for providers that expect params as [address, message]
+  }
+
+  const signatureFallback = await walletClient.request({
     method: 'personal_sign',
-    params: [rootHash, signer],
+    params: [signer, rootHash],
   });
-  if (typeof signature !== 'string') {
+  if (typeof signatureFallback !== 'string') {
     throw new Error('Invalid signature response from wallet');
   }
-  return signature;
+  return signatureFallback;
 };
 
 // Token icon mapping
