@@ -375,7 +375,9 @@ export const SwapModal = ({
         // SELL: Token → USD
         // Calculate token amount to sell based on slider percentage
         const tokenAmountToSell = tokenBalance * sliderValue / 100;
-        const decimals = targetToken.decimals || 18;
+        const isSolanaToken = targetChainId === 101;
+        const rawDecimals = targetToken.decimals || (isSolanaToken ? 9 : 18);
+        const decimals = isSolanaToken ? Math.min(rawDecimals, 9) : rawDecimals;
         
         // Format amount without scientific notation
         // Split into integer and decimal parts, then pad with zeros
@@ -384,7 +386,7 @@ export const SwapModal = ({
         const paddedDec = (decPart + "0".repeat(decimals)).slice(0, decimals);
         const amountRaw = (intPart + paddedDec).replace(/^0+/, "") || "0";
         
-        console.log("[Sell] Amount calc:", { tokenAmountToSell, decimals, amountRaw });
+        console.log("[Sell] Amount calc:", { tokenAmountToSell, decimals, amountRaw, chainId: targetChainId });
         
         result = await executeSell({
           ua: universalAccount,
