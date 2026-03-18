@@ -470,10 +470,14 @@ const build7702Authorizations = async ({
         r?: `0x${string}`;
         s?: `0x${string}`;
         v?: number;
+        yParity?: 0 | 1 | number;
         signature?: { serialized?: string };
       };
       if (authObj?.signature?.serialized) {
         serialized = authObj.signature.serialized;
+      } else if (authObj?.r && authObj?.s && (authObj?.yParity === 0 || authObj?.yParity === 1)) {
+        // Privy demo parity: prefer yParity-based signature reconstruction.
+        serialized = Signature.from({ r: authObj.r, s: authObj.s, yParity: authObj.yParity as 0 | 1 }).serialized;
       } else {
         const authSig = payload as Eip7702AuthorizationPayload;
         serialized = Signature.from({ r: authSig.r, s: authSig.s, v: authSig.v }).serialized;
