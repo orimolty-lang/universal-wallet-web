@@ -393,6 +393,8 @@ export const SwapModal = ({
           tokenAddress: address,
           tokenChainId: targetChainId,
           amountRaw: amountRaw,
+          amount: tokenAmountToSell.toString(),
+          tokenDecimals: decimals,
           slippagePct,
         });
       }

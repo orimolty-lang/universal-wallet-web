@@ -311,6 +311,8 @@ interface SellParams {
   tokenAddress: string;
   tokenChainId: number;
   amountRaw: string; // Raw token amount (with decimals)
+  amount?: string; // Human-readable token amount (preferred for UA createSellTransaction)
+  tokenDecimals?: number;
   slippagePct?: number;
 }
 
@@ -962,143 +964,51 @@ export function getChainIdFromBlockchain(blockchain: string): number {
 }
 
 /**
- * Execute SELL via Li.Fi/0x - Token → USDC
- * Same mechanism as buying, just reversed direction
+ * Execute SELL directly via UA SDK createSellTransaction
  */
 export async function executeSell(params: SellParams): Promise<SwapResult> {
-  const { ua, tokenAddress, tokenChainId, amountRaw, slippagePct = 1 } = params;
+  const { ua, tokenAddress, tokenChainId, amountRaw, amount, tokenDecimals, slippagePct = 1 } = params;
   const safeSlippageBps = normalizeSlippagePct(slippagePct, 1);
 
-  console.log("[Sell] Starting sell:", { tokenAddress, tokenChainId, amountRaw });
+  console.log("[Sell] Starting direct UA sell:", { tokenAddress, tokenChainId, amountRaw, amount, tokenDecimals });
 
   try {
-    // Get smart account addresses
-    const smartAccountOptions = await ua.getSmartAccountOptions();
-    const evmSmartAccount = smartAccountOptions.smartAccountAddress;
-    const solanaSmartAccount = smartAccountOptions.solanaSmartAccountAddress;
+    const chainIdForUa = tokenChainId === 101 ? CHAIN_ID.SOLANA_MAINNET : tokenChainId;
 
-    if (!evmSmartAccount) {
-      return { success: false, error: "EVM smart account not available" };
+    // UA createSellTransaction expects human-readable token amount.
+    let amountForUa = amount;
+    if (!amountForUa) {
+      const decimals = tokenDecimals ?? (tokenChainId === 101 ? 9 : 18);
+      const base = BigInt(`1${"0".repeat(decimals)}`);
+      const raw = BigInt(amountRaw || "0");
+      const int = raw / base;
+      const frac = (raw % base).toString().padStart(decimals, "0").replace(/0+$/, "");
+      amountForUa = frac ? `${int.toString()}.${frac}` : int.toString();
     }
 
-    // Normalize source chain for Solana tokens
-    const sourceChainId = tokenChainId === 101 ? RELAY_CHAIN_IDS.SOLANA : tokenChainId;
-
-    // Solana token sells route via Relay (Solana -> Base USDC).
-    if (sourceChainId === RELAY_CHAIN_IDS.SOLANA) {
-      if (!solanaSmartAccount) {
-        return { success: false, error: "Solana smart account not available" };
-      }
-
-      const relay = await prepareRelayRoute({
-        user: solanaSmartAccount,
-        originChainId: RELAY_CHAIN_IDS.SOLANA,
-        destinationChainId: RELAY_CHAIN_IDS.BASE,
-        originCurrency: tokenAddress,
-        destinationCurrency: USDC_ADDRESSES[RELAY_CHAIN_IDS.BASE],
-        recipient: evmSmartAccount,
-        amount: amountRaw,
+    const uaTx = await ua.createSellTransaction(
+      {
+        token: {
+          chainId: chainIdForUa,
+          address: tokenAddress,
+        },
+        amount: amountForUa,
+      },
+      {
         slippageBps: safeSlippageBps,
-      });
-
-      if (!relay.success || !relay.transactions?.length) {
-        return { success: false, error: relay.error || "No Relay sell route for this Solana token" };
       }
-
-      const uaTx = await ua.createUniversalTransaction({
-        chainId: CHAIN_ID.SOLANA_MAINNET,
-        transactions: relay.transactions,
-        expectTokens: [
-          {
-            type: TOKEN_TYPE.USDC,
-            amount: "0.000001",
-          },
-        ],
-      });
-
-      if (!uaTx?.rootHash) {
-        return { success: false, error: "Failed to create UA transaction" };
-      }
-
-      return {
-        success: true,
-        transaction: uaTx,
-        rootHash: uaTx.rootHash,
-        outputAmount: relay.outputAmount,
-        requiresSignature: true,
-      };
-    }
-
-    // Determine the USDC address on this chain (what we're selling TO)
-    const usdcAddress = USDC_ADDRESSES[sourceChainId] || USDC_ADDRESSES[RELAY_CHAIN_IDS.BASE];
-    if (!usdcAddress) {
-      return { success: false, error: "USDC not available on this chain" };
-    }
-
-    console.log("[Sell] Getting Li.Fi quote for Token → USDC");
-
-    // Get Li.Fi quote: Token → USDC (reversed from buy)
-    const quote = await getLifiSwapQuote(
-      evmSmartAccount,
-      sourceChainId,       // Source chain (where token is)
-      sourceChainId,       // Dest chain (same chain for now)
-      tokenAddress,        // Sell this token
-      usdcAddress,         // Buy USDC
-      amountRaw,           // Amount to sell
-      safeSlippageBps
     );
 
-    if (!quote.success || !quote.transaction) {
-      return { success: false, error: quote.error || "Failed to get sell quote" };
-    }
-
-    console.log("[Sell] Li.Fi quote:", quote);
-
-    // Build transactions array (approval + swap)
-    const transactions: Array<{ to: string; data: string; value: string }> = [];
-
-    // Add approval if needed
-    if (quote.allowanceTarget) {
-      const approveData = encodeApprove(quote.allowanceTarget, amountRaw);
-      transactions.push({
-        to: tokenAddress,
-        data: approveData,
-        value: "0",
-      });
-    }
-
-    // Add swap transaction
-    transactions.push({
-      to: quote.transaction.to,
-      data: quote.transaction.data,
-      value: quote.transaction.value || "0",
-    });
-
-    // Map to UA chain ID
-    let uaChainId = sourceChainId;
-    if (sourceChainId === 8453) uaChainId = CHAIN_ID.BASE_MAINNET;
-    if (sourceChainId === 1) uaChainId = CHAIN_ID.ETHEREUM_MAINNET;
-    if (sourceChainId === 42161) uaChainId = CHAIN_ID.ARBITRUM_MAINNET_ONE;
-    if (sourceChainId === RELAY_CHAIN_IDS.SOLANA) uaChainId = CHAIN_ID.SOLANA_MAINNET;
-
-    // Create UA transaction (no expectTokens needed - we're selling, not buying with unified balance)
-    const uaTx = await ua.createUniversalTransaction({
-      chainId: uaChainId,
-      transactions,
-      expectTokens: [], // Not pulling from other chains
-    });
-
     if (!uaTx?.rootHash) {
-      return { success: false, error: "Failed to create UA transaction" };
+      return { success: false, error: "Failed to create UA sell transaction" };
     }
-
-    console.log("[Sell] UA transaction created, rootHash:", uaTx.rootHash);
 
     return {
       success: true,
       transaction: uaTx,
       rootHash: uaTx.rootHash,
-      outputAmount: quote.outputAmount,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      outputAmount: (uaTx as any)?.tokenChanges?.receivedTokens?.[0]?.amount,
       requiresSignature: true,
     };
   } catch (error) {
