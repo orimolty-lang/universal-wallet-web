@@ -46,12 +46,14 @@ export async function handleEIP7702Authorizations(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   userOps: any[],
   signAuthorization: Sign7702Fn,
-  walletAddress: string
+  walletAddress: string,
+  addDebug?: (msg: string) => void
 ): Promise<Eip7702Authorization[]> {
   const { Signature } = await import("ethers");
   const authorizations: Eip7702Authorization[] = [];
   const nonceMap = new Map<string, string>();
 
+  addDebug?.(`[7702] userOps=${userOps.length} wallet=${walletAddress.slice(0, 10)}...`);
   for (const userOp of userOps) {
     if (!userOp?.eip7702Auth || userOp?.eip7702Delegated) continue;
     const auth = userOp.eip7702Auth;
@@ -60,10 +62,12 @@ export async function handleEIP7702Authorizations(
     const nonceKey = `${chainId}:${auth.nonce}`;
     let serialized = nonceMap.get(nonceKey);
     if (!serialized) {
+      addDebug?.(`[7702] sign auth chain=${chainId} addr=${String(auth.address).slice(0, 10)}... nonce=${auth.nonce}`);
       const authorization = await signAuthorization(
         { contractAddress: auth.address as `0x${string}`, chainId, nonce: Number(auth.nonce) },
         { address: walletAddress }
       );
+      addDebug?.(`[7702] got r=${String(authorization.r).slice(0, 18)}... s=${String(authorization.s).slice(0, 18)}... yParity=${authorization.yParity}`);
       const sig = Signature.from({
         r: authorization.r,
         s: authorization.s,
@@ -71,12 +75,15 @@ export async function handleEIP7702Authorizations(
         yParity: authorization.yParity as 0 | 1,
       });
       serialized = sig.serialized;
+      addDebug?.(`[7702] serialized=${String(serialized).slice(0, 20)}... len=${serialized?.length ?? 0}`);
       nonceMap.set(nonceKey, serialized);
     }
     if (serialized && userOp.userOpHash) {
       authorizations.push({ userOpHash: userOp.userOpHash, signature: serialized });
+      addDebug?.(`[7702] auth userOpHash=${userOp.userOpHash.slice(0, 18)}...`);
     }
   }
+  addDebug?.(`[7702] authorizations count=${authorizations.length}`);
   return authorizations;
 }
 
@@ -219,6 +226,7 @@ export async function createDelegationOnlyTx(
   // 1. Try real USDC transfer like Particle demo (user needs 0.000001 USDC on chain)
   if (usdcAddr) {
     try {
+      addDebug?.(`[7702] createUniversalTransaction USDC chain=${chainId}`);
       const tx = await universalAccount.createUniversalTransaction({
         chainId,
         expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.USDC, amount: "0.000001" }],
@@ -227,12 +235,15 @@ export async function createDelegationOnlyTx(
         ],
       });
       const chains = getChainsNeedingAuth(tx);
+      const uo = (tx as { userOps?: unknown[] })?.userOps ?? [];
+      addDebug?.(`[7702] USDC tx userOps=${uo.length} chainsNeeding=${chains.join(",")}`);
       if (chains.length === 1 && chains[0] === chainId) {
         addDebug?.(`[7702] USDC transfer chain=${chainId} (demo-aligned)`);
         return { tx, chainsNeedingAuth: chains };
       }
-    } catch {
-      // Fall through to ETH
+      addDebug?.(`[7702] USDC multi-chain, try ETH fallback`);
+    } catch (e) {
+      addDebug?.(`[7702] USDC failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
