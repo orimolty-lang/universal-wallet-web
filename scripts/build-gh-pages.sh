@@ -14,6 +14,14 @@ fi
 export NEXT_PUBLIC_PROJECT_ID="${NEXT_PUBLIC_PROJECT_ID:-c0cb9e74-192b-4bdc-ba62-852775c6e7fd}"
 export NEXT_PUBLIC_CLIENT_KEY="${NEXT_PUBLIC_CLIENT_KEY:-caswUnSdr9LPg5HEhqAZouZAExKOKZPv791XBxSK}"
 export NEXT_PUBLIC_APP_ID="${NEXT_PUBLIC_APP_ID:-e5be9376-1d3a-4882-b4a5-c5c0ce1b5182}"
+export NEXT_PUBLIC_MAGIC_API_KEY="${NEXT_PUBLIC_MAGIC_API_KEY:-}"
+
+if [[ -z "$NEXT_PUBLIC_MAGIC_API_KEY" ]]; then
+  echo "ERROR: NEXT_PUBLIC_MAGIC_API_KEY is required for Magic auth build."
+  echo "Set it before building, e.g.:"
+  echo "  NEXT_PUBLIC_MAGIC_API_KEY=pk_live_xxx ./scripts/build-gh-pages.sh"
+  exit 1
+fi
 
 if [[ ! -d "$APP_DIR/node_modules" ]]; then
   echo "node_modules missing; installing dependencies first..."

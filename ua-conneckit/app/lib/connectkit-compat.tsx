@@ -164,12 +164,18 @@ export function useParticleAuth() {
 
 export function ConnectButton({ label = "Connect" }: { label?: string }) {
   const { isConnected, address, login, logout } = useContext(CompatContext);
+  const magicConfigured = !!process.env.NEXT_PUBLIC_MAGIC_API_KEY;
   return (
     <button
       onClick={isConnected ? logout : login}
       className="w-full bg-accent-dynamic text-black font-bold py-4 rounded-full hover:opacity-90 transition-opacity"
+      title={magicConfigured ? "Magic auth ready" : "Magic key missing"}
     >
-      {isConnected && address ? `${address.slice(0, 6)}...${address.slice(-4)}` : label}
+      {isConnected && address
+        ? `${address.slice(0, 6)}...${address.slice(-4)}`
+        : magicConfigured
+          ? label
+          : "Magic key missing"}
     </button>
   );
 }
