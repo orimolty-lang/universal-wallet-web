@@ -91,10 +91,19 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
       window.alert("Magic is not configured. Set NEXT_PUBLIC_MAGIC_API_KEY and rebuild.");
       return;
     }
-    setLoginError(null);
-    setLoginMode("email");
-    setLoginModalOpen(true);
-  }, [magic]);
+
+    try {
+      const walletWithUi = magic.wallet as unknown as { connectWithUI?: () => Promise<unknown> };
+      if (walletWithUi?.connectWithUI) {
+        await walletWithUi.connectWithUI();
+      } else {
+        throw new Error("Hosted auth UI not available");
+      }
+      await refreshAddress();
+    } catch (e) {
+      setLoginError(e instanceof Error ? e.message : "Login failed");
+    }
+  }, [magic, refreshAddress]);
 
   const submitLogin = useCallback(async () => {
     if (!magic) return;
