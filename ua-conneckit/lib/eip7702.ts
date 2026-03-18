@@ -68,10 +68,12 @@ export async function handleEIP7702Authorizations(
         { address: walletAddress }
       );
       addDebug?.(`[7702] got r=${String(authorization.r).slice(0, 18)}... s=${String(authorization.s).slice(0, 18)}... yParity=${authorization.yParity}`);
+      // Use v=27+yParity (canonical) - some relays expect this vs v=0/1
+      const vVal = authorization.v ?? BigInt(27 + (authorization.yParity as number));
       const sig = Signature.from({
         r: authorization.r,
         s: authorization.s,
-        v: authorization.v ?? BigInt(authorization.yParity),
+        v: vVal,
         yParity: authorization.yParity as 0 | 1,
       });
       serialized = sig.serialized;
