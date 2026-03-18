@@ -350,7 +350,6 @@ type Eip7702AuthorizationPayload = {
 
 type Eip7702Authorization = { userOpHash: string; signature: string };
 
-type DebugLogger = (msg: string) => void;
 
 const signUniversalRootHash = async ({
   walletClient,
@@ -399,90 +398,6 @@ const signUniversalRootHash = async ({
     throw new Error('Invalid signature response from wallet');
   }
   return signatureFallback;
-};
-
-const ensure7702DelegationForTx = async ({
-  universalAccount,
-  walletClient,
-  ownerAddress,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  tx,
-  log,
-}: {
-  universalAccount: UniversalAccount;
-  walletClient: WalletClientLike;
-  ownerAddress: `0x${string}`;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  tx: any;
-  log?: DebugLogger;
-}): Promise<boolean> => {
-  const userOps = tx?.userOps;
-  if (!Array.isArray(userOps) || !userOps.length) return false;
-
-  const chainIds = Array.from(
-    new Set(
-      userOps
-        .filter((u: unknown) => {
-          const op = u as { eip7702Auth?: unknown; eip7702Delegated?: boolean };
-          return !!op?.eip7702Auth && !op?.eip7702Delegated;
-        })
-        .map((u: unknown) => {
-          const op = u as { eip7702Auth?: { chainId?: number }; chainId?: number };
-          return Number(op?.eip7702Auth?.chainId || op?.chainId);
-        })
-        .filter((x: number) => Number.isFinite(x) && x > 0)
-    )
-  );
-
-  if (!chainIds.length) return false;
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const deployments = (await universalAccount.getEIP7702Deployments()) as any[];
-  let delegatedNow = false;
-
-  for (const chainId of chainIds) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const dep = deployments?.find((d: any) => Number(d?.chainId) === chainId);
-    if (dep?.isDelegated) {
-      log?.(`Chain ${chainId} already delegated`);
-      continue;
-    }
-
-    log?.(`Delegating chain ${chainId}...`);
-
-    await walletClient.request({
-      method: 'wallet_switchEthereumChain',
-      params: [{ chainId: toBeHex(chainId) }],
-    });
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const authList = (await (universalAccount as any).getEIP7702Auth([chainId])) as any[];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const auth = authList?.find((a: any) => Number(a?.chainId) === chainId) || authList?.[0];
-    if (!auth) throw new Error(`Missing EIP-7702 auth info for chain ${chainId}`);
-
-    const authorization = await walletClient.request({
-      method: 'magic_wallet_sign_7702_authorization',
-      params: [
-        {
-          ...auth,
-          contractAddress: auth.address,
-          chainId,
-          nonce: Number(auth.nonce) + 1,
-        },
-      ],
-    });
-
-    await walletClient.request({
-      method: 'eth_send7702Transaction',
-      params: [{ to: ownerAddress, data: '0x', authorizationList: [authorization] }],
-    });
-
-    delegatedNow = true;
-    log?.(`Delegation sent for chain ${chainId}`);
-  }
-
-  return delegatedNow;
 };
 
 const build7702Authorizations = async ({
@@ -1327,7 +1242,7 @@ const SendModal = ({
       // Native tokens on EVM use 0xEee...; use token address from chainAggregation when present
       const tokenAddr = selected.address || "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 
-      let tx = await universalAccount.createTransferTransaction({
+      const tx = await universalAccount.createTransferTransaction({
         token: { chainId: uaChainId, address: tokenAddr },
         amount: amount,
         receiver: rec,
@@ -1336,23 +1251,8 @@ const SendModal = ({
       const walletClient = primaryWallet.getWalletClient();
       const wc = walletClient as unknown as WalletClientLike;
 
-      // Silent pre-delegation for non-delegated chains, then rebuild transfer tx.
-      const ownerAddress = wc.account?.address as `0x${string}` | undefined;
-      if (ownerAddress) {
-        const delegatedNow = await ensure7702DelegationForTx({
-          universalAccount,
-          walletClient: wc,
-          ownerAddress,
-          tx,
-        });
-        if (delegatedNow) {
-          tx = await universalAccount.createTransferTransaction({
-            token: { chainId: uaChainId, address: tokenAddr },
-            amount: amount,
-            receiver: rec,
-          });
-        }
-      }
+      // Privy flow: avoid explicit eth_send7702Transaction pre-delegation.
+      // We rely on per-userOp authorizations passed into sendTransaction.
 
       const signature = await signUniversalRootHash({
         walletClient: wc,
@@ -1798,7 +1698,7 @@ const ConvertModal = ({
       // Create convert transaction via UA SDK
       // chainId = destination chain, expectToken = what we want to receive
       setLoadingStatus('Creating transaction...');
-      let tx = await universalAccount.createConvertTransaction({
+      const tx = await universalAccount.createConvertTransaction({
         chainId: toChain,
         expectToken: {
           type: targetTokenType,
@@ -1857,28 +1757,8 @@ const ConvertModal = ({
         const walletClient = primaryWallet.getWalletClient();
         const wc = walletClient as unknown as WalletClientLike;
 
-        // Silent pre-delegation for non-delegated chains, then rebuild tx with fresh auth context.
-        const ownerAddress = wc.account?.address as `0x${string}` | undefined;
-        if (ownerAddress) {
-          const delegatedNow = await ensure7702DelegationForTx({
-            universalAccount,
-            walletClient: wc,
-            ownerAddress,
-            tx,
-            log: addDebug,
-          });
-          if (delegatedNow) {
-            setLoadingStatus('Refreshing transaction...');
-            addDebug('Rebuilding convert tx after delegation');
-            tx = await universalAccount.createConvertTransaction({
-              chainId: toChain,
-              expectToken: {
-                type: targetTokenType,
-                amount: outputAmount.toFixed(8),
-              },
-            }, tradeConfig);
-          }
-        }
+        // Privy flow: avoid explicit eth_send7702Transaction pre-delegation.
+        // We rely on per-userOp authorizations passed into sendTransaction.
 
         // Sign the latest tx root hash
         const signature = await signUniversalRootHash({
