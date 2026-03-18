@@ -434,16 +434,28 @@ const build7702Authorizations = async ({
     const auth = userOp?.eip7702Auth;
     if (!auth || userOp?.eip7702Delegated) continue;
 
-    const nonceKey = `${auth.chainId || userOp.chainId}:${auth.nonce}`;
+    const chainIdForAuth = Number(auth.chainId || userOp.chainId);
+    if (!Number.isFinite(chainIdForAuth) || chainIdForAuth <= 0) {
+      throw new Error('Invalid chainId in eip7702Auth');
+    }
+    const nonceKey = `${chainIdForAuth}:${auth.nonce}:${auth.address}`;
     let serialized = nonceMap.get(nonceKey);
 
     if (!serialized) {
+      // Ensure wallet is on the chain of the userOp auth before signing.
+      await walletClient.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: toBeHex(Number(chainIdForAuth)) }],
+      });
+
       const payload = await walletClient.request({
         method: 'magic_wallet_sign_7702_authorization',
+        // Pass full auth object (demo-style parity) with explicit fallbacks.
         params: [
           {
+            ...auth,
             contractAddress: auth.address,
-            chainId: auth.chainId || userOp.chainId,
+            chainId: chainIdForAuth,
             nonce: auth.nonce,
           },
         ],
