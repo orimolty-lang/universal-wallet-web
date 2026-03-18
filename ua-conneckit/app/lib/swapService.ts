@@ -651,6 +651,82 @@ export async function prepareRelaySwap(
   }
 }
 
+export async function prepareRelayRoute(params: {
+  user: string;
+  originChainId: number;
+  destinationChainId: number;
+  originCurrency: string;
+  destinationCurrency: string;
+  recipient: string;
+  amount: string;
+  slippageBps?: number;
+}): Promise<{
+  success: boolean;
+  error?: string;
+  transactions?: Array<{ to: string; data: string; value: string }>;
+  requestId?: string;
+  outputAmount?: string;
+}> {
+  try {
+    const requestBody = {
+      user: params.user,
+      originChainId: params.originChainId,
+      destinationChainId: params.destinationChainId,
+      originCurrency: params.originCurrency,
+      destinationCurrency: params.destinationCurrency,
+      recipient: params.recipient,
+      tradeType: "EXACT_INPUT",
+      amount: params.amount,
+      slippageTolerance: String(params.slippageBps ?? 500),
+      appFees: [
+        {
+          recipient: AFFILIATE_FEE_RECIPIENT,
+          fee: String(AFFILIATE_FEE_BPS),
+        },
+      ],
+    };
+
+    const response = await fetch(`${RELAY_API_BASE}/quote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      return {
+        success: false,
+        error: data.message || data.error || `Relay API error: ${response.status}`,
+      };
+    }
+
+    const transactions: Array<{ to: string; data: string; value: string }> = [];
+    for (const step of data.steps || []) {
+      for (const item of step.items || []) {
+        if (item.data?.to && item.data?.data) {
+          transactions.push({
+            to: item.data.to,
+            data: item.data.data,
+            value: item.data.value || "0",
+          });
+        }
+      }
+    }
+
+    return {
+      success: true,
+      transactions,
+      requestId: data.requestId,
+      outputAmount: data.details?.currencyOut?.amountFormatted,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
 // ============ MAIN SWAP FUNCTION ============
 
 /**
@@ -896,9 +972,10 @@ export async function executeSell(params: SellParams): Promise<SwapResult> {
   console.log("[Sell] Starting sell:", { tokenAddress, tokenChainId, amountRaw });
 
   try {
-    // Get smart account address
+    // Get smart account addresses
     const smartAccountOptions = await ua.getSmartAccountOptions();
     const evmSmartAccount = smartAccountOptions.smartAccountAddress;
+    const solanaSmartAccount = smartAccountOptions.solanaSmartAccountAddress;
 
     if (!evmSmartAccount) {
       return { success: false, error: "EVM smart account not available" };
@@ -906,6 +983,51 @@ export async function executeSell(params: SellParams): Promise<SwapResult> {
 
     // Normalize source chain for Solana tokens
     const sourceChainId = tokenChainId === 101 ? RELAY_CHAIN_IDS.SOLANA : tokenChainId;
+
+    // Solana token sells route via Relay (Solana -> Base USDC).
+    if (sourceChainId === RELAY_CHAIN_IDS.SOLANA) {
+      if (!solanaSmartAccount) {
+        return { success: false, error: "Solana smart account not available" };
+      }
+
+      const relay = await prepareRelayRoute({
+        user: solanaSmartAccount,
+        originChainId: RELAY_CHAIN_IDS.SOLANA,
+        destinationChainId: RELAY_CHAIN_IDS.BASE,
+        originCurrency: tokenAddress,
+        destinationCurrency: USDC_ADDRESSES[RELAY_CHAIN_IDS.BASE],
+        recipient: evmSmartAccount,
+        amount: amountRaw,
+        slippageBps: safeSlippageBps,
+      });
+
+      if (!relay.success || !relay.transactions?.length) {
+        return { success: false, error: relay.error || "No Relay sell route for this Solana token" };
+      }
+
+      const uaTx = await ua.createUniversalTransaction({
+        chainId: CHAIN_ID.SOLANA_MAINNET,
+        transactions: relay.transactions,
+        expectTokens: [
+          {
+            type: TOKEN_TYPE.USDC,
+            amount: "0.000001",
+          },
+        ],
+      });
+
+      if (!uaTx?.rootHash) {
+        return { success: false, error: "Failed to create UA transaction" };
+      }
+
+      return {
+        success: true,
+        transaction: uaTx,
+        rootHash: uaTx.rootHash,
+        outputAmount: relay.outputAmount,
+        requiresSignature: true,
+      };
+    }
 
     // Determine the USDC address on this chain (what we're selling TO)
     const usdcAddress = USDC_ADDRESSES[sourceChainId] || USDC_ADDRESSES[RELAY_CHAIN_IDS.BASE];
