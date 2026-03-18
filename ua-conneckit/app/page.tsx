@@ -7260,26 +7260,31 @@ const App = () => {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const universalAccountConfig = useMemo((): IUniversalAccountConfig => ({
-    projectId: process.env.NEXT_PUBLIC_PROJECT_ID || "",
-    projectClientKey: process.env.NEXT_PUBLIC_CLIENT_KEY || "",
-    projectAppUuid: process.env.NEXT_PUBLIC_APP_ID || "",
-    rpcUrl: 'https://universal-rpc-staging.particle.network', // Bypass simulation for oracle-dependent contracts (Avantis perps)
-    smartAccountOptions: {
-      useEIP7702: true, // Magic auth + EOA signing path with UA 7702 enabled
-      name: "UNIVERSAL",
-      version: UNIVERSAL_ACCOUNT_VERSION,
-      ownerAddress: address!,
-    },
-  }), [address]);
+  const universalAccountConfig = useMemo((): IUniversalAccountConfig | null => {
+    if (!address || typeof address !== "string" || !address.startsWith("0x") || address.length !== 42) {
+      return null;
+    }
+    return {
+      projectId: process.env.NEXT_PUBLIC_PROJECT_ID || "",
+      projectClientKey: process.env.NEXT_PUBLIC_CLIENT_KEY || "",
+      projectAppUuid: process.env.NEXT_PUBLIC_APP_ID || "",
+      rpcUrl: 'https://universal-rpc-staging.particle.network', // Bypass simulation for oracle-dependent contracts (Avantis perps)
+      smartAccountOptions: {
+        useEIP7702: true, // Magic auth + EOA signing path with UA 7702 enabled
+        name: "UNIVERSAL",
+        version: UNIVERSAL_ACCOUNT_VERSION,
+        ownerAddress: address,
+      },
+    };
+  }, [address]);
 
   useEffect(() => {
-    if (isConnected && address) {
+    if (isConnected && address && universalAccountConfig) {
       console.log("[UA] Creating UA instance for:", address);
       const ua = new UniversalAccount(universalAccountConfig);
       setUniversalAccountInstance(ua);
     } else {
-      console.log("[UA] Disconnected, clearing state");
+      console.log("[UA] Disconnected or invalid address, clearing state");
       setUniversalAccountInstance(null);
       setAccountInfo(null);
       setPrimaryAssets(null);
@@ -7310,14 +7315,24 @@ const App = () => {
       console.log("[Assets] No UA instance yet");
       return;
     }
-    try {
-      console.log("[Assets] Fetching primary assets...");
-      const assets = await universalAccountInstance.getPrimaryAssets();
-      console.log("[Assets] Got assets:", JSON.stringify(assets).slice(0, 500));
-      setPrimaryAssets(assets);
-    } catch (error) {
-      console.error("[Assets] Failed to fetch:", error);
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (attempt > 0) {
+          await new Promise((r) => setTimeout(r, 800 * attempt));
+        }
+        console.log("[Assets] Fetching primary assets...", attempt > 0 ? `(retry ${attempt})` : "");
+        const assets = await universalAccountInstance.getPrimaryAssets();
+        console.log("[Assets] Got assets:", JSON.stringify(assets).slice(0, 500));
+        setPrimaryAssets(assets);
+        return;
+      } catch (error) {
+        lastError = error;
+        console.error("[Assets] Fetch failed:", error);
+      }
     }
+    console.error("[Assets] All retries failed:", lastError);
+    setPrimaryAssets({ assets: [], totalAmountInUSD: 0 });
   }, [universalAccountInstance]);
 
   // Fetch Mobula wallet balances for external tokens (UA smart accounts - EVM + Solana)
@@ -7513,6 +7528,13 @@ const App = () => {
   useEffect(() => {
     fetchAssets();
   }, [fetchAssets]);
+
+  // Delayed refetch for mobile: UA backend may need a moment after init
+  useEffect(() => {
+    if (!universalAccountInstance) return;
+    const t = setTimeout(() => fetchAssets(), 1500);
+    return () => clearTimeout(t);
+  }, [universalAccountInstance, fetchAssets]);
 
   // Show splash screen first
   if (showSplash) {
