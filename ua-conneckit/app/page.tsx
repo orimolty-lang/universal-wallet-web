@@ -33,7 +33,7 @@ import {
 import { decodeFunctionResult, encodeFunctionData } from "viem";
 import { toBeHex, Signature, formatUnits } from "ethers";
 import { useUniversalAccountWS } from "./hooks/useUniversalAccountWS";
-import { createDelegationOnlyTx, getEIP7702Deployments } from "../lib/eip7702";
+import { createDelegationOnlyTx, getEIP7702Deployments, handleEIP7702Authorizations } from "../lib/eip7702";
 
 // Mobula API for token search
 const MOBULA_API_KEY = "a8e6a174-9dfd-4929-b0e0-9f6ece767923";
@@ -396,8 +396,6 @@ const signUniversalRootHash = async ({
   return signatureFallback;
 };
 
-type Sign7702Fn = (p: { contractAddress: `0x${string}`; chainId: number; nonce: number }, o: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>;
-
 const build7702Authorizations = async ({
   walletClient,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -408,104 +406,43 @@ const build7702Authorizations = async ({
   walletClient: WalletClientLike;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tx: any;
-  sign7702?: Sign7702Fn | null;
+  sign7702?: ((p: { contractAddress: `0x${string}`; chainId: number; nonce: number }, o: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>) | null;
   walletAddress?: string;
 }): Promise<Eip7702Authorization[] | undefined> => {
   const userOps = tx?.userOps;
   if (!Array.isArray(userOps) || userOps.length === 0) return undefined;
 
-  console.log('[7702] userOps summary:', userOps.map((u: unknown) => {
-    const op = u as {
-      chainId?: number;
-      userOpHash?: string;
-      eip7702Delegated?: boolean;
-      eip7702Auth?: { nonce?: number };
-    };
-    return {
-      chainId: op?.chainId,
-      hasAuth: !!op?.eip7702Auth,
-      delegated: !!op?.eip7702Delegated,
-      nonce: op?.eip7702Auth?.nonce,
-      userOpHash: op?.userOpHash,
-    };
-  }));
-
+  if (sign7702 && walletAddress) {
+    return handleEIP7702Authorizations(userOps, sign7702, walletAddress);
+  }
   const authorizations: Eip7702Authorization[] = [];
   const nonceMap = new Map<string, string>();
-
   for (const userOp of userOps) {
     const auth = userOp?.eip7702Auth;
     if (!auth || userOp?.eip7702Delegated) continue;
-
     const chainIdForAuth = Number(userOp.chainId ?? auth.chainId);
-    if (!Number.isFinite(chainIdForAuth) || chainIdForAuth <= 0) {
-      throw new Error('Invalid chainId in eip7702Auth');
-    }
+    if (!Number.isFinite(chainIdForAuth) || chainIdForAuth <= 0 || chainIdForAuth === 101) continue;
     const nonceKey = `${chainIdForAuth}:${auth.nonce}`;
     let serialized = nonceMap.get(nonceKey);
-
     if (!serialized) {
-      // Switch to auth chain before signing (Privy embedded wallet may need correct chain context)
-      await walletClient.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: toBeHex(Number(chainIdForAuth)) }],
+      const payload = await walletClient.request({
+        method: 'magic_wallet_sign_7702_authorization',
+        params: [{ contractAddress: auth.address, chainId: chainIdForAuth, nonce: Number(auth.nonce) }],
       });
-
-      let authObj: { r: string; s: string; v?: number | bigint; yParity: number };
-      if (sign7702 && walletAddress) {
-        // Use Privy signAuthorization directly - matches Particle 7702 example exactly
-        const authorization = await sign7702(
-          {
-            contractAddress: auth.address as `0x${string}`,
-            chainId: chainIdForAuth,
-            nonce: Number(auth.nonce),
-          },
-          { address: walletAddress }
-        );
-        authObj = {
-          r: authorization.r,
-          s: authorization.s,
-          v: authorization.v,
-          yParity: authorization.yParity,
-        };
-      } else {
-        const payload = await walletClient.request({
-          method: 'magic_wallet_sign_7702_authorization',
-          params: [
-            {
-              contractAddress: auth.address,
-              chainId: chainIdForAuth,
-              nonce: Number(auth.nonce),
-            },
-          ],
-        });
-        if (!payload || typeof payload !== 'object') {
-          throw new Error('Failed to sign EIP-7702 authorization');
-        }
-        authObj = payload as { r: string; s: string; v?: number | bigint; yParity: number };
-      }
-
-      if (!authObj.r || !authObj.s || (authObj.yParity !== 0 && authObj.yParity !== 1 && authObj.v === undefined)) {
-        throw new Error('Invalid EIP-7702 signature payload');
-      }
-
-      // Match Particle 7702 example: v ?? BigInt(yParity), Signature.from({ r, s, yParity })
+      if (!payload || typeof payload !== 'object') throw new Error('Failed to sign EIP-7702 authorization');
+      const authObj = payload as { r: string; s: string; v?: number | bigint; yParity: number };
+      if (!authObj.r || !authObj.s) throw new Error('Invalid EIP-7702 signature payload');
       const sig = Signature.from({
         r: authObj.r,
         s: authObj.s,
         v: authObj.v !== undefined ? (typeof authObj.v === 'bigint' ? authObj.v : BigInt(authObj.v)) : BigInt(authObj.yParity as 0 | 1),
         yParity: authObj.yParity as 0 | 1,
       });
-
       serialized = sig.serialized;
       nonceMap.set(nonceKey, serialized);
     }
-
-    if (serialized && userOp?.userOpHash) {
-      authorizations.push({ userOpHash: userOp.userOpHash, signature: serialized });
-    }
+    if (serialized && userOp?.userOpHash) authorizations.push({ userOpHash: userOp.userOpHash, signature: serialized });
   }
-
   return authorizations.length ? authorizations : undefined;
 };
 

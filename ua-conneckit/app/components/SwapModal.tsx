@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { IAssetsResponse, UniversalAccount } from "@particle-network/universal-account-sdk";
 import { executeSwap, executeSell, getChainIdFromBlockchain, pollTransactionDetails, getChainName } from "../lib/swapService";
-import { useWallets } from "@/app/lib/connectkit-compat";
-import { Signature } from "ethers";
+import { useWallets, useSign7702AuthorizationCompat } from "@/app/lib/connectkit-compat";
+import { handleEIP7702Authorizations } from "@/lib/eip7702";
 
 // Types
 interface TokenInfo {
@@ -338,6 +338,7 @@ export const SwapModal = ({
 
   // Get wallet for signing
   const [primaryWallet] = useWallets();
+  const sign7702 = useSign7702AuthorizationCompat();
 
   // Handle swap execution (buy or sell based on direction)
   const handleSwap = async () => {
@@ -420,30 +421,43 @@ export const SwapModal = ({
             });
           }
 
-          // Step 3: Send transaction (+EIP-7702 authorizations when required)
+          // Step 3: Send transaction (+EIP-7702 authorizations - demo-aligned, no chain switch)
           setLoadingStatus("Sending transaction...");
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const txAny = result.transaction as any;
           let authorizations: Array<{ userOpHash: string; signature: string }> | undefined;
-          if (Array.isArray(txAny?.userOps)) {
-            const nonceMap = new Map<string, string>();
-            authorizations = [];
-            for (const userOp of txAny.userOps) {
-              const auth = userOp?.eip7702Auth;
-              if (!auth || userOp?.eip7702Delegated) continue;
-              const nonceKey = `${auth.chainId || userOp.chainId}:${auth.nonce}`;
-              let serialized = nonceMap.get(nonceKey);
-              if (!serialized) {
-                const payload = await walletClient.request({
-                  method: "magic_wallet_sign_7702_authorization",
-                  params: [{ contractAddress: auth.address, chainId: auth.chainId || userOp.chainId, nonce: auth.nonce }],
-                }) as { r: `0x${string}`; s: `0x${string}`; v: number };
-                serialized = Signature.from({ r: payload.r, s: payload.s, v: payload.v }).serialized;
-                nonceMap.set(nonceKey, serialized);
+          const walletAddr = walletClient.account?.address as string | undefined;
+          if (Array.isArray(txAny?.userOps) && txAny.userOps.length > 0) {
+            if (sign7702 && walletAddr) {
+              authorizations = await handleEIP7702Authorizations(txAny.userOps, sign7702, walletAddr);
+            } else {
+              const { Signature } = await import("ethers");
+              const nonceMap = new Map<string, string>();
+              authorizations = [];
+              for (const userOp of txAny.userOps) {
+                const auth = userOp?.eip7702Auth;
+                if (!auth || userOp?.eip7702Delegated) continue;
+                const chainId = auth.chainId || userOp.chainId;
+                if (!chainId || chainId === 101) continue;
+                const nonceKey = `${chainId}:${auth.nonce}`;
+                let serialized = nonceMap.get(nonceKey);
+                if (!serialized) {
+                  const payload = await walletClient.request({
+                    method: "magic_wallet_sign_7702_authorization",
+                    params: [{ contractAddress: auth.address, chainId, nonce: auth.nonce }],
+                  }) as { r: string; s: string; v?: number | bigint; yParity: number };
+                  serialized = Signature.from({
+                    r: payload.r,
+                    s: payload.s,
+                    v: payload.v ?? BigInt(payload.yParity ?? 0),
+                    yParity: (payload.yParity ?? 0) as 0 | 1,
+                  }).serialized;
+                  nonceMap.set(nonceKey, serialized);
+                }
+                if (serialized && userOp?.userOpHash) authorizations.push({ userOpHash: userOp.userOpHash, signature: serialized });
               }
-              if (serialized && userOp?.userOpHash) authorizations.push({ userOpHash: userOp.userOpHash, signature: serialized });
             }
-            if (!authorizations.length) authorizations = undefined;
+            if (!authorizations?.length) authorizations = undefined;
           }
           const sendResult = await universalAccount.sendTransaction(txAny, signature as string, authorizations);
           
