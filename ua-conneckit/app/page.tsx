@@ -397,6 +397,70 @@ const signUniversalRootHash = async ({
   return signatureFallback;
 };
 
+const ensure7702DelegatedForTx = async ({
+  universalAccount,
+  walletClient,
+  ownerAddress,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx,
+}: {
+  universalAccount: UniversalAccount;
+  walletClient: WalletClientLike;
+  ownerAddress: `0x${string}`;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx: any;
+}): Promise<void> => {
+  if (!ownerAddress) throw new Error('Owner address unavailable for 7702 delegation');
+  const userOps = tx?.userOps;
+  if (!Array.isArray(userOps) || userOps.length === 0) return;
+
+  const needsDelegationChainIds = Array.from(
+    new Set(
+      userOps
+        .filter((u: unknown) => {
+          const op = u as { eip7702Auth?: unknown; eip7702Delegated?: boolean };
+          return !!op?.eip7702Auth && !op?.eip7702Delegated;
+        })
+        .map((u: unknown) => {
+          const op = u as { eip7702Auth?: { chainId?: number }; chainId?: number };
+          return Number(op?.eip7702Auth?.chainId || op?.chainId);
+        })
+        .filter((x: number) => Number.isFinite(x) && x > 0)
+    )
+  );
+
+  if (!needsDelegationChainIds.length) return;
+
+  const deployments = await universalAccount.getEIP7702Deployments();
+  for (const chainId of needsDelegationChainIds) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const dep = (deployments as any[])?.find((d: any) => Number(d?.chainId) === chainId);
+    if (dep?.isDelegated) continue;
+
+    // Demo parity: fetch chain auth, sign with Magic 7702 signer, then send type-4 tx
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const authList = await (universalAccount as any).getEIP7702Auth([chainId]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const auth = (authList as any[])?.find((a: any) => Number(a?.chainId) === chainId) || authList?.[0];
+    if (!auth) continue;
+
+    await walletClient.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: toBeHex(chainId) }],
+    });
+
+    const authorization = await walletClient.request({
+      method: 'magic_wallet_sign_7702_authorization',
+      params: [{ contractAddress: auth.address, chainId, nonce: auth.nonce + 1 }],
+    });
+
+    await walletClient.request({
+      method: 'eth_send7702Transaction',
+      params: [{ to: ownerAddress, data: '0x', authorizationList: [authorization] }],
+    });
+  }
+};
+
 const build7702Authorizations = async ({
   walletClient,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1216,7 +1280,14 @@ const SendModal = ({
       });
       if (!signature) throw new Error("Failed to sign");
 
-      const authorizations = await build7702Authorizations({ walletClient: primaryWallet.getWalletClient() as unknown as WalletClientLike, tx });
+      const wc = primaryWallet.getWalletClient() as unknown as WalletClientLike;
+      await ensure7702DelegatedForTx({
+        universalAccount,
+        walletClient: wc,
+        ownerAddress: wc.account?.address as `0x${string}`,
+        tx,
+      });
+      const authorizations = await build7702Authorizations({ walletClient: wc, tx });
       const result = await universalAccount.sendTransaction(tx, signature as string, authorizations);
       setTxResult({ txId: result.transactionId });
       onSuccess?.();
@@ -1686,7 +1757,14 @@ const ConvertModal = ({
 
         // Send transaction
         setLoadingStatus('Sending transaction...');
-        const authorizations = await build7702Authorizations({ walletClient: walletClient as unknown as WalletClientLike, tx });
+        const wc = walletClient as unknown as WalletClientLike;
+        await ensure7702DelegatedForTx({
+          universalAccount,
+          walletClient: wc,
+          ownerAddress: wc.account?.address as `0x${string}`,
+          tx,
+        });
+        const authorizations = await build7702Authorizations({ walletClient: wc, tx });
         const sendResult = await universalAccount.sendTransaction(tx, signature as string, authorizations);
         
         if (sendResult?.transactionId) {
@@ -3301,7 +3379,14 @@ const PerpsModal = ({
               signerAddress: ownerEOA as `0x${string}`,
               blindSigningEnabled,
             });
-            const authorizations = await build7702Authorizations({ walletClient: walletClient as unknown as WalletClientLike, tx });
+            const wc = walletClient as unknown as WalletClientLike;
+            await ensure7702DelegatedForTx({
+              universalAccount,
+              walletClient: wc,
+              ownerAddress: wc.account?.address as `0x${string}`,
+              tx,
+            });
+            const authorizations = await build7702Authorizations({ walletClient: wc, tx });
             const res = await universalAccount.sendTransaction(tx, signature as string, authorizations);
             addDebug(`${label} sent: ${res?.transactionId || 'txid-missing'}`);
             return res;
