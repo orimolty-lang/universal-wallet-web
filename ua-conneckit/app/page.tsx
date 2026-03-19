@@ -6581,7 +6581,7 @@ const ActivityModal = ({
       10: { name: 'Optimism', logo: 'https://assets.coingecko.com/coins/images/25244/small/Optimism.png', explorer: 'https://optimistic.etherscan.io/tx/' },
       56: { name: 'BNB Chain', logo: 'https://assets.coingecko.com/coins/images/825/small/bnb-icon2_2x.png', explorer: 'https://bscscan.com/tx/' },
       137: { name: 'Polygon', logo: 'https://assets.coingecko.com/coins/images/4713/small/matic-token-icon.png', explorer: 'https://polygonscan.com/tx/' },
-      8453: { name: 'Base', logo: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png', explorer: 'https://basescan.org/tx/' },
+      8453: { name: 'Base', logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/info/logo.png', explorer: 'https://basescan.org/tx/' },
       42161: { name: 'Arbitrum', logo: 'https://assets.coingecko.com/coins/images/16547/small/photo_2023-03-29_21.47.00.jpeg', explorer: 'https://arbiscan.io/tx/' },
       101: { name: 'Solana', logo: 'https://assets.coingecko.com/coins/images/4128/small/solana.png', explorer: 'https://solscan.io/tx/' },
       2013: { name: 'Particle Alpha', logo: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png', explorer: 'https://universalx.app/activity/details?id=' },
@@ -6606,6 +6606,13 @@ const ActivityModal = ({
     }
     return s;
   };
+  /** Format balance for display - cap decimals to avoid odd numbers like -186008.742856 */
+  const formatBalanceDisplay = (num: number, formatted: string): string => {
+    if (num > 0 && num < 0.01) return formatWithSubscript(num);
+    if (num >= 1000) return num.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    if (num >= 1) return num.toFixed(4).replace(/\.?0+$/, '') || '0';
+    return formatted;
+  };
 
   const copyIcon = (
     <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -6613,15 +6620,6 @@ const ActivityModal = ({
     </svg>
   );
   const doCopy = (value: string) => { try { navigator.clipboard.writeText(value); } catch { /* ignore */ } };
-  const copyRowFull = (label: string, value: string) => (
-    <div className="flex justify-between items-center py-2 border-b border-white/5 last:border-0">
-      <span className="text-gray-400 text-sm">{label}</span>
-      <div className="flex items-center gap-2">
-        <span className="text-white font-mono text-sm">{value.length > 16 ? shortenHash(value) : value}</span>
-        <button onClick={() => doCopy(value)} className="p-1 hover:bg-white/10 rounded">{copyIcon}</button>
-      </div>
-    </div>
-  );
   const copyRowAddr = (label: string, addr: string) => (
     <div className="flex justify-between items-center py-2 border-b border-white/5 last:border-0">
       <span className="text-gray-400 text-sm">{label}</span>
@@ -6650,8 +6648,6 @@ const ActivityModal = ({
     const details = txDetails || selectedTx;
     const txType = getTxType(details);
     const status = getTxStatus(details);
-    const txId = details.transactionId || details.id || details.transaction_id || '';
-    const settlementOps = details.settlementUserOperations || [];
     const lendingOps = details.lendingUserOperations || [];
     const depositOps = details.depositUserOperations || [];
     const totals = details.fees?.totals || {};
@@ -6689,7 +6685,7 @@ const ActivityModal = ({
                       const raw = d.rawAmount ?? d.amount ?? '0';
                       const formatted = formatTokenAmount(raw, decimals, sym || undefined);
                       const num = parseFloat(formatted);
-                      const display = num > 0 && num < 0.01 ? formatWithSubscript(num) : formatted;
+                      const display = formatBalanceDisplay(num, formatted);
                       return (
                         <div key={`decr-${i}`} className="flex items-center justify-between py-2">
                           <div className="flex items-center gap-2">
@@ -6705,7 +6701,7 @@ const ActivityModal = ({
                       const raw = inc.rawAmount ?? inc.amount ?? '0';
                       const formatted = formatTokenAmount(raw, decimals, sym || undefined);
                       const num = parseFloat(formatted);
-                      const display = num > 0 && num < 0.01 ? formatWithSubscript(num) : formatted;
+                      const display = formatBalanceDisplay(num, formatted);
                       return (
                         <div key={`incr-${i}`} className="flex items-center justify-between py-2">
                           <div className="flex items-center gap-2">
@@ -6721,7 +6717,6 @@ const ActivityModal = ({
 
               {/* 2. Transaction details */}
               <div className="border-t border-white/10 pt-4 space-y-0">
-                {txId && copyRowFull('Transaction ID', txId)}
                 {details.sender && copyRowAddr('From(you)', details.sender)}
                 {details.receiver && copyRowAddr('To', details.receiver)}
                 {getTxDate(details) && (
@@ -6740,16 +6735,31 @@ const ActivityModal = ({
                 </div>
               </div>
 
-              {/* 3. Multi-chain: Settlement, Target, From */}
-              {settlementOps.map((op: { chainId?: number; txHash?: string }, i: number) => {
+              {/* 3. Multi-chain: From (deposit) first, then Target (lending) - no Settlement */}
+              {depositOps.map((op: { chainId?: number; txHash?: string }, i: number) => {
                 const chain = getChainMeta(op.chainId);
                 const href = getExplorerTxUrl(op.chainId, op.txHash);
+                const decrForChain = (details.tokenChanges?.decr || []).filter((x: { token?: { chainId?: number } }) => x.token?.chainId === op.chainId);
                 return (
-                  <div key={`settlement-${i}`} className="mt-6 border-t border-white/10 pt-4">
+                  <div key={`from-${i}`} className="mt-6 border-t border-white/10 pt-4">
                     <div className="flex items-center gap-2 mb-3">
                       <img src={chain.logo} alt={chain.name} className="w-4 h-4 rounded-full object-contain" referrerPolicy="no-referrer" />
-                      <span className="text-gray-300 font-medium text-sm">Settlement Tx Hash - on {chain.name}</span>
+                      <span className="text-gray-300 font-medium text-sm">From Tx Hash - on {chain.name}</span>
                     </div>
+                    {decrForChain.map((item: { amount?: string; rawAmount?: string; token?: { symbol?: string; tokenType?: string; image?: string; realDecimals?: number; decimals?: number } }, j: number) => {
+                      const sym = (item.token?.symbol || item.token?.tokenType || '').toUpperCase();
+                      const decimals = item.token?.realDecimals ?? item.token?.decimals ?? 18;
+                      const raw = item.rawAmount ?? item.amount ?? '0';
+                      const formatted = formatTokenAmount(raw, decimals, sym || undefined);
+                      const num = parseFloat(formatted);
+                      const display = formatBalanceDisplay(num, formatted);
+                      return (
+                        <div key={`dc-${j}`} className="flex items-center gap-2 py-1 text-sm">
+                          {item.token?.image ? <img src={item.token.image} alt="" className="w-4 h-4 rounded-full" referrerPolicy="no-referrer" /> : null}
+                          <span className="text-amber-400">-{display} {item.token?.symbol || item.token?.tokenType || ''}</span>
+                        </div>
+                      );
+                    })}
                     {op.txHash && copyRowTxHash(op.txHash, href)}
                   </div>
                 );
@@ -6771,40 +6781,12 @@ const ActivityModal = ({
                       const raw = item.rawAmount ?? item.amount ?? '0';
                       const formatted = formatTokenAmount(raw, decimals, sym || undefined);
                       const num = parseFloat(formatted);
-                      const display = num > 0 && num < 0.01 ? formatWithSubscript(num) : formatted;
+                      const display = formatBalanceDisplay(num, formatted);
                       const isIncr = j >= decrForChain.length;
                       return (
                         <div key={`tc-${j}`} className="flex items-center gap-2 py-1 text-sm">
                           {item.token?.image ? <img src={item.token.image} alt="" className="w-4 h-4 rounded-full" referrerPolicy="no-referrer" /> : null}
                           <span className={isIncr ? 'text-fuchsia-400' : 'text-amber-400'}>{isIncr ? '+' : '-'}{display} {item.token?.symbol || item.token?.tokenType || ''}</span>
-                        </div>
-                      );
-                    })}
-                    {op.txHash && copyRowTxHash(op.txHash, href)}
-                  </div>
-                );
-              })}
-              {depositOps.map((op: { chainId?: number; txHash?: string }, i: number) => {
-                const chain = getChainMeta(op.chainId);
-                const href = getExplorerTxUrl(op.chainId, op.txHash);
-                const decrForChain = (details.tokenChanges?.decr || []).filter((x: { token?: { chainId?: number } }) => x.token?.chainId === op.chainId);
-                return (
-                  <div key={`from-${i}`} className="mt-6 border-t border-white/10 pt-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <img src={chain.logo} alt={chain.name} className="w-4 h-4 rounded-full object-contain" referrerPolicy="no-referrer" />
-                      <span className="text-gray-300 font-medium text-sm">From Tx Hash - on {chain.name}</span>
-                    </div>
-                    {decrForChain.map((item: { amount?: string; rawAmount?: string; token?: { symbol?: string; tokenType?: string; image?: string; realDecimals?: number; decimals?: number } }, j: number) => {
-                      const sym = (item.token?.symbol || item.token?.tokenType || '').toUpperCase();
-                      const decimals = item.token?.realDecimals ?? item.token?.decimals ?? 18;
-                      const raw = item.rawAmount ?? item.amount ?? '0';
-                      const formatted = formatTokenAmount(raw, decimals, sym || undefined);
-                      const num = parseFloat(formatted);
-                      const display = num > 0 && num < 0.01 ? formatWithSubscript(num) : formatted;
-                      return (
-                        <div key={`dc-${j}`} className="flex items-center gap-2 py-1 text-sm">
-                          {item.token?.image ? <img src={item.token.image} alt="" className="w-4 h-4 rounded-full" referrerPolicy="no-referrer" /> : null}
-                          <span className="text-amber-400">-{display} {item.token?.symbol || item.token?.tokenType || ''}</span>
                         </div>
                       );
                     })}
