@@ -40,6 +40,7 @@ const USDC_ADDRESSES: Record<number, string> = {
   [RELAY_CHAIN_IDS.ARBITRUM]: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
   [RELAY_CHAIN_IDS.OPTIMISM]: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
   [RELAY_CHAIN_IDS.POLYGON]: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+  [RELAY_CHAIN_IDS.BSC]: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
   [RELAY_CHAIN_IDS.SOLANA]: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
 };
 
@@ -964,51 +965,100 @@ export function getChainIdFromBlockchain(blockchain: string): number {
 }
 
 /**
- * Execute SELL directly via UA SDK createSellTransaction
+ * Execute SELL via Li.Fi (EVM) for integrator fee revenue, or UA createSellTransaction (Solana fallback)
  */
 export async function executeSell(params: SellParams): Promise<SwapResult> {
   const { ua, tokenAddress, tokenChainId, amountRaw, amount, tokenDecimals, slippagePct = 1 } = params;
   const safeSlippageBps = normalizeSlippagePct(slippagePct, 1);
 
-  console.log("[Sell] Starting direct UA sell:", { tokenAddress, tokenChainId, amountRaw, amount, tokenDecimals });
+  console.log("[Sell] Starting:", { tokenAddress, tokenChainId, amountRaw, tokenDecimals });
 
   try {
-    const chainIdForUa = tokenChainId === 101 ? CHAIN_ID.SOLANA_MAINNET : tokenChainId;
+    const isSolana = tokenChainId === 101 || tokenChainId === RELAY_CHAIN_IDS.SOLANA;
 
-    // UA createSellTransaction expects human-readable token amount.
-    let amountForUa = amount;
-    if (!amountForUa) {
-      const decimals = tokenDecimals ?? (tokenChainId === 101 ? 9 : 18);
-      const base = BigInt(`1${"0".repeat(decimals)}`);
-      const raw = BigInt(amountRaw || "0");
-      const int = raw / base;
-      const frac = (raw % base).toString().padStart(decimals, "0").replace(/0+$/, "");
-      amountForUa = frac ? `${int.toString()}.${frac}` : int.toString();
+    if (isSolana) {
+      const chainIdForUa = CHAIN_ID.SOLANA_MAINNET;
+      let amountForUa = amount;
+      if (!amountForUa) {
+        const decimals = tokenDecimals ?? 9;
+        const base = BigInt(`1${"0".repeat(decimals)}`);
+        const raw = BigInt(amountRaw || "0");
+        const int = raw / base;
+        const frac = (raw % base).toString().padStart(decimals, "0").replace(/0+$/, "");
+        amountForUa = frac ? `${int.toString()}.${frac}` : int.toString();
+      }
+      const uaTx = await ua.createSellTransaction(
+        { token: { chainId: chainIdForUa, address: tokenAddress }, amount: amountForUa },
+        { slippageBps: safeSlippageBps }
+      );
+      if (!uaTx?.rootHash) return { success: false, error: "Failed to create UA sell transaction" };
+      return {
+        success: true,
+        transaction: uaTx,
+        rootHash: uaTx.rootHash,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        outputAmount: (uaTx as any)?.tokenChanges?.receivedTokens?.[0]?.amount,
+        requiresSignature: true,
+      };
     }
 
-    const uaTx = await ua.createSellTransaction(
-      {
-        token: {
-          chainId: chainIdForUa,
-          address: tokenAddress,
-        },
-        amount: amountForUa,
-      },
-      {
-        slippageBps: safeSlippageBps,
-      }
+    // EVM: use Li.Fi (captures integrator fee revenue)
+    const evmSmartAccount = (await ua.getSmartAccountOptions())?.smartAccountAddress;
+    if (!evmSmartAccount) return { success: false, error: "EVM smart account not available" };
+
+    const buyToken = USDC_ADDRESSES[tokenChainId];
+    if (!buyToken) return { success: false, error: "USDC not available on this chain" };
+
+    const sellAmount = amountRaw || "0";
+    if (BigInt(sellAmount) <= BigInt(0)) return { success: false, error: "Invalid sell amount" };
+
+    console.log("[Sell] Li.Fi quote:", { fromToken: tokenAddress, toToken: buyToken, sellAmount, chainId: tokenChainId });
+
+    const quote = await getLifiSwapQuote(
+      evmSmartAccount,
+      tokenChainId,
+      tokenChainId,
+      tokenAddress,
+      buyToken,
+      sellAmount,
+      safeSlippageBps
     );
 
-    if (!uaTx?.rootHash) {
-      return { success: false, error: "Failed to create UA sell transaction" };
+    if (!quote.success) {
+      if (quote.error?.includes("liquidity") || quote.error?.includes("No available")) {
+        return { success: false, error: "No liquidity available for this token" };
+      }
+      return { success: false, error: quote.error || "Token not available for swap" };
     }
+    if (!quote.transaction) return { success: false, error: "No swap route found" };
+
+    const transactions: Array<{ to: string; data: string; value: string }> = [];
+    if (quote.allowanceTarget && tokenAddress !== NATIVE_ETH) {
+      transactions.push({
+        to: tokenAddress,
+        data: encodeApprove(quote.allowanceTarget, sellAmount),
+        value: "0",
+      });
+    }
+    transactions.push({
+      to: quote.transaction.to,
+      data: quote.transaction.data,
+      value: quote.transaction.value || "0",
+    });
+
+    const uaTx = await ua.createUniversalTransaction({
+      chainId: tokenChainId,
+      transactions,
+      expectTokens: [{ type: TOKEN_TYPE.USDC, amount: "0" }],
+    });
+
+    if (!uaTx?.rootHash) return { success: false, error: "Failed to create UA transaction" };
 
     return {
       success: true,
       transaction: uaTx,
       rootHash: uaTx.rootHash,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      outputAmount: (uaTx as any)?.tokenChanges?.receivedTokens?.[0]?.amount,
+      outputAmount: quote.outputAmount,
       requiresSignature: true,
     };
   } catch (error) {
