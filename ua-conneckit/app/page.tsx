@@ -5663,37 +5663,20 @@ const SearchTab = ({
     if (!query) refreshWatchlist();
   }, [query, refreshWatchlist]);
 
-  const [swipeOffsets, setSwipeOffsets] = useState<Record<string, number>>({});
-  const touchStartRef = useRef<{ x: number; id: string } | null>(null);
+  const [searchSection, setSearchSection] = useState<"recents" | "watchlist">("recents");
 
-  const getClientX = (e: React.TouchEvent | React.MouseEvent) =>
-    'touches' in e ? e.touches[0].clientX : e.clientX;
-  const handleSwipeStart = (e: React.TouchEvent | React.MouseEvent, tokenId: string) => {
-    touchStartRef.current = { x: getClientX(e), id: tokenId };
+  const clearAllRecents = () => {
+    setRecentTokens([]);
+    localStorage.setItem("recentTokensV2", "[]");
   };
-  const handleSwipeMove = (e: React.TouchEvent | React.MouseEvent, tokenId: string) => {
-    if (!touchStartRef.current || touchStartRef.current.id !== tokenId) return;
-    const x = 'touches' in e ? e.touches[0]?.clientX : e.clientX;
-    if (x === undefined) return;
-    const delta = x - touchStartRef.current.x;
-    const offset = Math.min(0, Math.max(-80, delta));
-    setSwipeOffsets(prev => ({ ...prev, [tokenId]: offset }));
-  };
-  const handleSwipeEnd = (tokenId: string) => {
-    if (!touchStartRef.current || touchStartRef.current.id !== tokenId) return;
-    touchStartRef.current = null;
-    const current = swipeOffsets[tokenId] ?? 0;
-    setSwipeOffsets(prev => ({ ...prev, [tokenId]: current < -40 ? -64 : 0 }));
-  };
-  const handleDeleteClick = (e: React.MouseEvent, token: TokenResult) => {
-    e.stopPropagation();
-    e.preventDefault();
-    removeFromRecentTokens(token);
-    setSwipeOffsets(prev => {
-      const next = { ...prev };
-      delete next[token.id];
-      return next;
-    });
+
+  const handlePaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text?.trim()) setQuery(text.trim());
+    } catch {
+      /* clipboard not available */
+    }
   };
 
   const isAddressQuery = useMemo(() => {
@@ -5918,155 +5901,117 @@ const SearchTab = ({
     };
   }, [query, recentTokens, pickPrimaryContract, fetchDexMetrics]);
 
+  const displayList = !query
+    ? (searchSection === "recents" ? recentTokens : watchlistTokens)
+    : [];
+  const isRecents = searchSection === "recents";
+
   return (
-    <div className="flex-1 overflow-auto pb-24 bg-[#0a0a0a] px-4 pt-4">
-      <div className="relative mb-4">
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search tokens or paste address..."
-          className="w-full bg-gray-900 rounded-xl px-3 py-2 pr-10 text-white placeholder-gray-500 outline-none"
-        />
-        {query && (
+    <div className="flex flex-col flex-1 bg-[#0a0a0a] min-h-0">
+      {/* Header: Recents | Watchlist + Clear all */}
+      <div className="flex items-center justify-between px-4 pt-4 pb-2 shrink-0">
+        <div className="flex items-center gap-4">
           <button
-            onClick={() => setQuery('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+            type="button"
+            onClick={() => setSearchSection("recents")}
+            className={`text-sm font-medium ${isRecents ? "text-white" : "text-gray-500"}`}
           >
-            ✕
+            Recents
           </button>
-        )}
+          <button
+            type="button"
+            onClick={() => setSearchSection("watchlist")}
+            className={`text-sm font-medium ${!isRecents ? "text-white" : "text-gray-500"}`}
+          >
+            Watchlist
+          </button>
+        </div>
+        {(isRecents && recentTokens.length > 0) || (!isRecents && watchlistTokens.length > 0) ? (
+          <button
+            type="button"
+            onClick={() => isRecents ? clearAllRecents() : (localStorage.setItem(WATCHLIST_STORAGE_KEY, "[]"), setWatchlistTokens([]))}
+            className="text-sm text-accent-dynamic font-medium"
+          >
+            Clear all
+          </button>
+        ) : null}
       </div>
-      
-      {loading && <div className="text-gray-500 text-center py-4">Searching...</div>}
-      
-      {error && <div className="text-red-500 text-center py-4 text-sm">Error: {error}</div>}
-      
-      {/* Recent Tokens - DexScreener style list, swipe left to delete */}
-      {!query && watchlistTokens.length > 0 && (
-        <div className="mb-6">
-          <div className="text-gray-500 text-xs uppercase mb-3">Watchlist</div>
-          {watchlistTokens.map((token) => {
+
+      {/* Content area */}
+      <div className="flex-1 overflow-auto px-4 pb-4">
+        {loading && <div className="text-gray-500 text-center py-4">Searching...</div>}
+        {error && <div className="text-red-500 text-center py-4 text-sm">Error: {error}</div>}
+
+        {!query && displayList.length > 0 && displayList.map((token) => {
             const primaryContract = pickPrimaryContract(token, query);
             const chainLogo = getChainLogoForBlockchain(primaryContract?.blockchain);
+            const handleRemove = (e: React.MouseEvent) => {
+              e.stopPropagation();
+              if (isRecents) {
+                removeFromRecentTokens(token);
+              } else {
+                const raw = localStorage.getItem(WATCHLIST_STORAGE_KEY);
+                const list: TokenResult[] = raw ? JSON.parse(raw) : [];
+                const updated = list.filter((t) => t.id !== token.id);
+                localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(updated));
+                setWatchlistTokens(updated);
+              }
+            };
             return (
               <button
                 key={token.id}
                 onClick={() => setSelectedToken(token)}
-                className="w-full flex items-center justify-between py-3 border-b border-gray-800/30 hover:bg-gray-900/50 rounded-lg px-2 transition-colors"
+                className="w-full flex items-center justify-between py-3 border-b border-gray-800/30 hover:bg-gray-900/50 rounded-lg px-2 transition-colors text-left"
               >
-                <div className="flex items-center gap-3">
-                  <div className="relative">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="relative shrink-0">
                     {token.logo ? (
-                      <img src={token.logo} alt={token.symbol} className="w-9 h-9 rounded-full bg-gray-800" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                    ) : (
-                      <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold">
-                        {token.symbol.slice(0, 2)}
-                      </div>
-                    )}
+                      <img src={token.logo} alt={token.symbol} className="w-9 h-9 rounded-full bg-gray-800 object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; (e.target as HTMLImageElement).nextElementSibling?.classList.remove("hidden"); }} />
+                    ) : null}
+                    <div className={`w-9 h-9 rounded-full bg-purple-600 flex items-center justify-center text-white text-sm font-bold ${token.logo ? "hidden" : ""}`}>
+                      ?
+                    </div>
                     {chainLogo && (
                       <img src={chainLogo} alt="" className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-[#0a0a0a]" />
                     )}
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-white font-medium text-sm">{token.symbol}</span>
+                  <div className="min-w-0">
+                    <div className="text-white font-semibold text-sm truncate">{token.symbol}</div>
+                    <div className="text-gray-500 text-xs">
+                      ${token.market_cap && token.market_cap > 0 ? formatMarketCap(token.market_cap) : "—"} MC
                     </div>
-                    <div className="text-gray-500 text-xs truncate max-w-[120px]">{token.name}</div>
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="text-white text-sm font-medium">{formatPrice(token.price || 0)}</div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="text-right">
+                    <div className="text-white text-sm font-medium">{formatPrice(token.price || 0)}</div>
+                    {typeof token.price_change_24h === "number" && (
+                      <span className={`text-xs ${token.price_change_24h >= 0 ? "text-green-500" : "text-orange-500"}`}>
+                        {token.price_change_24h >= 0 ? "▲" : "▼"} {Math.abs(token.price_change_24h).toFixed(2)}%
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRemove}
+                    className="p-1 text-gray-500 hover:text-white transition-colors"
+                    aria-label="Remove"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
                 </div>
               </button>
             );
           })}
-        </div>
-      )}
 
-      {!query && recentTokens.length > 0 && (
-        <div>
-          <div className="text-gray-500 text-xs uppercase mb-3">History</div>
-          {recentTokens.map((token) => {
-            const primaryContract = pickPrimaryContract(token, query);
-            const chainLogo = getChainLogoForBlockchain(primaryContract?.blockchain);
-            const offset = swipeOffsets[token.id] ?? 0;
-            return (
-            <div key={token.id} className="relative overflow-hidden border-b border-gray-800/30 bg-[#0a0a0a]">
-              {offset < -40 && (
-                <button
-                  className="absolute right-0 top-0 bottom-0 w-16 bg-red-600 flex items-center justify-center z-10"
-                  onClick={(e) => handleDeleteClick(e, token)}
-                  aria-label="Remove from history"
-                >
-                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
-              )}
-              <div
-                className="relative w-full min-w-full py-3 text-left select-none"
-                style={{ transform: `translateX(${offset}px)`, touchAction: 'pan-y' }}
-                onTouchStart={(e) => handleSwipeStart(e, token.id)}
-                onTouchMove={(e) => handleSwipeMove(e, token.id)}
-                onTouchEnd={() => handleSwipeEnd(token.id)}
-                onMouseDown={(e) => handleSwipeStart(e, token.id)}
-                onMouseMove={(e) => { if (e.buttons) handleSwipeMove(e, token.id); }}
-                onMouseUp={() => handleSwipeEnd(token.id)}
-                onMouseLeave={() => touchStartRef.current?.id === token.id && handleSwipeEnd(token.id)}
-                onClick={() => offset === 0 && setSelectedToken(token)}
-              >
-                {/* Top row: logo, name, price, change */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="relative">
-                      {token.logo ? (
-                        <img src={token.logo} alt={token.symbol} className="w-9 h-9 rounded-full bg-gray-800" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                      ) : (
-                        <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold">
-                          {token.symbol.slice(0, 2)}
-                        </div>
-                      )}
-                      {chainLogo && (
-                        <img src={chainLogo} alt="" className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-[#0a0a0a]" />
-                      )}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-white font-medium text-sm">{token.symbol}</span>
-                      </div>
-                      <div className="text-gray-500 text-xs truncate max-w-[120px]">{token.name}</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-white text-sm font-medium">{formatPrice(token.price || 0)}</div>
-                    {typeof token.price_change_24h === 'number' && (
-                      <span className={`text-xs ${token.price_change_24h >= 0 ? "text-green-500" : "text-red-500"}`}>
-                        24H {token.price_change_24h >= 0 ? "+" : ""}{token.price_change_24h.toFixed(1)}%
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex gap-3 mt-2 ml-12 text-xs">
-                  <span className="text-gray-500">LIQ <span className="text-gray-400">{token.liquidity && token.liquidity > 0 ? formatMarketCap(token.liquidity) : "N/A"}</span></span>
-                  <span className="text-gray-500">VOL <span className="text-gray-400">{token.volume && token.volume > 0 ? formatMarketCap(token.volume) : "N/A"}</span></span>
-                  <span className="text-gray-500">MCAP <span className="text-gray-400">{token.market_cap && token.market_cap > 0 ? formatMarketCap(token.market_cap) : "N/A"}</span></span>
-                </div>
-              </div>
-            </div>
-            );
-          })}
-        </div>
-      )}
-      
-      {!query && recentTokens.length === 0 && (
-        <div className="text-center py-8 text-gray-500">
-          <div>Recently Viewed</div>
-          <div className="text-xs mt-1 text-gray-600">Search to add tokens here</div>
-        </div>
-      )}
+        {!query && displayList.length === 0 && (
+          <div className="text-center py-8 text-gray-500">
+            <div>{isRecents ? "Recently Viewed" : "Watchlist"}</div>
+            <div className="text-xs mt-1 text-gray-600">Search to add tokens here</div>
+          </div>
+        )}
 
-      {results.length > 0 && (
+        {results.length > 0 && (
         <div>
           {results.map((token) => {
             const primaryContract = pickPrimaryContract(token, query);
@@ -6134,6 +6079,7 @@ const SearchTab = ({
           })}
         </div>
       )}
+      </div>
 
       <TokenDetailModal 
         token={selectedToken} 
@@ -6167,6 +6113,26 @@ const SearchTab = ({
           console.log("Swap success:", txId);
         }}
       />
+
+      {/* Search bar at bottom - matches screenshot */}
+      <div className="shrink-0 px-4 pb-4 pt-2 bg-[#0a0a0a]">
+        <div className="relative flex items-center bg-gray-800 rounded-full px-4 py-2.5">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search for anything..."
+            className="flex-1 bg-transparent text-white placeholder-gray-500 outline-none text-sm"
+          />
+          <button
+            type="button"
+            onClick={handlePaste}
+            className="ml-2 px-3 py-1 rounded-lg bg-gray-700 text-white text-sm font-medium hover:bg-gray-600 transition-colors"
+          >
+            Paste
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
