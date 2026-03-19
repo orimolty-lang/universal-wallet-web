@@ -36,8 +36,8 @@ import { useUniversalAccountWS } from "./hooks/useUniversalAccountWS";
 import { createDelegationOnlyTx, getEIP7702Deployments, getUserOpsFromTx, handleEIP7702Authorizations } from "../lib/eip7702";
 import { fetchParticleExternalAssets } from "../lib/particle-balances";
 
-// Mobula: wallet portfolio + search go through lifi-proxy (key set server-side)
-const MOBULA_PROXY = "https://lifi-proxy.orimolty.workers.dev/mobula";
+// Mobula: proxied via Cloudflare worker (no frontend API key)
+const MOBULA_PROXY_BASE = process.env.NEXT_PUBLIC_LIFI_PROXY_URL || "https://lifi-proxy.orimolty.workers.dev";
 
 // Mobula wallet balance response type
 interface MobulaAsset {
@@ -71,7 +71,7 @@ async function fetchMobulaWalletBalances(address: string): Promise<MobulaAsset[]
   
   try {
     // Use our proxy for Mobula API (handles CORS)
-    const url = `${MOBULA_PROXY}/api/1/wallet/portfolio?wallet=${address}&blockchains=base,ethereum,arbitrum,polygon,solana,optimism,bnb`;
+    const url = `${MOBULA_PROXY_BASE}/mobula/api/1/wallet/portfolio?wallet=${address}&blockchains=base,ethereum,arbitrum,polygon,solana,optimism,bnb`;
     console.log("[Mobula] URL (via proxy):", url);
     
     const response = await fetch(url, {
@@ -2686,9 +2686,7 @@ const PerpsModal = ({
     let cancelled = false;
     const fetchLogoForSymbol = async (symbol: string) => {
       try {
-        const res = await fetch(`${MOBULA_PROXY}/api/1/search?input=${encodeURIComponent(symbol)}`, {
-          headers: { 'Content-Type': 'application/json' },
-        });
+        const res = await fetch(`${MOBULA_PROXY_BASE}/mobula/api/1/search?input=${encodeURIComponent(symbol)}`);
         if (!res.ok) return;
         const json = await res.json();
         const list = Array.isArray(json?.data) ? json.data : [];
@@ -5842,9 +5840,7 @@ const SearchTab = ({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${MOBULA_PROXY}/api/1/search?input=${encodeURIComponent(q)}`, {
-        headers: { "Content-Type": "application/json" },
-      });
+      const res = await fetch(`${MOBULA_PROXY_BASE}/mobula/api/1/search?input=${encodeURIComponent(q)}`);
       
       if (!res.ok) {
         throw new Error(`API error: ${res.status}`);
