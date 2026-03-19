@@ -1743,7 +1743,17 @@ const ConvertModal = ({
         addDebug(`chainsNeeding=[${chainsNeedingUnique.join(",")}] len=${chainsNeedingUnique.length}`);
         /* eslint-enable @typescript-eslint/no-explicit-any */
 
-        // Particle example: sign root hash + all 7702 auth, send in one shot. No pre-delegation.
+        // Delegate from Settings first: createUniversalTransaction self-transfer per chain.
+        // Convert requires chains to be delegated before running.
+        if (chainsNeedingUnique.length > 0) {
+          const chainNames = chainsNeedingUnique
+            .map((c) => CHAIN_ID_TO_NAME[c] ?? `Chain ${c}`)
+            .join(", ");
+          throw new Error(
+            `Delegate ${chainNames} in Settings first (Chains → Delegate), then retry convert.`
+          );
+        }
+
         // Sign the tx root hash - Particle demo uses Privy signMessage (personal_sign)
         setLoadingStatus('Waiting for signature...');
         const rootHash = (tx as { rootHash?: string })?.rootHash as string | undefined;
