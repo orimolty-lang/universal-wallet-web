@@ -5,7 +5,6 @@ import {
   useAccount,
   useWallets,
   useDisconnect,
-  useParticleAuth,
   useSign7702AuthorizationCompat,
   useExportWalletCompat,
 } from "@/app/lib/connectkit-compat";
@@ -6999,8 +6998,6 @@ const SettingsModal = ({
   onLogout,
   blindSigningEnabled,
   onToggleBlindSigning,
-  onOpenAccountSecurity,
-  onOpenMasterPassword,
   onOpenAppLock,
 }: {
   isOpen: boolean;
@@ -7008,8 +7005,6 @@ const SettingsModal = ({
   onLogout: () => void;
   blindSigningEnabled: boolean;
   onToggleBlindSigning: (enabled: boolean) => void;
-  onOpenAccountSecurity?: () => void;
-  onOpenMasterPassword?: () => void;
   onOpenAppLock?: () => void;
 }) => {
   const exportWallet = useExportWalletCompat();
@@ -7019,11 +7014,13 @@ const SettingsModal = ({
   const handleExportKey = async () => {
     if (!exportWallet || !address) return;
     setExporting(true);
+    const fallback = setTimeout(() => setExporting(false), 5000);
     try {
       await exportWallet({ address });
     } catch (e) {
       console.error("[Export]", e);
     } finally {
+      clearTimeout(fallback);
       setExporting(false);
     }
   };
@@ -7037,21 +7034,6 @@ const SettingsModal = ({
         <div className="text-gray-500 text-xs uppercase tracking-wider mb-2">Security</div>
         
         <button 
-          onClick={onOpenAccountSecurity}
-          className="w-full flex items-center justify-between py-3 border-b border-gray-800"
-        >
-          <div className="flex items-center gap-3">
-            <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/>
-            </svg>
-            <span className="text-white">Account & Security</span>
-          </div>
-          <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.25 4.5l7.5 7.5-7.5 7.5"/>
-          </svg>
-        </button>
-        
-        <button 
           onClick={onOpenAppLock}
           className="w-full flex items-center justify-between py-3 border-b border-gray-800"
         >
@@ -7060,21 +7042,6 @@ const SettingsModal = ({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7.864 4.243A7.5 7.5 0 0119.5 10.5c0 2.92-.556 5.709-1.568 8.268M5.742 6.364A7.465 7.465 0 004.5 10.5a7.464 7.464 0 01-1.15 3.993m1.989 3.559A11.209 11.209 0 008.25 10.5a3.75 3.75 0 117.5 0c0 .527-.021 1.049-.064 1.565M12 10.5a14.94 14.94 0 01-3.6 9.75m6.633-4.596a18.666 18.666 0 01-2.485 5.33"/>
             </svg>
             <span className="text-white">App Lock</span>
-          </div>
-          <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.25 4.5l7.5 7.5-7.5 7.5"/>
-          </svg>
-        </button>
-        
-        <button 
-          onClick={onOpenMasterPassword}
-          className="w-full flex items-center justify-between py-3 border-b border-gray-800"
-        >
-          <div className="flex items-center gap-3">
-            <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"/>
-            </svg>
-            <span className="text-white">Wallet Password</span>
           </div>
           <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.25 4.5l7.5 7.5-7.5 7.5"/>
@@ -7092,10 +7059,7 @@ const SettingsModal = ({
               <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"/>
               </svg>
-              <div className="text-left">
-                <span className="text-white block">Export Private Key</span>
-                <span className="text-gray-500 text-[11px]">Reveal and copy in secure modal</span>
-              </div>
+              <span className="text-white">Export Private Key</span>
             </div>
             {exporting ? (
               <div className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
@@ -7243,7 +7207,6 @@ const App = () => {
   const sign7702 = useSign7702AuthorizationCompat();
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
-  const { openAccountAndSecurity, openSetMasterPassword } = useParticleAuth();
   
   const [showSplash, setShowSplash] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>("home");
@@ -7797,8 +7760,6 @@ const App = () => {
         onLogout={disconnect}
         blindSigningEnabled={profile.blindSigningEnabled}
         onToggleBlindSigning={(enabled) => updateProfile({ ...profile, blindSigningEnabled: enabled })}
-        onOpenAccountSecurity={openAccountAndSecurity}
-        onOpenMasterPassword={openSetMasterPassword}
         onOpenAppLock={() => setShowAppLockModal(true)}
       />
       
