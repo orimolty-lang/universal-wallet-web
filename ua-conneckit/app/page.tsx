@@ -6413,11 +6413,10 @@ const ActivityModal = ({
   };
 
   const getTxType = (tx: TxData): string => {
-    // Detect from deposit/lending/settlement ops (LiFi swaps, sells - list and detail may have these)
-    const depositOps = tx.depositUserOperations || [];
+    // Detect from lending/settlement ops first (LiFi swaps - API may label as "unknown")
     const lendingOps = tx.lendingUserOperations || [];
     const settlementOps = tx.settlementUserOperations || [];
-    if (depositOps.length > 0 || lendingOps.length > 0 || settlementOps.length > 0) return 'Swap';
+    if (lendingOps.length > 0 || settlementOps.length > 0) return 'Swap';
 
     // Detect type from token changes (decr+incr = Swap)
     if (tx.tokenChanges) {
@@ -6439,8 +6438,7 @@ const ActivityModal = ({
       return tag;
     }
     
-    // List may have transactions array; multi-step often means Swap
-    if (tx.transactions?.length > 1) return 'Swap';
+    // Check for contract interaction patterns
     if (tx.transactions?.length > 0 || tx.userOps?.length > 0) return 'Contract';
     
     return 'Transaction';
@@ -6512,56 +6510,25 @@ const ActivityModal = ({
     }
   };
 
-  /** Format amountInUSD - handles raw values API sometimes returns (e.g. $994176017463000064 → $0.99) */
-  const formatAmountInUsd = (value: string | number | undefined): string => {
-    if (value === undefined || value === null) return '0.00';
-    try {
-      const n = typeof value === 'string' && value.startsWith('0x')
-        ? Number(BigInt(value)) / 1e18
-        : Number(value);
-      if (!Number.isFinite(n)) return '0.00';
-      const abs = Math.abs(n);
-      if (abs > 1e15) return (n / 1e18).toFixed(2);
-      if (abs > 1e9) return (n / 1e12).toFixed(2);
-      return n.toFixed(2);
-    } catch {
-      return '0.00';
-    }
-  };
-
-  // Convert hex/BigInt string to human readable number (handles API raw values)
-  const formatTokenAmount = (amount: string | number, decimals: number = 18, symbol?: string): string => {
+  // Convert hex/BigInt string to human readable number
+  const formatTokenAmount = (amount: string | number, decimals: number = 18): string => {
     if (!amount) return '0';
     let value: bigint;
     try {
       if (typeof amount === 'string' && amount.startsWith('0x')) {
         value = BigInt(amount);
       } else if (typeof amount === 'string') {
+        // Check if it's already a decimal number
         if (amount.includes('.')) return parseFloat(amount).toFixed(4);
         value = BigInt(amount);
       } else {
         value = BigInt(Math.floor(amount));
       }
+      // Convert based on decimals
       const divisor = BigInt(10 ** decimals);
-      let whole = value / divisor;
-      let remainder = value % divisor;
-      // API sometimes returns raw with 12 decimals for USDC/USDT - if result > 1000, retry
-      const sym = (symbol || '').toUpperCase();
-      if ((sym === 'USDC' || sym === 'USDT') && whole > BigInt(1000) && decimals <= 6) {
-        const div12 = BigInt(10 ** 12);
-        whole = value / div12;
-        remainder = value % div12;
-        const r = remainder.toString().padStart(12, '0').slice(0, 6);
-        return `${whole}.${r}`.replace(/\.?0+$/, '') || '0';
-      }
-      if (whole > BigInt(1000000) && decimals < 18) {
-        const div18 = BigInt(10 ** 18);
-        whole = value / div18;
-        remainder = value % div18;
-        const r = remainder.toString().padStart(18, '0').slice(0, 6);
-        return `${whole}.${r}`.replace(/\.?0+$/, '') || '0';
-      }
-      const remainderStr = remainder.toString().padStart(decimals, '0').slice(0, 6);
+      const whole = value / divisor;
+      const remainder = value % divisor;
+      const remainderStr = remainder.toString().padStart(decimals, '0').slice(0, 4);
       return `${whole}.${remainderStr}`.replace(/\.?0+$/, '') || '0';
     } catch {
       return String(amount);
@@ -6575,12 +6542,12 @@ const ActivityModal = ({
       const decimals = d.token?.decimals || d.token?.realDecimals || 18;
       const symbol = d.token?.symbol || '';
       const rawAmount = d.rawAmount || d.amount;
-      const formattedAmount = rawAmount ? formatTokenAmount(rawAmount, decimals, symbol) : (d.amount || '0');
+      const formattedAmount = rawAmount ? formatTokenAmount(rawAmount, decimals) : (d.amount || '0');
       return { 
         amount: formattedAmount, 
         symbol, 
         isNegative: true,
-        usdValue: d.amountInUSD != null ? `$${formatAmountInUsd(d.amountInUSD)}` : undefined
+        usdValue: d.amountInUSD ? `$${Number(d.amountInUSD).toFixed(2)}` : undefined
       };
     }
     if (tx.tokenChanges?.incr?.[0]) {
@@ -6588,24 +6555,23 @@ const ActivityModal = ({
       const decimals = i.token?.decimals || i.token?.realDecimals || 18;
       const symbol = i.token?.symbol || '';
       const rawAmount = i.rawAmount || i.amount;
-      const formattedAmount = rawAmount ? formatTokenAmount(rawAmount, decimals, symbol) : (i.amount || '0');
+      const formattedAmount = rawAmount ? formatTokenAmount(rawAmount, decimals) : (i.amount || '0');
       return { 
         amount: formattedAmount, 
         symbol, 
         isNegative: false,
-        usdValue: i.amountInUSD != null ? `$${formatAmountInUsd(i.amountInUSD)}` : undefined
+        usdValue: i.amountInUSD ? `$${Number(i.amountInUSD).toFixed(2)}` : undefined
       };
     }
     // Try depositTokens/lendingTokens
     if (tx.depositTokens?.[0]) {
       const d = tx.depositTokens[0];
       const decimals = d.token?.decimals || 18;
-      const symbol = d.token?.symbol || '';
       return {
-        amount: formatTokenAmount(d.rawAmount || d.amount, decimals, symbol),
-        symbol,
+        amount: formatTokenAmount(d.rawAmount || d.amount, decimals),
+        symbol: d.token?.symbol || '',
         isNegative: true,
-        usdValue: d.amountInUSD != null ? `$${formatAmountInUsd(d.amountInUSD)}` : undefined
+        usdValue: d.amountInUSD ? `$${Number(d.amountInUSD).toFixed(2)}` : undefined
       };
     }
     // Fallback to simple amount field
@@ -6745,8 +6711,8 @@ const ActivityModal = ({
                             <span className="text-gray-200">{d.token?.symbol || 'Token'}</span>
                           </div>
                           <div className="text-right">
-                            <div className="text-red-400">- {formatTokenAmount(raw, decimals, d.token?.symbol)}</div>
-                            {d.amountInUSD != null ? <div className="text-xs text-gray-400">${formatAmountInUsd(d.amountInUSD)}</div> : null}
+                            <div className="text-red-400">- {formatTokenAmount(raw, decimals)}</div>
+                            {d.amountInUSD ? <div className="text-xs text-gray-400">${formatHexUsd(d.amountInUSD)}</div> : null}
                           </div>
                         </div>
                       );})}
@@ -6761,8 +6727,8 @@ const ActivityModal = ({
                             <span className="text-gray-200">{inc.token?.symbol || 'Token'}</span>
                           </div>
                           <div className="text-right">
-                            <div className="text-green-400">+ {formatTokenAmount(raw, decimals, inc.token?.symbol)}</div>
-                            {inc.amountInUSD != null ? <div className="text-xs text-gray-400">${formatAmountInUsd(inc.amountInUSD)}</div> : null}
+                            <div className="text-green-400">+ {formatTokenAmount(raw, decimals)}</div>
+                            {inc.amountInUSD ? <div className="text-xs text-gray-400">${formatHexUsd(inc.amountInUSD)}</div> : null}
                           </div>
                         </div>
                       );})}
