@@ -71,7 +71,7 @@ async function fetchMobulaWalletBalances(address: string): Promise<MobulaAsset[]
   
   try {
     // Use our proxy for Mobula API (handles CORS)
-    const url = `https://lifi-proxy.orimolty.workers.dev/mobula/api/1/wallet/portfolio?wallet=${address}&blockchains=base,ethereum,arbitrum,polygon,solana,optimism,bsc`;
+    const url = `https://lifi-proxy.orimolty.workers.dev/mobula/api/1/wallet/portfolio?wallet=${address}&blockchains=base,ethereum,arbitrum,polygon,solana,optimism,bnb`;
     console.log("[Mobula] URL (via proxy):", url);
     
     const response = await fetch(url, {
@@ -1116,7 +1116,7 @@ const SendModal = ({
         const chainId = Number(c.token?.chainId);
         const tokenAddr = c.token?.address || "";
         const bal = Number(c.amount || 0);
-        if (bal < 0.0001 || !chainId) continue;
+        if (bal < 1e-9 || !chainId) continue;
         const key = `${asset.tokenType}-${chainId}`;
         out.push({
           key,
@@ -1468,7 +1468,7 @@ const ConvertModal = ({
     if (!asset?.chainAggregation) return [];
     // Use SDK structure: chainAggregation[].token.chainId, amount, amountInUSD
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return asset.chainAggregation.filter((c: any) => c.amount > 0.0001).map((c: any) => ({
+    return asset.chainAggregation.filter((c: any) => (c.amount || 0) > 1e-9).map((c: any) => ({
       chainId: c.token?.chainId,
       address: c.token?.address,
       balance: c.amount,
@@ -5326,9 +5326,9 @@ const HomeTab = ({
         amountInUSD: chain.amountInUSD || 0,
         address: chain.token?.address,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      })).filter((c: any) => c.amount > 0.0001) || [],
+      })).filter((c: any) => (c.amount || 0) > 1e-9) || [],
     };
-  }).filter((t: { balance: number }) => t.balance > 0.0001) || [];
+  }).filter((t: { balance: number }) => (t.balance || 0) > 1e-9) || [];
   
   // Filter based on hide small balances toggle
   const tokens = hideSmallBalances 
