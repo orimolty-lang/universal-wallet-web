@@ -6423,29 +6423,29 @@ const ActivityModal = ({
   };
 
   const getTxType = (tx: TxData): string => {
-    // Check for known types (API may return swap, buy, sell, convert, send, etc.)
-    const tag = (tx.tag || tx.type || tx.txType || tx.action || '').toLowerCase();
-    if (tag && tag !== 'universal') {
-      if (tag.includes('swap') || tag.includes('buy') || tag.includes('sell')) return 'Swap';
-      if (tag.includes('convert')) return 'Convert';
-      if (tag.includes('send') || tag.includes('transfer')) return 'Send';
-      if (tag.includes('receive') || tag.includes('deposit')) return 'Receive';
-      if (tag.includes('contract') || tag.includes('interaction')) return 'Contract';
-      return tag;
-    }
-    
-    // Detect from lending/settlement ops (LiFi swaps, contract calls)
+    // Detect from lending/settlement ops first (LiFi swaps - API may label as "unknown")
     const lendingOps = tx.lendingUserOperations || [];
     const settlementOps = tx.settlementUserOperations || [];
     if (lendingOps.length > 0 || settlementOps.length > 0) return 'Swap';
-    
-    // Detect type from token changes
+
+    // Detect type from token changes (decr+incr = Swap)
     if (tx.tokenChanges) {
       const hasDecr = tx.tokenChanges.decr?.length > 0;
       const hasIncr = tx.tokenChanges.incr?.length > 0;
       if (hasDecr && hasIncr) return 'Swap';
       if (hasDecr && !hasIncr) return 'Send';
       if (!hasDecr && hasIncr) return 'Receive';
+    }
+
+    // Check for known types from API tag
+    const tag = (tx.tag || tx.type || tx.txType || tx.action || '').toLowerCase();
+    if (tag && tag !== 'universal' && tag !== 'unknown') {
+      if (tag.includes('swap') || tag.includes('buy') || tag.includes('sell')) return 'Swap';
+      if (tag.includes('convert')) return 'Convert';
+      if (tag.includes('send') || tag.includes('transfer')) return 'Send';
+      if (tag.includes('receive') || tag.includes('deposit')) return 'Receive';
+      if (tag.includes('contract') || tag.includes('interaction')) return 'Contract';
+      return tag;
     }
     
     // Check for contract interaction patterns
@@ -6710,30 +6710,38 @@ const ActivityModal = ({
                   <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                     <div className="text-gray-300 font-medium mb-2">Balance change</div>
                     <div className="space-y-2 text-sm">
-                      {(details.tokenChanges?.decr || []).map((d: { amount?: string; rawAmount?: string; amountInUSD?: string; token?: { symbol?: string; image?: string; realDecimals?: number } }, i: number) => (
+                      {(details.tokenChanges?.decr || []).map((d: { amount?: string; rawAmount?: string; amountInUSD?: string; token?: { symbol?: string; image?: string; realDecimals?: number; decimals?: number } }, i: number) => {
+                        const sym = (d.token?.symbol || '').toUpperCase();
+                        const decimals = d.token?.realDecimals ?? d.token?.decimals ?? (sym === 'USDC' || sym === 'USDT' ? 6 : sym === 'SOL' ? 9 : 18);
+                        const raw = d.rawAmount ?? d.amount ?? '0';
+                        return (
                         <div key={`decr-${i}`} className="flex items-center justify-between bg-black/20 rounded-lg px-3 py-2">
                           <div className="flex items-center gap-2">
                             {d.token?.image ? <img src={d.token.image} alt="" className="w-5 h-5 rounded-full" /> : null}
                             <span className="text-gray-200">{d.token?.symbol || 'Token'}</span>
                           </div>
                           <div className="text-right">
-                            <div className="text-red-400">- {formatTokenAmount(d.amount || d.rawAmount || '0', d.token?.realDecimals || 6)}</div>
+                            <div className="text-red-400">- {formatTokenAmount(raw, decimals)}</div>
                             {d.amountInUSD ? <div className="text-xs text-gray-400">${formatHexUsd(d.amountInUSD)}</div> : null}
                           </div>
                         </div>
-                      ))}
-                      {(details.tokenChanges?.incr || []).map((inc: { amount?: string; rawAmount?: string; amountInUSD?: string; token?: { symbol?: string; image?: string; realDecimals?: number } }, i: number) => (
+                      );})}
+                      {(details.tokenChanges?.incr || []).map((inc: { amount?: string; rawAmount?: string; amountInUSD?: string; token?: { symbol?: string; image?: string; realDecimals?: number; decimals?: number } }, i: number) => {
+                        const sym = (inc.token?.symbol || '').toUpperCase();
+                        const decimals = inc.token?.realDecimals ?? inc.token?.decimals ?? (sym === 'USDC' || sym === 'USDT' ? 6 : sym === 'SOL' ? 9 : 18);
+                        const raw = inc.rawAmount ?? inc.amount ?? '0';
+                        return (
                         <div key={`incr-${i}`} className="flex items-center justify-between bg-black/20 rounded-lg px-3 py-2">
                           <div className="flex items-center gap-2">
                             {inc.token?.image ? <img src={inc.token.image} alt="" className="w-5 h-5 rounded-full" /> : null}
                             <span className="text-gray-200">{inc.token?.symbol || 'Token'}</span>
                           </div>
                           <div className="text-right">
-                            <div className="text-green-400">+ {formatTokenAmount(inc.amount || inc.rawAmount || '0', inc.token?.realDecimals || 6)}</div>
+                            <div className="text-green-400">+ {formatTokenAmount(raw, decimals)}</div>
                             {inc.amountInUSD ? <div className="text-xs text-gray-400">${formatHexUsd(inc.amountInUSD)}</div> : null}
                           </div>
                         </div>
-                      ))}
+                      );})}
                     </div>
                   </div>
                 ) : null}

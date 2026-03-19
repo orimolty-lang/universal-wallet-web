@@ -217,6 +217,19 @@ export async function pollTransactionDetails(
         if (!txHash && (targetChainId === 101 || targetChainId === 792703809)) {
           txHash = details.signature || details.solanaSignature || details.solanaTxHash;
         }
+
+        // LiFi/UA: lendingUserOperations or settlementUserOperations (target chain swap tx)
+        if (!txHash) {
+          const lendingOps = details.lendingUserOperations || [];
+          const settlementOps = details.settlementUserOperations || [];
+          const depositOps = details.depositUserOperations || [];
+          const allOps = [...lendingOps, ...settlementOps, ...depositOps];
+          const targetOp = allOps.find((o: { chainId?: number }) => o.chainId === targetChainId)
+            || allOps[allOps.length - 1];
+          if (targetOp?.txHash) {
+            txHash = targetOp.txHash;
+          }
+        }
         
         // Determine chain ID - use target chain as fallback
         const chainId = 
