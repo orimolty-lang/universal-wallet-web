@@ -7468,13 +7468,14 @@ const App = () => {
       projectId: process.env.NEXT_PUBLIC_PROJECT_ID || "",
       projectClientKey: process.env.NEXT_PUBLIC_CLIENT_KEY || "",
       projectAppUuid: process.env.NEXT_PUBLIC_APP_ID || "",
-      rpcUrl: 'https://universal-rpc-staging.particle.network', // Bypass simulation for oracle-dependent contracts (Avantis perps)
+      // Use default production RPC - staging caused AA24 on delegation
       smartAccountOptions: {
-        useEIP7702: true, // Magic auth + EOA signing path with UA 7702 enabled
+        useEIP7702: true,
         name: "UNIVERSAL",
         version: UNIVERSAL_ACCOUNT_VERSION,
         ownerAddress: address,
       },
+      tradeConfig: { slippageBps: 100, universalGas: true },
     };
   }, [address]);
 
