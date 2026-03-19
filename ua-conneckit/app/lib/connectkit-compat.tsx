@@ -170,7 +170,7 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
 
 export function MagicAuthProvider({ children }: React.PropsWithChildren) {
   const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID || "cmmvrmj1503730cjx4s1nu78t";
-  const clientId = process.env.NEXT_PUBLIC_PRIVY_CLIENT_ID;
+  const clientId = process.env.NEXT_PUBLIC_PRIVY_CLIENT_ID || "client-WY6WwYjqhoUurxz6sQNKp3pBWkrdLC85MyF5LePfSyn5f";
 
   return (
     <PrivyProvider
