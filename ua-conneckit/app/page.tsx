@@ -6413,29 +6413,27 @@ const ActivityModal = ({
   };
 
   const getTxType = (tx: TxData): string => {
+    const tag = (tx.tag || tx.type || tx.txType || tx.action || '').toLowerCase();
+    if (tag && tag !== 'universal' && tag !== 'unknown') {
+      if (tag.includes('convert')) return 'Convert';
+      if (tag.includes('receive') || tag.includes('deposit')) return 'Receive';
+      if (tag.includes('send') || tag.includes('transfer')) return 'Send';
+      if (tag.includes('swap') || tag.includes('buy') || tag.includes('sell')) return 'Swap';
+      if (tag.includes('contract') || tag.includes('interaction')) return 'Contract';
+      return tag;
+    }
+
     const depositOps = tx.depositUserOperations || [];
     const lendingOps = tx.lendingUserOperations || [];
     const settlementOps = tx.settlementUserOperations || [];
     if (depositOps.length > 0 || lendingOps.length > 0 || settlementOps.length > 0) return 'Swap';
 
-    // Detect type from token changes (decr+incr = Swap)
     if (tx.tokenChanges) {
       const hasDecr = tx.tokenChanges.decr?.length > 0;
       const hasIncr = tx.tokenChanges.incr?.length > 0;
       if (hasDecr && hasIncr) return 'Swap';
       if (hasDecr && !hasIncr) return 'Send';
       if (!hasDecr && hasIncr) return 'Receive';
-    }
-
-    // Check for known types from API tag
-    const tag = (tx.tag || tx.type || tx.txType || tx.action || '').toLowerCase();
-    if (tag && tag !== 'universal' && tag !== 'unknown') {
-      if (tag.includes('swap') || tag.includes('buy') || tag.includes('sell')) return 'Swap';
-      if (tag.includes('convert')) return 'Convert';
-      if (tag.includes('send') || tag.includes('transfer')) return 'Send';
-      if (tag.includes('receive') || tag.includes('deposit')) return 'Receive';
-      if (tag.includes('contract') || tag.includes('interaction')) return 'Contract';
-      return tag;
     }
     
     if (tx.transactions?.length > 1) return 'Swap';
@@ -6542,7 +6540,6 @@ const ActivityModal = ({
       const divisor = BigInt(10 ** decimals);
       let whole = value / divisor;
       let remainder = value % divisor;
-      // API sometimes returns raw with 12 decimals for USDC/USDT - if result > 1000, retry
       const sym = (symbol || '').toUpperCase();
       if ((sym === 'USDC' || sym === 'USDT') && whole > BigInt(1000) && decimals <= 6) {
         const div12 = BigInt(10 ** 12);
@@ -6550,6 +6547,22 @@ const ActivityModal = ({
         remainder = value % div12;
         const r = remainder.toString().padStart(12, '0').slice(0, 6);
         return `${whole}.${r}`.replace(/\.?0+$/, '') || '0';
+      }
+      if (sym === 'SOL') {
+        if (whole > BigInt(1000)) {
+          const div12 = BigInt(10 ** 12);
+          whole = value / div12;
+          remainder = value % div12;
+          const r = remainder.toString().padStart(12, '0').slice(0, 6);
+          return `${whole}.${r}`.replace(/\.?0+$/, '') || '0';
+        }
+        if (decimals <= 6 && whole > BigInt(1)) {
+          const div9 = BigInt(10 ** 9);
+          whole = value / div9;
+          remainder = value % div9;
+          const r = remainder.toString().padStart(9, '0').slice(0, 6);
+          return `${whole}.${r}`.replace(/\.?0+$/, '') || '0';
+        }
       }
       const remainderStr = remainder.toString().padStart(decimals, '0').slice(0, 6);
       return `${whole}.${remainderStr}`.replace(/\.?0+$/, '') || '0';
@@ -6606,6 +6619,8 @@ const ActivityModal = ({
       137: { name: 'Polygon', logo: 'https://cryptologos.cc/logos/polygon-matic-logo.png', explorer: 'https://polygonscan.com/tx/' },
       8453: { name: 'Base', logo: 'https://cryptologos.cc/logos/base-base-logo.png', explorer: 'https://basescan.org/tx/' },
       42161: { name: 'Arbitrum', logo: 'https://cryptologos.cc/logos/arbitrum-arb-logo.png', explorer: 'https://arbiscan.io/tx/' },
+      56: { name: 'BNB Chain', logo: 'https://cryptologos.cc/logos/bnb-bnb-logo.png', explorer: 'https://bscscan.com/tx/' },
+      101: { name: 'Solana', logo: 'https://cryptologos.cc/logos/solana-sol-logo.png', explorer: 'https://solscan.io/tx/' },
       2013: { name: 'Settlement', logo: 'https://static.particle.network/token-list/ethereum/native.png', explorer: 'https://universalx.app/activity/details?id=' },
     };
     return map[chainId || 0] || { name: `Chain ${chainId || '-'}`, logo: 'https://static.particle.network/token-list/ethereum/native.png', explorer: 'https://etherscan.io/tx/' };
