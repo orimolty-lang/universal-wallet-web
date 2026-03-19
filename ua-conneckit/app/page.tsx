@@ -6480,7 +6480,7 @@ const ActivityModal = ({
     }
   };
 
-  // Convert hex/BigInt string to human readable number (handles API raw values)
+  // Convert hex/BigInt string to human readable number. API may use 18 decimals; use token-native when result is unreasonably large.
   const formatTokenAmount = (amount: string | number, decimals: number = 18, symbol?: string): string => {
     if (!amount) return '0';
     let value: bigint;
@@ -6493,42 +6493,21 @@ const ActivityModal = ({
       } else {
         value = BigInt(Math.floor(amount));
       }
-      const divisor = BigInt(10 ** decimals);
-      let whole = value / divisor;
-      let remainder = value % divisor;
       const sym = (symbol || '').toUpperCase();
-      if (decimals <= 6 && whole > BigInt(1000)) {
-        const div12 = BigInt(10 ** 12);
-        whole = value / div12;
-        remainder = value % div12;
-        const r = remainder.toString().padStart(12, '0').slice(0, 6);
-        return `${whole}.${r}`.replace(/\.?0+$/, '') || '0';
-      }
-      if (sym === 'SOL') {
-        if (whole > BigInt(1000)) {
-          const div12 = BigInt(10 ** 12);
-          whole = value / div12;
-          remainder = value % div12;
-          const r = remainder.toString().padStart(12, '0').slice(0, 6);
-          return `${whole}.${r}`.replace(/\.?0+$/, '') || '0';
-        }
-        if (decimals <= 6 && whole > BigInt(1)) {
-          const div9 = BigInt(10 ** 9);
-          whole = value / div9;
-          remainder = value % div9;
-          const r = remainder.toString().padStart(9, '0').slice(0, 6);
-          return `${whole}.${r}`.replace(/\.?0+$/, '') || '0';
-        }
-        if (whole > BigInt(100) && decimals < 9) {
-          const div9 = BigInt(10 ** 9);
-          whole = value / div9;
-          remainder = value % div9;
-          const r = remainder.toString().padStart(9, '0').slice(0, 6);
-          return `${whole}.${r}`.replace(/\.?0+$/, '') || '0';
-        }
-      }
-      const remainderStr = remainder.toString().padStart(decimals, '0').slice(0, 6);
-      return `${whole}.${remainderStr}`.replace(/\.?0+$/, '') || '0';
+      const tryDecimals = (d: number) => {
+        const div = BigInt(10 ** d);
+        const w = value / div;
+        const r = value % div;
+        const rStr = r.toString().padStart(d, '0').slice(0, 6);
+        return `${w}.${rStr}`.replace(/\.?0+$/, '') || '0';
+      };
+      let result = tryDecimals(decimals);
+      const num = parseFloat(result);
+      // If result is unreasonably large, API likely uses 18 decimals; retry with correct decimals
+      if (sym === 'SOL' && num > 1) result = tryDecimals(9);   // SOL native = 9
+      else if ((sym === 'USDC' || sym === 'USDT') && num > 1000) result = tryDecimals(18);  // API uses 18
+      else if (num > 10000) result = tryDecimals(18);  // fallback
+      return result;
     } catch {
       return String(amount);
     }
@@ -6624,7 +6603,7 @@ const ActivityModal = ({
     <div className="flex justify-between items-center py-2 border-b border-white/5 last:border-0">
       <span className="text-gray-400 text-sm">{label}</span>
       <div className="flex items-center gap-2">
-        <span className="text-gray-200 text-xs bg-white/10 px-2 py-1 rounded">Universal Accou...</span>
+        <span className="text-gray-200 text-xs bg-white/10 px-2 py-1 rounded">Omni Wallet</span>
         <span className="text-white font-mono text-sm">{shortenHash(addr)}</span>
         <button onClick={() => doCopy(addr)} className="p-1 hover:bg-white/10 rounded">{copyIcon}</button>
       </div>
