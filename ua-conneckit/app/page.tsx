@@ -35,6 +35,7 @@ import { decodeFunctionResult, encodeFunctionData } from "viem";
 import { toBeHex, formatUnits } from "ethers";
 import { useUniversalAccountWS } from "./hooks/useUniversalAccountWS";
 import { createDelegationOnlyTx, getEIP7702Deployments, getUserOpsFromTx, handleEIP7702Authorizations } from "../lib/eip7702";
+import { fetchParticleExternalAssets } from "../lib/particle-balances";
 
 // Mobula API for token search
 const MOBULA_API_KEY = "a8e6a174-9dfd-4929-b0e0-9f6ece767923";
@@ -7301,6 +7302,7 @@ const App = () => {
   const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null);
   const [primaryAssets, setPrimaryAssets] = useState<IAssetsResponse | null>(null);
   const [mobulaAssets, setMobulaAssets] = useState<MobulaAsset[]>([]);
+  const [particleAssets, setParticleAssets] = useState<Awaited<ReturnType<typeof fetchParticleExternalAssets>>>([]);
   
   // Modals
   const [showAgentModal, setShowAgentModal] = useState(false);
@@ -7472,29 +7474,51 @@ const App = () => {
     }
   }, [accountInfo?.evmSmartAccount, accountInfo?.solanaSmartAccount]);
 
-  // Fetch Mobula assets when account info is available
+  // Fetch Particle balances (fallback for WETH, WBNB when Mobula credits exhausted)
+  const fetchParticleAssets = useCallback(async () => {
+    if (!accountInfo?.evmSmartAccount || !primaryAssets) return;
+    try {
+      const primarySymbols = new Set(
+        (primaryAssets.assets?.map((a: { tokenType?: string }) => a.tokenType?.toUpperCase()?.trim()).filter((s): s is string => !!s) || [])
+      );
+      const assets = await fetchParticleExternalAssets(accountInfo.evmSmartAccount, primarySymbols);
+      console.log("[Particle] External assets:", assets.length, assets.map(a => a.symbol));
+      setParticleAssets(assets);
+    } catch (e) {
+      console.warn("[Particle] Fetch failed:", e);
+      setParticleAssets([]);
+    }
+  }, [accountInfo?.evmSmartAccount, primaryAssets]);
+
+  // Fetch Mobula + Particle when account info available
   useEffect(() => {
     if (accountInfo?.evmSmartAccount) {
       fetchMobulaAssets();
     }
   }, [accountInfo?.evmSmartAccount, accountInfo?.solanaSmartAccount, fetchMobulaAssets]);
 
+  useEffect(() => {
+    if (accountInfo?.evmSmartAccount && primaryAssets) {
+      fetchParticleAssets();
+    }
+  }, [accountInfo?.evmSmartAccount, primaryAssets, fetchParticleAssets]);
+
   // WebSocket for real-time balance and transaction updates
   const handleAssetUpdate = useCallback((assets: Array<{ chainId: number; address: string; amountOnChain: string }>) => {
     console.log("[WSS] Real-time asset update received:", assets.length, "assets");
-    // Refresh assets when we get a WebSocket update
     fetchAssets();
     fetchMobulaAssets();
-  }, [fetchAssets, fetchMobulaAssets]);
+    fetchParticleAssets();
+  }, [fetchAssets, fetchMobulaAssets, fetchParticleAssets]);
 
   const handleTransactionUpdate = useCallback((tx: { transactionId: string; status: number }) => {
     console.log("[WSS] Transaction update:", tx.transactionId, "status:", tx.status === 7 ? "success" : tx.status === 11 ? "failed" : tx.status);
-    // Refresh assets after transaction completes
     if (tx.status === 7 || tx.status === 11) {
       fetchAssets();
       fetchMobulaAssets();
+      fetchParticleAssets();
     }
-  }, [fetchAssets, fetchMobulaAssets]);
+  }, [fetchAssets, fetchMobulaAssets, fetchParticleAssets]);
 
   // Real-time WebSocket updates (auto-refreshes assets on changes)
   useUniversalAccountWS({
@@ -7507,24 +7531,20 @@ const App = () => {
     onTransactionUpdate: handleTransactionUpdate,
   });
 
-  // Merge UA primary assets with Mobula external assets
+  // Merge UA primary assets with Mobula + Particle external assets (no dupes vs UA)
   const combinedAssets = useMemo(() => {
     console.log("[CombinedAssets] primaryAssets:", primaryAssets ? `${primaryAssets.assets?.length} assets, $${primaryAssets.totalAmountInUSD}` : "null");
-    console.log("[CombinedAssets] mobulaAssets:", mobulaAssets?.length || 0);
+    console.log("[CombinedAssets] mobulaAssets:", mobulaAssets?.length || 0, "particleAssets:", particleAssets?.length || 0);
     if (!primaryAssets) return null;
     
-    // Get tokenTypes from UA primary assets for dedup (UA uses tokenType, not symbol)
-    // e.g., "eth", "sol", "usdc" - we uppercase for comparison with Mobula's symbols
     const primarySymbols = new Set(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (primaryAssets.assets?.map((a: any) => a.tokenType?.toUpperCase()?.trim()) || [])
-        .filter((s: string | undefined) => s) // Remove empty/null
+        .filter((s: string | undefined) => s)
     );
     
-    console.log("[CombinedAssets] primarySymbols (from tokenType):", Array.from(primarySymbols));
-    
-    // Filter Mobula assets to only include tokens NOT in primary assets
-    const externalAssets = mobulaAssets
+    // Filter Mobula assets - exclude primary dupes
+    const fromMobula = mobulaAssets
       .filter(ma => {
         const symbolUpper = ma.asset.symbol?.toUpperCase()?.trim();
         if (!symbolUpper) return false;
@@ -7609,12 +7629,18 @@ const App = () => {
         };
       });
     
-    // Simply merge - no dedup on primary (UA handles that)
+    // Add Particle assets (WETH, WBNB, etc.) - skip symbols already from Mobula to avoid dupes
+    const mobulaSymbols = new Set(fromMobula.map((a: { symbol: string }) => a.symbol?.toUpperCase()));
+    const fromParticle = particleAssets.filter(
+      (pa) => !mobulaSymbols.has(pa.symbol?.toUpperCase()) && pa.amount > 0
+    );
+    
+    const externalAssets = [...fromMobula, ...fromParticle];
+    
     const mergedAssets = [...(primaryAssets.assets || []), ...externalAssets];
     
-    console.log("[CombinedAssets] Final:", mergedAssets.length, "assets (", externalAssets.length, "external)");
+    console.log("[CombinedAssets] Final:", mergedAssets.length, "assets (", externalAssets.length, "external, Mobula:", fromMobula.length, "Particle:", fromParticle.length, ")");
     
-    // Calculate new total
     const externalTotal = externalAssets.reduce((sum, a) => sum + a.amountInUSD, 0);
     
     return {
@@ -7622,7 +7648,7 @@ const App = () => {
       assets: mergedAssets,
       totalAmountInUSD: (primaryAssets.totalAmountInUSD || 0) + externalTotal,
     };
-  }, [primaryAssets, mobulaAssets]);
+  }, [primaryAssets, mobulaAssets, particleAssets]);
 
   useEffect(() => {
     fetchAssets();
@@ -7683,6 +7709,7 @@ const App = () => {
           onRefresh={async () => {
             await fetchAssets();
             await fetchMobulaAssets();
+            await fetchParticleAssets();
           }}
         />
       )}
@@ -7732,6 +7759,7 @@ const App = () => {
         onSuccess={() => {
           fetchAssets();
           fetchMobulaAssets();
+          fetchParticleAssets();
         }}
       />
       
@@ -7746,9 +7774,9 @@ const App = () => {
           console.log('[Convert] Transaction created:', tx);
         }}
         onSuccess={() => {
-          // Refresh balances after successful conversion
           fetchAssets();
           fetchMobulaAssets();
+          fetchParticleAssets();
         }}
       />
 
@@ -7763,6 +7791,7 @@ const App = () => {
         onSuccess={() => {
           fetchAssets();
           fetchMobulaAssets();
+          fetchParticleAssets();
         }}
       />
 
@@ -7774,6 +7803,7 @@ const App = () => {
         onSuccess={() => {
           fetchAssets();
           fetchMobulaAssets();
+          fetchParticleAssets();
         }}
       />
 
@@ -7788,6 +7818,7 @@ const App = () => {
         onSuccess={() => {
           fetchAssets();
           fetchMobulaAssets();
+          fetchParticleAssets();
         }}
       />
 
