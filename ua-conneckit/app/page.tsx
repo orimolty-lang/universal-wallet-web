@@ -7,7 +7,6 @@ import {
   useDisconnect,
   useParticleAuth,
   useSign7702AuthorizationCompat,
-  useSignMessageCompat,
 } from "@/app/lib/connectkit-compat";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
@@ -403,16 +402,15 @@ const signUniversalRootHash = async ({
   return signatureFallback;
 };
 
-/** Build 7702 authorizations - exact Particle example flow (Privy signAuthorization only, no magic fallback) */
+/** Build 7702 authorizations - exact Particle example flow (eb12058 working state) */
 const build7702Authorizations = async (
   tx: { userOps?: unknown[]; feeQuotes?: { userOps?: unknown[] }[] },
   signAuthorization: (p: { contractAddress: `0x${string}`; chainId: number; nonce: number }, o: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>,
-  walletAddress: string,
-  addDebug?: (msg: string) => void
+  walletAddress: string
 ): Promise<Eip7702Authorization[]> => {
   const userOps = getUserOpsFromTx(tx) as Parameters<typeof handleEIP7702Authorizations>[0];
   if (userOps.length === 0) return [];
-  return handleEIP7702Authorizations(userOps, signAuthorization, walletAddress, addDebug);
+  return handleEIP7702Authorizations(userOps, signAuthorization, walletAddress);
 };
 
 // Token icon mapping
@@ -1727,7 +1725,7 @@ const ConvertModal = ({
         // Send transaction
         setLoadingStatus('Sending transaction...');
         if (!sign7702) throw new Error('Wallet signing not available');
-        const authorizations = await build7702Authorizations(tx, sign7702, ownerAddr, addDebug);
+        const authorizations = await build7702Authorizations(tx, sign7702, ownerAddr);
         addDebug(`Signature ready. authList=${authorizations?.length || 0}`);
         const sendResult = await universalAccount.sendTransaction(tx, signature as string, authorizations);
         
@@ -3371,7 +3369,7 @@ const PerpsModal = ({
               blindSigningEnabled,
             });
             if (!sign7702 || !ownerEOA) throw new Error('Wallet signing not available');
-            const authorizations = await build7702Authorizations(tx, sign7702, ownerEOA, addDebug);
+            const authorizations = await build7702Authorizations(tx, sign7702, ownerEOA);
             const res = await universalAccount.sendTransaction(tx, signature as string, authorizations);
             addDebug(`${label} sent: ${res?.transactionId || 'txid-missing'}`);
             return res;
@@ -7108,7 +7106,7 @@ const SettingsModal = ({
       });
       addDebug(`rootSig len=${delSig?.length ?? 0} prefix=${String(delSig).slice(0, 10)}...`);
 
-      const delAuths = await build7702Authorizations(delResult.tx as { userOps?: unknown[]; feeQuotes?: { userOps?: unknown[] }[] }, sign7702, ownerAddr, addDebug);
+      const delAuths = await build7702Authorizations(delResult.tx as { userOps?: unknown[]; feeQuotes?: { userOps?: unknown[] }[] }, sign7702, ownerAddr);
       addDebug(`sendTransaction auths=${delAuths?.length ?? 0}`);
 
       await universalAccount.sendTransaction(delResult.tx as Parameters<UniversalAccount["sendTransaction"]>[0], delSig as string, delAuths);
@@ -7363,7 +7361,6 @@ const BottomNav = ({
 const App = () => {
   const wallets = useWallets();
   const sign7702 = useSign7702AuthorizationCompat();
-  const signMessage = useSignMessageCompat();
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
   const { openAccountAndSecurity, openSetMasterPassword } = useParticleAuth();
@@ -7841,7 +7838,7 @@ const App = () => {
         assets={primaryAssets}
         universalAccount={universalAccountInstance}
         blindSigningEnabled={profile.blindSigningEnabled}
-        signMessage={signMessage ?? undefined}
+        signMessage={undefined}
         onTransactionCreated={(tx) => {
           console.log('[Convert] Transaction created:', tx);
         }}

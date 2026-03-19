@@ -42,32 +42,31 @@ export type Sign7702Fn = (params: {
 
 export type Eip7702Authorization = { userOpHash: string; signature: string };
 
+/** Exact implementation from Particle example (eb12058 working state). */
 export async function handleEIP7702Authorizations(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   userOps: any[],
   signAuthorization: Sign7702Fn,
-  walletAddress: string,
-  addDebug?: (msg: string) => void
+  walletAddress: string
 ): Promise<Eip7702Authorization[]> {
   const { Signature } = await import("ethers");
   const authorizations: Eip7702Authorization[] = [];
-  const nonceMap = new Map<string, string>();
+  const nonceMap = new Map<number, string>();
 
-  addDebug?.(`[7702] userOps=${userOps.length} wallet=${walletAddress.slice(0, 10)}...`);
   for (const userOp of userOps) {
     if (!userOp?.eip7702Auth || userOp?.eip7702Delegated) continue;
     const auth = userOp.eip7702Auth;
-    const chainId = Number(userOp.chainId ?? auth.chainId);
-    if (!Number.isFinite(chainId) || chainId <= 0 || chainId === 101) continue;
-    const nonceKey = `${chainId}:${auth.nonce}`;
-    let serialized = nonceMap.get(nonceKey);
+    let serialized = nonceMap.get(auth.nonce);
+
     if (!serialized) {
-      addDebug?.(`[7702] sign auth chain=${chainId} addr=${String(auth.address).slice(0, 10)}... nonce=${auth.nonce}`);
       const authorization = await signAuthorization(
-        { contractAddress: auth.address as `0x${string}`, chainId, nonce: Number(auth.nonce) },
+        {
+          contractAddress: auth.address as `0x${string}`,
+          chainId: Number(auth.chainId),
+          nonce: auth.nonce,
+        },
         { address: walletAddress }
       );
-      addDebug?.(`[7702] got r=${String(authorization.r).slice(0, 18)}... s=${String(authorization.s).slice(0, 18)}... yParity=${authorization.yParity}`);
       const sig = Signature.from({
         r: authorization.r,
         s: authorization.s,
@@ -75,15 +74,13 @@ export async function handleEIP7702Authorizations(
         yParity: authorization.yParity as 0 | 1,
       });
       serialized = sig.serialized;
-      addDebug?.(`[7702] serialized=${String(serialized).slice(0, 20)}... len=${serialized?.length ?? 0}`);
-      nonceMap.set(nonceKey, serialized);
+      nonceMap.set(auth.nonce, serialized);
     }
+
     if (serialized && userOp.userOpHash) {
       authorizations.push({ userOpHash: userOp.userOpHash, signature: serialized });
-      addDebug?.(`[7702] auth userOpHash=${userOp.userOpHash.slice(0, 18)}...`);
     }
   }
-  addDebug?.(`[7702] authorizations count=${authorizations.length}`);
   return authorizations;
 }
 
