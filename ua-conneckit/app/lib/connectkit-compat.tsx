@@ -7,6 +7,7 @@ import {
   useLogin,
   usePrivy,
   useSign7702Authorization,
+  useSignMessage,
   useWallets as usePrivyWallets,
 } from "@privy-io/react-auth";
 import { arbitrum, avalanche, base, bsc, mainnet, optimism, polygon } from "viem/chains";
@@ -29,6 +30,11 @@ type Sign7702Fn = (params: {
   nonce: number;
 }, options: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>;
 
+type SignMessageFn = (
+  params: { message: string },
+  options: { uiOptions?: { title?: string }; address: string }
+) => Promise<{ signature: string }>;
+
 type CompatContextType = {
   isConnected: boolean;
   address?: `0x${string}`;
@@ -36,6 +42,7 @@ type CompatContextType = {
   logout: () => Promise<void>;
   getWalletClient: () => WalletClientLike;
   sign7702Authorization: Sign7702Fn | null;
+  signMessage: SignMessageFn | null;
 };
 
 const CompatContext = createContext<CompatContextType>({
@@ -47,6 +54,7 @@ const CompatContext = createContext<CompatContextType>({
     throw new Error("Wallet not connected");
   },
   sign7702Authorization: null,
+  signMessage: null,
 });
 
 function PrivyAuthInner({ children }: React.PropsWithChildren) {
@@ -54,6 +62,7 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
   const { login } = useLogin();
   const { wallets } = usePrivyWallets();
   const { signAuthorization } = useSign7702Authorization();
+  const { signMessage: signMessagePrivy } = useSignMessage();
 
   const embeddedWallet = useMemo(
     () => wallets.find((w) => w.walletClientType === "privy") || wallets[0],
@@ -134,6 +143,15 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
     [signAuthorization]
   );
 
+  const signMessage = useCallback<SignMessageFn>(
+    (params, options) =>
+      signMessagePrivy(
+        { message: params.message },
+        { uiOptions: options.uiOptions ?? { title: "Sign transaction" }, address: options.address }
+      ),
+    [signMessagePrivy]
+  );
+
   const value = useMemo(
     () => ({
       isConnected: !!(ready && authenticated && address),
@@ -142,8 +160,9 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
       logout: doLogout,
       getWalletClient,
       sign7702Authorization: address ? sign7702Authorization : null,
+      signMessage: address ? signMessage : null,
     }),
-    [ready, authenticated, address, doLogin, doLogout, getWalletClient, sign7702Authorization]
+    [ready, authenticated, address, doLogin, doLogout, getWalletClient, sign7702Authorization, signMessage]
   );
 
   return <CompatContext.Provider value={value}>{children}</CompatContext.Provider>;
@@ -181,6 +200,11 @@ export function useAccount() {
 export function useSign7702AuthorizationCompat() {
   const { sign7702Authorization } = useContext(CompatContext);
   return sign7702Authorization;
+}
+
+export function useSignMessageCompat() {
+  const { signMessage } = useContext(CompatContext);
+  return signMessage;
 }
 
 type CompatWallet = { getWalletClient: () => WalletClientLike };

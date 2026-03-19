@@ -7,6 +7,7 @@ import {
   useDisconnect,
   useParticleAuth,
   useSign7702AuthorizationCompat,
+  useSignMessageCompat,
 } from "@/app/lib/connectkit-compat";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
@@ -31,9 +32,9 @@ import {
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
 import { decodeFunctionResult, encodeFunctionData } from "viem";
-import { toBeHex, Signature, formatUnits } from "ethers";
+import { toBeHex, formatUnits } from "ethers";
 import { useUniversalAccountWS } from "./hooks/useUniversalAccountWS";
-import { createDelegationOnlyTx, getEIP7702Deployments, handleEIP7702Authorizations } from "../lib/eip7702";
+import { createDelegationOnlyTx, getEIP7702Deployments, getUserOpsFromTx, handleEIP7702Authorizations } from "../lib/eip7702";
 import { fetchParticleExternalAssets } from "../lib/particle-balances";
 
 // Mobula API for token search
@@ -402,56 +403,16 @@ const signUniversalRootHash = async ({
   return signatureFallback;
 };
 
-const build7702Authorizations = async ({
-  walletClient,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  tx,
-  sign7702,
-  walletAddress,
-  addDebug,
-}: {
-  walletClient: WalletClientLike;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  tx: any;
-  sign7702?: ((p: { contractAddress: `0x${string}`; chainId: number; nonce: number }, o: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>) | null;
-  walletAddress?: string;
-  addDebug?: (msg: string) => void;
-}): Promise<Eip7702Authorization[] | undefined> => {
-  const userOps = tx?.userOps;
-  if (!Array.isArray(userOps) || userOps.length === 0) return undefined;
-
-  if (sign7702 && walletAddress) {
-    return handleEIP7702Authorizations(userOps, sign7702, walletAddress, addDebug);
-  }
-  const authorizations: Eip7702Authorization[] = [];
-  const nonceMap = new Map<string, string>();
-  for (const userOp of userOps) {
-    const auth = userOp?.eip7702Auth;
-    if (!auth || userOp?.eip7702Delegated) continue;
-    const chainIdForAuth = Number(userOp.chainId ?? auth.chainId);
-    if (!Number.isFinite(chainIdForAuth) || chainIdForAuth <= 0 || chainIdForAuth === 101) continue;
-    const nonceKey = `${chainIdForAuth}:${auth.nonce}`;
-    let serialized = nonceMap.get(nonceKey);
-    if (!serialized) {
-      const payload = await walletClient.request({
-        method: 'magic_wallet_sign_7702_authorization',
-        params: [{ contractAddress: auth.address, chainId: chainIdForAuth, nonce: Number(auth.nonce) }],
-      });
-      if (!payload || typeof payload !== 'object') throw new Error('Failed to sign EIP-7702 authorization');
-      const authObj = payload as { r: string; s: string; v?: number | bigint; yParity: number };
-      if (!authObj.r || !authObj.s) throw new Error('Invalid EIP-7702 signature payload');
-      const sig = Signature.from({
-        r: authObj.r,
-        s: authObj.s,
-        v: authObj.v !== undefined ? (typeof authObj.v === 'bigint' ? authObj.v : BigInt(authObj.v)) : BigInt(authObj.yParity as 0 | 1),
-        yParity: authObj.yParity as 0 | 1,
-      });
-      serialized = sig.serialized;
-      nonceMap.set(nonceKey, serialized);
-    }
-    if (serialized && userOp?.userOpHash) authorizations.push({ userOpHash: userOp.userOpHash, signature: serialized });
-  }
-  return authorizations.length ? authorizations : undefined;
+/** Build 7702 authorizations - exact Particle example flow (Privy signAuthorization only, no magic fallback) */
+const build7702Authorizations = async (
+  tx: { userOps?: unknown[]; feeQuotes?: { userOps?: unknown[] }[] },
+  signAuthorization: (p: { contractAddress: `0x${string}`; chainId: number; nonce: number }, o: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>,
+  walletAddress: string,
+  addDebug?: (msg: string) => void
+): Promise<Eip7702Authorization[]> => {
+  const userOps = getUserOpsFromTx(tx) as Parameters<typeof handleEIP7702Authorizations>[0];
+  if (userOps.length === 0) return [];
+  return handleEIP7702Authorizations(userOps, signAuthorization, walletAddress, addDebug);
 };
 
 // Token icon mapping
@@ -1124,6 +1085,7 @@ const SendModal = ({
   assets,
   universalAccount,
   blindSigningEnabled,
+  sign7702,
   onSuccess,
 }: {
   isOpen: boolean;
@@ -1131,6 +1093,7 @@ const SendModal = ({
   assets: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
   blindSigningEnabled: boolean;
+  sign7702: ((p: { contractAddress: `0x${string}`; chainId: number; nonce: number }, o: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>) | null;
   onSuccess?: () => void;
 }) => {
   const [primaryWallet] = useWallets();
@@ -1227,7 +1190,8 @@ const SendModal = ({
       });
       if (!signature) throw new Error("Failed to sign");
 
-      const authorizations = await build7702Authorizations({ walletClient: wc, tx });
+      if (!sign7702 || !address) throw new Error("Wallet signing not available");
+      const authorizations = await build7702Authorizations(tx, sign7702, address);
       const result = await universalAccount.sendTransaction(tx, signature as string, authorizations);
       setTxResult({ txId: result.transactionId });
       onSuccess?.();
@@ -1762,13 +1726,8 @@ const ConvertModal = ({
 
         // Send transaction
         setLoadingStatus('Sending transaction...');
-        const authorizations = await build7702Authorizations({
-          walletClient: wc,
-          tx,
-          sign7702: sign7702 ?? undefined,
-          walletAddress: ownerAddr,
-          addDebug,
-        });
+        if (!sign7702) throw new Error('Wallet signing not available');
+        const authorizations = await build7702Authorizations(tx, sign7702, ownerAddr, addDebug);
         addDebug(`Signature ready. authList=${authorizations?.length || 0}`);
         const sendResult = await universalAccount.sendTransaction(tx, signature as string, authorizations);
         
@@ -2517,6 +2476,7 @@ const PerpsModal = ({
   universalAccount,
   blindSigningEnabled,
   smartAccountAddress,
+  sign7702,
   onSuccess,
 }: {
   isOpen: boolean;
@@ -2525,6 +2485,7 @@ const PerpsModal = ({
   universalAccount: UniversalAccount | null;
   blindSigningEnabled: boolean;
   smartAccountAddress?: string;
+  sign7702: ((p: { contractAddress: `0x${string}`; chainId: number; nonce: number }, o: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>) | null;
   onSuccess?: () => void;
 }) => {
   const [primaryWallet] = useWallets();
@@ -3414,8 +3375,8 @@ const PerpsModal = ({
               signerAddress: ownerEOA as `0x${string}`,
               blindSigningEnabled,
             });
-            const wc = walletClient as unknown as WalletClientLike;
-            const authorizations = await build7702Authorizations({ walletClient: wc, tx });
+            if (!sign7702 || !ownerEOA) throw new Error('Wallet signing not available');
+            const authorizations = await build7702Authorizations(tx, sign7702, ownerEOA, addDebug);
             const res = await universalAccount.sendTransaction(tx, signature as string, authorizations);
             addDebug(`${label} sent: ${res?.transactionId || 'txid-missing'}`);
             return res;
@@ -7080,13 +7041,7 @@ const SettingsModal = ({
       });
       addDebug(`rootSig len=${delSig?.length ?? 0} prefix=${String(delSig).slice(0, 10)}...`);
 
-      const delAuths = await build7702Authorizations({
-        walletClient: wc,
-        tx: delResult.tx,
-        sign7702,
-        walletAddress: ownerAddr,
-        addDebug,
-      });
+      const delAuths = await build7702Authorizations(delResult.tx as { userOps?: unknown[]; feeQuotes?: { userOps?: unknown[] }[] }, sign7702, ownerAddr, addDebug);
       addDebug(`sendTransaction auths=${delAuths?.length ?? 0}`);
 
       await universalAccount.sendTransaction(delResult.tx as Parameters<UniversalAccount["sendTransaction"]>[0], delSig as string, delAuths);
@@ -7341,6 +7296,7 @@ const BottomNav = ({
 const App = () => {
   const wallets = useWallets();
   const sign7702 = useSign7702AuthorizationCompat();
+  const signMessage = useSignMessageCompat();
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
   const { openAccountAndSecurity, openSetMasterPassword } = useParticleAuth();
@@ -7801,6 +7757,7 @@ const App = () => {
         assets={primaryAssets}
         universalAccount={universalAccountInstance}
         blindSigningEnabled={profile.blindSigningEnabled}
+        sign7702={sign7702}
         onSuccess={() => {
           fetchAssets();
           fetchMobulaAssets();
@@ -7813,7 +7770,7 @@ const App = () => {
         assets={primaryAssets}
         universalAccount={universalAccountInstance}
         blindSigningEnabled={profile.blindSigningEnabled}
-        signMessage={undefined}
+        signMessage={signMessage ?? undefined}
         onTransactionCreated={(tx) => {
           console.log('[Convert] Transaction created:', tx);
         }}
@@ -7831,6 +7788,7 @@ const App = () => {
         universalAccount={universalAccountInstance}
         blindSigningEnabled={profile.blindSigningEnabled}
         smartAccountAddress={accountInfo?.evmSmartAccount}
+        sign7702={sign7702}
         onSuccess={() => {
           fetchAssets();
           fetchMobulaAssets();
