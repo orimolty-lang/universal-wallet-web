@@ -7446,10 +7446,17 @@ const App = () => {
     if (!address || typeof address !== "string" || !address.startsWith("0x") || address.length !== 42) {
       return null;
     }
+    const projectId = process.env.NEXT_PUBLIC_PROJECT_ID || "";
+    const clientKey = process.env.NEXT_PUBLIC_CLIENT_KEY || "";
+    const appId = process.env.NEXT_PUBLIC_APP_ID || "";
+    if (!projectId || !clientKey) {
+      console.error("[UA] Particle credentials missing. Use build:gh-pages or set NEXT_PUBLIC_PROJECT_ID, NEXT_PUBLIC_CLIENT_KEY.");
+      return null;
+    }
     return {
-      projectId: process.env.NEXT_PUBLIC_PROJECT_ID || "",
-      projectClientKey: process.env.NEXT_PUBLIC_CLIENT_KEY || "",
-      projectAppUuid: process.env.NEXT_PUBLIC_APP_ID || "",
+      projectId,
+      projectClientKey: clientKey,
+      projectAppUuid: appId,
       rpcUrl: 'https://universal-rpc-staging.particle.network', // Bypass simulation for oracle-dependent contracts (Avantis perps)
       smartAccountOptions: {
         useEIP7702: true, // Magic auth + EOA signing path with UA 7702 enabled
