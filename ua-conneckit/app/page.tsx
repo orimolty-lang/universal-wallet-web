@@ -34,7 +34,6 @@ import {
 import { decodeFunctionResult, encodeFunctionData } from "viem";
 import { toBeHex, formatUnits } from "ethers";
 import { useUniversalAccountWS } from "./hooks/useUniversalAccountWS";
-import { createBuyTransaction } from "../lib/buy-transaction";
 import { createDelegationOnlyTx, getEIP7702Deployments, getUserOpsFromTx, handleEIP7702Authorizations } from "../lib/eip7702";
 
 // Mobula API for token search
@@ -72,7 +71,7 @@ async function fetchMobulaWalletBalances(address: string): Promise<MobulaAsset[]
   
   try {
     // Use our proxy for Mobula API (handles CORS)
-    const url = `https://lifi-proxy.orimolty.workers.dev/mobula/api/1/wallet/portfolio?wallet=${address}&blockchains=base,ethereum,arbitrum,polygon,solana`;
+    const url = `https://lifi-proxy.orimolty.workers.dev/mobula/api/1/wallet/portfolio?wallet=${address}&blockchains=base,ethereum,arbitrum,polygon,solana,optimism,bsc`;
     console.log("[Mobula] URL (via proxy):", url);
     
     const response = await fetch(url, {
@@ -1626,40 +1625,16 @@ const ConvertModal = ({
       const sourceTokenType = tokenTypeMap[fromAsset.toUpperCase()];
       const usePrimaryTokens = sourceTokenType ? [sourceTokenType] : [];
 
-      // Use createBuyTransaction (like Particle example) - delegates both chains in one swap
-      // Fall back to createConvertTransaction for Solana or unsupported tokens
+      // Use createConvertTransaction (delegation works; supports all token types)
       setLoadingStatus('Creating transaction...');
-      let tx: unknown;
-      const useBuyTx = toChain !== 101 && [SUPPORTED_TOKEN_TYPE.ETH, SUPPORTED_TOKEN_TYPE.USDC, SUPPORTED_TOKEN_TYPE.USDT, SUPPORTED_TOKEN_TYPE.BNB].includes(targetTokenType);
-      try {
-        if (useBuyTx) {
-          const { transaction } = await createBuyTransaction({
-            chainId: toChain,
-            tokenType: targetTokenType,
-            amountInUSD: usdValue.toFixed(2),
-            universalAccount,
-            usePrimaryTokens,
-          });
-          tx = transaction;
-          addDebug('Using createBuyTransaction (example-aligned)');
-        } else {
-          tx = await universalAccount.createConvertTransaction({
-            chainId: toChain,
-            expectToken: { type: targetTokenType, amount: outputAmount.toFixed(8) },
-          }, usePrimaryTokens.length ? { usePrimaryTokens } : undefined);
-          addDebug('Using createConvertTransaction');
-        }
-      } catch (e) {
-        if (useBuyTx) {
-          addDebug(`createBuyTransaction failed, fallback to createConvert: ${e instanceof Error ? e.message : String(e)}`);
-          tx = await universalAccount.createConvertTransaction({
-            chainId: toChain,
-            expectToken: { type: targetTokenType, amount: outputAmount.toFixed(8) },
-          }, usePrimaryTokens.length ? { usePrimaryTokens } : undefined);
-        } else {
-          throw e;
-        }
-      }
+      const tx = await universalAccount.createConvertTransaction(
+        {
+          chainId: toChain,
+          expectToken: { type: targetTokenType, amount: outputAmount.toFixed(8) },
+        },
+        usePrimaryTokens.length ? { usePrimaryTokens } : undefined
+      );
+      addDebug('Using createConvertTransaction');
 
       console.log('[Convert] Transaction created:', tx);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -25,7 +25,7 @@ NEXT_PUBLIC_PRIVY_CLIENT_ID="your-privy-client-id"
 
 Our app now matches the example:
 - **Privy**: `createOnLogin: "all-users"`, `clientId` when set
-- **Convert**: `createBuyTransaction` for USDC Base → BNB BSC (same flow)
+- **Convert**: `createConvertTransaction` (delegation works; supports all token types)
 - **Signing**: Privy `signMessage` for rootHash, `handleEIP7702Authorizations` for 7702 auth
 
 ## 3. If AA24 Persists
