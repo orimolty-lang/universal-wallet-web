@@ -17,6 +17,7 @@ import {
   type EarnMarket,
   type EarnPosition,
 } from "../lib/earnService";
+import { build7702Authorizations } from "@/lib/eip7702";
 
 type WalletClientLike = {
   account?: { address?: `0x${string}` };
@@ -78,6 +79,8 @@ const ASSET_TO_TOKEN_TYPE: Record<string, any> = {
   ETH: SUPPORTED_TOKEN_TYPE.ETH,
 };
 
+type Sign7702Fn = (p: { contractAddress: `0x${string}`; chainId: number; nonce: number }, o: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>;
+
 interface EarnModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -86,6 +89,7 @@ interface EarnModalProps {
   universalAccount: UniversalAccount | null;
   smartAccountAddress?: string;
   blindSigningEnabled: boolean;
+  sign7702?: Sign7702Fn | null;
   onSuccess?: () => void;
 }
 
@@ -97,6 +101,7 @@ export default function EarnModal({
   universalAccount,
   smartAccountAddress,
   blindSigningEnabled,
+  sign7702,
   onSuccess,
 }: EarnModalProps) {
   const [primaryWallet] = useWallets();
@@ -219,7 +224,12 @@ export default function EarnModal({
         blindSigningEnabled
       );
 
-      const result = await universalAccount.sendTransaction(tx, signature);
+      const walletAddr = address || walletClient.account?.address;
+      if (!walletAddr) throw new Error("Wallet address unavailable");
+      const authorizations = sign7702
+        ? await build7702Authorizations(tx, sign7702, walletAddr)
+        : [];
+      const result = await universalAccount.sendTransaction(tx, signature, authorizations);
       setTxResult({ txId: result.transactionId });
       loadPositions();
       onSuccess?.();
@@ -257,7 +267,12 @@ export default function EarnModal({
         walletClient.account?.address as `0x${string}` | undefined,
         blindSigningEnabled
       );
-      await universalAccount.sendTransaction(tx, signature);
+      const walletAddr = address || walletClient.account?.address;
+      if (!walletAddr) throw new Error("Wallet address unavailable");
+      const authorizations = sign7702
+        ? await build7702Authorizations(tx, sign7702, walletAddr)
+        : [];
+      await universalAccount.sendTransaction(tx, signature, authorizations);
       setPositions((prev) => prev.filter((p) => p.market.id !== pos.market.id));
       loadPositions();
       onSuccess?.();
@@ -325,7 +340,7 @@ export default function EarnModal({
         </div>
 
         <p className="text-gray-400 text-sm mb-3">
-          Deposit into yield vaults to earn passively.
+          Deposit into yield vaults to earn interest on your assets.
         </p>
 
         <div className="bg-zinc-900 rounded-xl px-4 py-3 border border-zinc-800 mb-4">

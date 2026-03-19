@@ -84,6 +84,17 @@ export async function handleEIP7702Authorizations(
   return authorizations;
 }
 
+/** Build 7702 authorizations from tx - wraps getUserOpsFromTx + handleEIP7702Authorizations */
+export async function build7702Authorizations(
+  tx: { userOps?: unknown[]; feeQuotes?: { userOps?: unknown[] }[] },
+  signAuthorization: Sign7702Fn,
+  walletAddress: string
+): Promise<Eip7702Authorization[]> {
+  const userOps = getUserOpsFromTx(tx) as Parameters<typeof handleEIP7702Authorizations>[0];
+  if (userOps.length === 0) return [];
+  return handleEIP7702Authorizations(userOps, signAuthorization, walletAddress);
+}
+
 /** Extract userOps from tx - supports tx.userOps or tx.feeQuotes[0].userOps */
 export function getUserOpsFromTx(tx: { userOps?: unknown[]; feeQuotes?: { userOps?: unknown[] }[] }): unknown[] {
   const userOps = tx?.userOps;

@@ -33,7 +33,7 @@ import {
 import { decodeFunctionResult, encodeFunctionData } from "viem";
 import { toBeHex, formatUnits } from "ethers";
 import { useUniversalAccountWS } from "./hooks/useUniversalAccountWS";
-import { getEIP7702Deployments, getUserOpsFromTx, handleEIP7702Authorizations } from "../lib/eip7702";
+import { getEIP7702Deployments, build7702Authorizations } from "../lib/eip7702";
 import { fetchParticleExternalAssets } from "../lib/particle-balances";
 
 // Mobula: proxied via Cloudflare worker (no frontend API key)
@@ -345,9 +345,6 @@ type WalletClientLike = {
   signMessage?: (args: { message: string | { raw: `0x${string}` } }) => Promise<unknown>;
 };
 
-type Eip7702Authorization = { userOpHash: string; signature: string };
-
-
 const signUniversalRootHash = async ({
   walletClient,
   rootHash,
@@ -400,17 +397,6 @@ const signUniversalRootHash = async ({
     throw new Error('Invalid signature response from wallet');
   }
   return signatureFallback;
-};
-
-/** Build 7702 authorizations - exact Particle example flow (eb12058 working state) */
-const build7702Authorizations = async (
-  tx: { userOps?: unknown[]; feeQuotes?: { userOps?: unknown[] }[] },
-  signAuthorization: (p: { contractAddress: `0x${string}`; chainId: number; nonce: number }, o: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>,
-  walletAddress: string
-): Promise<Eip7702Authorization[]> => {
-  const userOps = getUserOpsFromTx(tx) as Parameters<typeof handleEIP7702Authorizations>[0];
-  if (userOps.length === 0) return [];
-  return handleEIP7702Authorizations(userOps, signAuthorization, walletAddress);
 };
 
 // Token icon mapping
@@ -5397,7 +5383,7 @@ const HomeTab = ({
             { icon: "↓", label: "Receive", action: onReceive },
             { icon: "↑", label: "Send", action: onSend },
             { icon: "⇄", label: "Convert", action: onConvert },
-            { icon: "📈", label: "Earn", action: onEarn },
+            { icon: "↗", label: "Earn", action: onEarn },
           ].map(({ icon, label, action }, idx, arr) => (
             <div key={label} className="flex items-center">
               <button 
@@ -7691,6 +7677,7 @@ const App = () => {
         universalAccount={universalAccountInstance}
         smartAccountAddress={accountInfo?.evmSmartAccount}
         blindSigningEnabled={profile.blindSigningEnabled}
+        sign7702={sign7702}
         onSuccess={() => {
           fetchAssets();
           fetchMobulaAssets();
