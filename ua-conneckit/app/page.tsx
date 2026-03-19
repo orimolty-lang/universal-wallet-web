@@ -33,7 +33,7 @@ import {
 import { decodeFunctionResult, encodeFunctionData } from "viem";
 import { toBeHex, Signature, formatUnits } from "ethers";
 import { useUniversalAccountWS } from "./hooks/useUniversalAccountWS";
-import { createDelegationOnlyTx, getEIP7702Deployments, handleEIP7702Authorizations } from "../lib/eip7702";
+import { createDelegationOnlyTx, getEIP7702Deployments, getUserOpsFromTx, handleEIP7702Authorizations } from "../lib/eip7702";
 import { fetchParticleExternalAssets } from "../lib/particle-balances";
 
 // Mobula API for token search
@@ -417,7 +417,7 @@ const build7702Authorizations = async ({
   walletAddress?: string;
   addDebug?: (msg: string) => void;
 }): Promise<Eip7702Authorization[] | undefined> => {
-  const userOps = tx?.userOps;
+  const userOps = getUserOpsFromTx(tx);
   if (!Array.isArray(userOps) || userOps.length === 0) return undefined;
 
   if (sign7702 && walletAddress) {
@@ -425,7 +425,8 @@ const build7702Authorizations = async ({
   }
   const authorizations: Eip7702Authorization[] = [];
   const nonceMap = new Map<string, string>();
-  for (const userOp of userOps) {
+  for (const op of userOps) {
+    const userOp = op as { eip7702Auth?: { chainId?: number; address: string; nonce: number }; eip7702Delegated?: boolean; chainId?: number; userOpHash?: string };
     const auth = userOp?.eip7702Auth;
     if (!auth || userOp?.eip7702Delegated) continue;
     const chainIdForAuth = Number(userOp.chainId ?? auth.chainId);
@@ -1124,6 +1125,7 @@ const SendModal = ({
   assets,
   universalAccount,
   blindSigningEnabled,
+  sign7702,
   onSuccess,
 }: {
   isOpen: boolean;
@@ -1131,6 +1133,7 @@ const SendModal = ({
   assets: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
   blindSigningEnabled: boolean;
+  sign7702: ((p: { contractAddress: `0x${string}`; chainId: number; nonce: number }, o: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>) | null;
   onSuccess?: () => void;
 }) => {
   const [primaryWallet] = useWallets();
@@ -1227,7 +1230,7 @@ const SendModal = ({
       });
       if (!signature) throw new Error("Failed to sign");
 
-      const authorizations = await build7702Authorizations({ walletClient: wc, tx });
+      const authorizations = await build7702Authorizations({ walletClient: wc, tx, sign7702: sign7702 ?? undefined, walletAddress: address });
       const result = await universalAccount.sendTransaction(tx, signature as string, authorizations);
       setTxResult({ txId: result.transactionId });
       onSuccess?.();
@@ -6420,9 +6423,21 @@ const ActivityModal = ({
   };
 
   const getTxType = (tx: TxData): string => {
-    // Check for known types
-    const tag = tx.tag || tx.type || tx.txType || tx.action || '';
-    if (tag && tag !== 'universal') return tag;
+    // Check for known types (API may return swap, buy, sell, convert, send, etc.)
+    const tag = (tx.tag || tx.type || tx.txType || tx.action || '').toLowerCase();
+    if (tag && tag !== 'universal') {
+      if (tag.includes('swap') || tag.includes('buy') || tag.includes('sell')) return 'Swap';
+      if (tag.includes('convert')) return 'Convert';
+      if (tag.includes('send') || tag.includes('transfer')) return 'Send';
+      if (tag.includes('receive') || tag.includes('deposit')) return 'Receive';
+      if (tag.includes('contract') || tag.includes('interaction')) return 'Contract';
+      return tag;
+    }
+    
+    // Detect from lending/settlement ops (LiFi swaps, contract calls)
+    const lendingOps = tx.lendingUserOperations || [];
+    const settlementOps = tx.settlementUserOperations || [];
+    if (lendingOps.length > 0 || settlementOps.length > 0) return 'Swap';
     
     // Detect type from token changes
     if (tx.tokenChanges) {
@@ -6434,9 +6449,7 @@ const ActivityModal = ({
     }
     
     // Check for contract interaction patterns
-    if (tx.transactions?.length > 0 || tx.userOps?.length > 0) {
-      return 'Contract';
-    }
+    if (tx.transactions?.length > 0 || tx.userOps?.length > 0) return 'Contract';
     
     return 'Transaction';
   };
@@ -6735,6 +6748,28 @@ const ActivityModal = ({
                   {details.sender && <div className="flex justify-between"><span className="text-gray-400">From</span><span className="text-white font-mono">{shortenHash(details.sender)}</span></div>}
                   {details.receiver && <div className="flex justify-between"><span className="text-gray-400">To</span><span className="text-white font-mono">{shortenHash(details.receiver)}</span></div>}
                 </div>
+
+                {/* View on Explorer - target chain tx (lending/swap), not UniversalX */}
+                {(() => {
+                  const lendingOps = details.lendingUserOperations || [];
+                  const settlementOps = details.settlementUserOperations || [];
+                  const depositOps = details.depositUserOperations || [];
+                  const targetOp = lendingOps[0] || settlementOps[0] || depositOps[0];
+                  const explorerHref = targetOp?.txHash && targetOp?.chainId
+                    ? getExplorerTxUrl(targetOp.chainId, targetOp.txHash)
+                    : null;
+                  return explorerHref ? (
+                    <a
+                      href={explorerHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-2 w-full bg-accent-dynamic/20 border border-accent-dynamic/50 text-accent-dynamic py-3 px-4 rounded-xl font-medium mb-4"
+                    >
+                      View on Explorer
+                      <span>↗</span>
+                    </a>
+                  ) : null;
+                })()}
 
                 {(details.depositUserOperations?.length || details.lendingUserOperations?.length || details.settlementUserOperations?.length) ? (
                   <div className="bg-white/5 rounded-xl p-4 border border-white/10">
@@ -7801,9 +7836,11 @@ const App = () => {
         assets={primaryAssets}
         universalAccount={universalAccountInstance}
         blindSigningEnabled={profile.blindSigningEnabled}
+        sign7702={sign7702}
         onSuccess={() => {
           fetchAssets();
           fetchMobulaAssets();
+          fetchParticleAssets();
         }}
       />
       

@@ -645,40 +645,22 @@ export const SwapModal = ({
               )}
             </div>
             
-            {/* Explorer Links - prioritize actual tx hash link */}
+            {/* View on Explorer - target chain tx link (lending/swap ops), not UniversalX */}
             <div className="flex flex-col gap-3 mb-6 w-full max-w-xs">
               {txResult.explorerUrl ? (
-                <>
-                  {/* Primary: Actual transaction on block explorer */}
-                  <a
-                    href={txResult.explorerUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 bg-accent-dynamic/20 border border-accent-dynamic/50 text-accent-dynamic py-3 px-4 rounded-full font-medium"
-                  >
-                    <span>View on {getChainName(txResult.chainId || 8453)}</span>
-                    <span>↗</span>
-                  </a>
-                  {/* Secondary: UniversalX details */}
-                  <a
-                    href={`https://universalx.app/activity/details?id=${txResult.txId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-gray-500 underline text-sm text-center"
-                  >
-                    View full details on UniversalX
-                  </a>
-                </>
-              ) : (
-                /* Fallback when no explorer URL yet (still pending) */
                 <a
-                  href={`https://universalx.app/activity/details?id=${txResult.txId}`}
+                  href={txResult.explorerUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-accent-dynamic underline text-center"
+                  className="flex items-center justify-center gap-2 bg-accent-dynamic/20 border border-accent-dynamic/50 text-accent-dynamic py-3 px-4 rounded-full font-medium"
                 >
-                  View on UniversalX
+                  <span>View on Explorer</span>
+                  <span>↗</span>
                 </a>
+              ) : (
+                <p className="text-gray-500 text-sm text-center">
+                  {txResult.status === "pending" ? "Confirming... Check back shortly." : "Transaction submitted."}
+                </p>
               )}
             </div>
             
