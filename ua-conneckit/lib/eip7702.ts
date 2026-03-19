@@ -87,6 +87,14 @@ export async function handleEIP7702Authorizations(
   return authorizations;
 }
 
+/** Extract userOps from tx - supports tx.userOps or tx.feeQuotes[0].userOps */
+export function getUserOpsFromTx(tx: { userOps?: unknown[]; feeQuotes?: { userOps?: unknown[] }[] }): unknown[] {
+  const userOps = tx?.userOps;
+  if (Array.isArray(userOps) && userOps.length > 0) return userOps;
+  const fromFeeQuotes = tx?.feeQuotes?.[0]?.userOps;
+  return Array.isArray(fromFeeQuotes) ? fromFeeQuotes : [];
+}
+
 /**
  * Extract EVM chains that need 7702 auth from a transaction's userOps.
  * Skips Solana (chain 101) - no 7702 there.
