@@ -6541,7 +6541,7 @@ const ActivityModal = ({
       let whole = value / divisor;
       let remainder = value % divisor;
       const sym = (symbol || '').toUpperCase();
-      if ((sym === 'USDC' || sym === 'USDT') && whole > BigInt(1000) && decimals <= 6) {
+      if (decimals <= 6 && whole > BigInt(1000)) {
         const div12 = BigInt(10 ** 12);
         whole = value / div12;
         remainder = value % div12;
@@ -6557,6 +6557,13 @@ const ActivityModal = ({
           return `${whole}.${r}`.replace(/\.?0+$/, '') || '0';
         }
         if (decimals <= 6 && whole > BigInt(1)) {
+          const div9 = BigInt(10 ** 9);
+          whole = value / div9;
+          remainder = value % div9;
+          const r = remainder.toString().padStart(9, '0').slice(0, 6);
+          return `${whole}.${r}`.replace(/\.?0+$/, '') || '0';
+        }
+        if (whole > BigInt(100) && decimals < 9) {
           const div9 = BigInt(10 ** 9);
           whole = value / div9;
           remainder = value % div9;
@@ -6614,16 +6621,16 @@ const ActivityModal = ({
 
   const getChainMeta = (chainId: number | undefined) => {
     const map: Record<number, { name: string; logo: string; explorer: string }> = {
-      1: { name: 'Ethereum', logo: 'https://static.particle.network/token-list/ethereum/native.png', explorer: 'https://etherscan.io/tx/' },
-      10: { name: 'Optimism', logo: 'https://cryptologos.cc/logos/optimism-ethereum-op-logo.png', explorer: 'https://optimistic.etherscan.io/tx/' },
-      137: { name: 'Polygon', logo: 'https://cryptologos.cc/logos/polygon-matic-logo.png', explorer: 'https://polygonscan.com/tx/' },
-      8453: { name: 'Base', logo: 'https://cryptologos.cc/logos/base-base-logo.png', explorer: 'https://basescan.org/tx/' },
-      42161: { name: 'Arbitrum', logo: 'https://cryptologos.cc/logos/arbitrum-arb-logo.png', explorer: 'https://arbiscan.io/tx/' },
-      56: { name: 'BNB Chain', logo: 'https://cryptologos.cc/logos/bnb-bnb-logo.png', explorer: 'https://bscscan.com/tx/' },
-      101: { name: 'Solana', logo: 'https://cryptologos.cc/logos/solana-sol-logo.png', explorer: 'https://solscan.io/tx/' },
-      2013: { name: 'Settlement', logo: 'https://static.particle.network/token-list/ethereum/native.png', explorer: 'https://universalx.app/activity/details?id=' },
+      1: { name: 'Ethereum', logo: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png', explorer: 'https://etherscan.io/tx/' },
+      10: { name: 'Optimism', logo: 'https://assets.coingecko.com/coins/images/25244/small/Optimism.png', explorer: 'https://optimistic.etherscan.io/tx/' },
+      56: { name: 'BNB Chain', logo: 'https://assets.coingecko.com/coins/images/825/small/bnb-icon2_2x.png', explorer: 'https://bscscan.com/tx/' },
+      137: { name: 'Polygon', logo: 'https://assets.coingecko.com/coins/images/4713/small/matic-token-icon.png', explorer: 'https://polygonscan.com/tx/' },
+      8453: { name: 'Base', logo: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png', explorer: 'https://basescan.org/tx/' },
+      42161: { name: 'Arbitrum', logo: 'https://assets.coingecko.com/coins/images/16547/small/photo_2023-03-29_21.47.00.jpeg', explorer: 'https://arbiscan.io/tx/' },
+      101: { name: 'Solana', logo: 'https://assets.coingecko.com/coins/images/4128/small/solana.png', explorer: 'https://solscan.io/tx/' },
+      2013: { name: 'Settlement', logo: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png', explorer: 'https://universalx.app/activity/details?id=' },
     };
-    return map[chainId || 0] || { name: `Chain ${chainId || '-'}`, logo: 'https://static.particle.network/token-list/ethereum/native.png', explorer: 'https://etherscan.io/tx/' };
+    return map[chainId || 0] || { name: `Chain ${chainId || '-'}`, logo: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png', explorer: 'https://etherscan.io/tx/' };
   };
 
   const getExplorerTxUrl = (chainId: number | undefined, txHash: string | undefined) => {
@@ -6716,34 +6723,34 @@ const ActivityModal = ({
                   <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                     <div className="text-gray-300 font-medium mb-2">Balance change</div>
                     <div className="space-y-2 text-sm">
-                      {(details.tokenChanges?.decr || []).map((d: { amount?: string; rawAmount?: string; amountInUSD?: string; token?: { symbol?: string; image?: string; realDecimals?: number; decimals?: number } }, i: number) => {
-                        const sym = (d.token?.symbol || '').toUpperCase();
+                      {(details.tokenChanges?.decr || []).map((d: { amount?: string; rawAmount?: string; amountInUSD?: string; token?: { symbol?: string; tokenType?: string; image?: string; realDecimals?: number; decimals?: number } }, i: number) => {
+                        const sym = (d.token?.symbol || d.token?.tokenType || '').toUpperCase();
                         const decimals = d.token?.realDecimals ?? d.token?.decimals ?? (sym === 'USDC' || sym === 'USDT' ? 6 : sym === 'SOL' ? 9 : 18);
                         const raw = d.rawAmount ?? d.amount ?? '0';
                         return (
                         <div key={`decr-${i}`} className="flex items-center justify-between bg-black/20 rounded-lg px-3 py-2">
                           <div className="flex items-center gap-2">
                             {d.token?.image ? <img src={d.token.image} alt="" className="w-5 h-5 rounded-full" /> : null}
-                            <span className="text-gray-200">{d.token?.symbol || 'Token'}</span>
+                            <span className="text-gray-200">{d.token?.symbol || d.token?.tokenType || 'Token'}</span>
                           </div>
                           <div className="text-right">
-                            <div className="text-red-400">- {formatTokenAmount(raw, decimals, d.token?.symbol)}</div>
+                            <div className="text-red-400">- {formatTokenAmount(raw, decimals, sym || undefined)}</div>
                             {d.amountInUSD != null ? <div className="text-xs text-gray-400">${formatAmountInUsd(d.amountInUSD)}</div> : null}
                           </div>
                         </div>
                       );})}
-                      {(details.tokenChanges?.incr || []).map((inc: { amount?: string; rawAmount?: string; amountInUSD?: string; token?: { symbol?: string; image?: string; realDecimals?: number; decimals?: number } }, i: number) => {
-                        const sym = (inc.token?.symbol || '').toUpperCase();
+                      {(details.tokenChanges?.incr || []).map((inc: { amount?: string; rawAmount?: string; amountInUSD?: string; token?: { symbol?: string; tokenType?: string; image?: string; realDecimals?: number; decimals?: number } }, i: number) => {
+                        const sym = (inc.token?.symbol || inc.token?.tokenType || '').toUpperCase();
                         const decimals = inc.token?.realDecimals ?? inc.token?.decimals ?? (sym === 'USDC' || sym === 'USDT' ? 6 : sym === 'SOL' ? 9 : 18);
                         const raw = inc.rawAmount ?? inc.amount ?? '0';
                         return (
                         <div key={`incr-${i}`} className="flex items-center justify-between bg-black/20 rounded-lg px-3 py-2">
                           <div className="flex items-center gap-2">
                             {inc.token?.image ? <img src={inc.token.image} alt="" className="w-5 h-5 rounded-full" /> : null}
-                            <span className="text-gray-200">{inc.token?.symbol || 'Token'}</span>
+                            <span className="text-gray-200">{inc.token?.symbol || inc.token?.tokenType || 'Token'}</span>
                           </div>
                           <div className="text-right">
-                            <div className="text-green-400">+ {formatTokenAmount(raw, decimals, inc.token?.symbol)}</div>
+                            <div className="text-green-400">+ {formatTokenAmount(raw, decimals, sym || undefined)}</div>
                             {inc.amountInUSD != null ? <div className="text-xs text-gray-400">${formatAmountInUsd(inc.amountInUSD)}</div> : null}
                           </div>
                         </div>
@@ -6805,7 +6812,7 @@ const ActivityModal = ({
                               return (
                                 <div key={`${group.label}-${i}`} className="flex items-center justify-between bg-black/20 rounded-lg px-3 py-2">
                                   <div className="flex items-center gap-2">
-                                    <img src={chain.logo} alt={chain.name} className="w-4 h-4 rounded-full" />
+                                    <img src={chain.logo} alt={chain.name} className="w-4 h-4 rounded-full object-contain" referrerPolicy="no-referrer" />
                                     <span className="text-gray-200">{chain.name}</span>
                                     <span className={`text-[10px] px-1.5 py-0.5 rounded ${ok ? 'text-green-300 bg-green-500/20' : 'text-yellow-300 bg-yellow-500/20'}`}>
                                       {op.status ?? '-'}
