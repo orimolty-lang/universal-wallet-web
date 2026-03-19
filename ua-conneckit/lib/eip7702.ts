@@ -51,7 +51,7 @@ export async function handleEIP7702Authorizations(
 ): Promise<Eip7702Authorization[]> {
   const { Signature } = await import("ethers");
   const authorizations: Eip7702Authorization[] = [];
-  const nonceMap = new Map<string, string>();
+  const nonceMap = new Map<number, string>();
 
   addDebug?.(`[7702] userOps=${userOps.length} wallet=${walletAddress.slice(0, 10)}...`);
   for (const userOp of userOps) {
@@ -59,7 +59,7 @@ export async function handleEIP7702Authorizations(
     const auth = userOp.eip7702Auth;
     const chainId = Number(userOp.chainId ?? auth.chainId);
     if (!Number.isFinite(chainId) || chainId <= 0 || chainId === 101) continue;
-    const nonceKey = `${chainId}:${auth.nonce}`;
+    const nonceKey = auth.nonce;
     let serialized = nonceMap.get(nonceKey);
     if (!serialized) {
       addDebug?.(`[7702] sign auth chain=${chainId} addr=${String(auth.address).slice(0, 10)}... nonce=${auth.nonce}`);
@@ -77,7 +77,7 @@ export async function handleEIP7702Authorizations(
       });
       serialized = sig.serialized;
       addDebug?.(`[7702] serialized=${String(serialized).slice(0, 20)}... len=${serialized?.length ?? 0}`);
-      nonceMap.set(nonceKey, serialized);
+      nonceMap.set(auth.nonce, serialized);
     }
     if (serialized && userOp.userOpHash) {
       authorizations.push({ userOpHash: userOp.userOpHash, signature: serialized });
