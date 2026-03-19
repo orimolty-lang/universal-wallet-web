@@ -368,23 +368,8 @@ const signUniversalRootHash = async ({
 
   void blindSigningEnabled;
 
-  // Root hash is a raw 32-byte hash - must use secp256k1_sign (Privy), NOT personal_sign.
-  // personal_sign adds prefix and produces wrong signature → AA24.
-  try {
-    const res = await walletClient.request({
-      method: 'secp256k1_sign',
-      params: [rootHash],
-    });
-    const sig = typeof res === 'string' ? res : (res as { signature?: string })?.signature;
-    if (typeof sig === 'string' && sig.startsWith('0x')) {
-      addDebug?.(`[7702] rootHash signed via secp256k1_sign`);
-      return sig;
-    }
-  } catch (e) {
-    addDebug?.(`[7702] secp256k1_sign failed: ${e instanceof Error ? e.message : String(e)}`);
-  }
-
-  // Fallback: personal_sign (may produce AA24 if relay expects raw hash sig)
+  // Particle demo uses signMessage (personal_sign) for rootHash - NOT secp256k1_sign.
+  // Relay expects personal_sign format. Use signMessage first.
   if (walletClient.signMessage) {
     try {
       const signature = await walletClient.signMessage({ message: { raw: rootHash } });
@@ -1419,6 +1404,7 @@ const ConvertModal = ({
   assets,
   universalAccount,
   blindSigningEnabled,
+  signMessage,
   onTransactionCreated,
   onSuccess,
 }: {
@@ -1427,6 +1413,7 @@ const ConvertModal = ({
   assets: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
   blindSigningEnabled: boolean;
+  signMessage?: ((p: { message: string }, o: { uiOptions?: { title?: string }; address: string }) => Promise<{ signature: string }>) | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onTransactionCreated?: (tx: any) => void;
   onSuccess?: () => void; // Callback to refresh balances
@@ -1742,7 +1729,6 @@ const ConvertModal = ({
         const ownerAddr = wc?.account?.address as string | undefined;
         if (!ownerAddr) throw new Error('Wallet address unavailable');
 
-        // Pre-delegate: relay allows 1 delegation per txn. Run for any chain needing auth.
         /* eslint-disable @typescript-eslint/no-explicit-any */
         const rawOps = (tx as any)?.userOps ?? (tx as any)?.feeQuotes?.[0]?.userOps ?? [];
         const afterFilter = rawOps.filter((op: { eip7702Auth?: unknown; eip7702Delegated?: unknown }) =>
@@ -1756,60 +1742,23 @@ const ConvertModal = ({
         const chainsNeedingUnique: number[] = Array.from(new Set(chainsNeeding));
         addDebug(`chainsNeeding=[${chainsNeedingUnique.join(",")}] len=${chainsNeedingUnique.length}`);
         /* eslint-enable @typescript-eslint/no-explicit-any */
-        if (chainsNeedingUnique.length >= 1) {
-          addDebug(`Pre-delegating ${chainsNeedingUnique.length} chains (relay: 1 delegation/txn)`);
-          for (const chainId of chainsNeedingUnique) {
-            setLoadingStatus(`Delegating on chain ${chainId}...`);
-            const delResult = await createDelegationOnlyTx(universalAccount, chainId, ownerAddr, addDebug);
-            if (!delResult || delResult.chainsNeedingAuth.length !== 1 || delResult.chainsNeedingAuth[0] !== chainId) {
-              addDebug(`Skip chain ${chainId}: delegation tx would need ${delResult?.chainsNeedingAuth?.length ?? 0} chains`);
-              continue;
-            }
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const delTx = delResult.tx as any;
-            if (!delTx?.rootHash) continue;
-            const delSig = await signUniversalRootHash({
+
+        // Particle example: sign root hash + all 7702 auth, send in one shot. No pre-delegation.
+        // Sign the tx root hash - Particle demo uses Privy signMessage (personal_sign)
+        setLoadingStatus('Waiting for signature...');
+        const rootHash = (tx as { rootHash?: string })?.rootHash as string | undefined;
+        const signature = signMessage && rootHash
+          ? (await signMessage(
+              { message: rootHash },
+              { uiOptions: { title: 'Sign conversion' }, address: ownerAddr }
+            )).signature
+          : await signUniversalRootHash({
               walletClient: wc,
-              rootHash: delTx.rootHash as `0x${string}`,
+              rootHash: rootHash as `0x${string}`,
               signerAddress: wc.account?.address as `0x${string}` | undefined,
               blindSigningEnabled,
+              addDebug,
             });
-            const delAuths = await build7702Authorizations({
-              walletClient: wc,
-              tx: delTx,
-              sign7702: sign7702 ?? undefined,
-              walletAddress: ownerAddr,
-            });
-            await universalAccount.sendTransaction(delTx, delSig as string, delAuths);
-            addDebug(`Delegated chain ${chainId}`);
-            await new Promise((r) => setTimeout(r, 2000));
-          }
-          // Re-create convert tx; delegated chains should now have eip7702Delegated=true
-          setLoadingStatus('Creating transaction...');
-          const freshTx = await universalAccount.createConvertTransaction({
-            chainId: toChain,
-            expectToken: {
-              type: targetTokenType,
-              amount: outputAmount.toFixed(8),
-            },
-          }, tradeConfig);
-          /* eslint-disable @typescript-eslint/no-explicit-any */
-          if ((freshTx as any).rootHash) {
-            (tx as any).rootHash = (freshTx as any).rootHash;
-            (tx as any).userOps = (freshTx as any).userOps;
-          }
-          /* eslint-enable @typescript-eslint/no-explicit-any */
-        }
-
-        // Sign the latest tx root hash
-        setLoadingStatus('Waiting for signature...');
-        const signature = await signUniversalRootHash({
-          walletClient: wc,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          rootHash: (tx as any).rootHash as `0x${string}`,
-          signerAddress: wc.account?.address as `0x${string}` | undefined,
-          blindSigningEnabled,
-        });
 
         // Send transaction
         setLoadingStatus('Sending transaction...');
@@ -1818,6 +1767,7 @@ const ConvertModal = ({
           tx,
           sign7702: sign7702 ?? undefined,
           walletAddress: ownerAddr,
+          addDebug,
         });
         addDebug(`Signature ready. authList=${authorizations?.length || 0}`);
         const sendResult = await universalAccount.sendTransaction(tx, signature as string, authorizations);
@@ -7842,6 +7792,7 @@ const App = () => {
         assets={primaryAssets}
         universalAccount={universalAccountInstance}
         blindSigningEnabled={profile.blindSigningEnabled}
+        signMessage={signMessage}
         onTransactionCreated={(tx) => {
           console.log('[Convert] Transaction created:', tx);
         }}
