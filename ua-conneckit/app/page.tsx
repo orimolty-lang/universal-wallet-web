@@ -6444,10 +6444,10 @@ const ActivityModal = ({
 
   const getStatusColor = (status: string) => {
     const s = status.toLowerCase();
-    if (s.includes('success') || s.includes('complete')) return 'text-green-400 bg-green-400/20';
-    if (s.includes('pending') || s.includes('process')) return 'text-yellow-400 bg-yellow-400/20';
+    if (s.includes('success') || s.includes('complete')) return 'text-accent-dynamic bg-accent-dynamic-20';
+    if (s.includes('pending') || s.includes('process')) return 'text-amber-400 bg-amber-400/20';
     if (s.includes('fail') || s.includes('error') || s.includes('cancel')) return 'text-red-400 bg-red-400/20';
-    return 'text-gray-400 bg-gray-400/20';
+    return 'text-zinc-400 bg-zinc-500/20';
   };
 
   const formatHexUsd = (value: string | number | undefined): string => {
@@ -6498,15 +6498,15 @@ const ActivityModal = ({
         const div = BigInt(10 ** d);
         const w = value / div;
         const r = value % div;
-        const rStr = r.toString().padStart(d, '0').slice(0, 6);
+        const rStr = r.toString().padStart(d, '0').slice(0, 8);
         return `${w}.${rStr}`.replace(/\.?0+$/, '') || '0';
       };
       let result = tryDecimals(decimals);
       const num = parseFloat(result);
-      // If result is unreasonably large, API likely uses 18 decimals; retry with correct decimals
-      if (sym === 'SOL' && num > 1) result = tryDecimals(9);   // SOL native = 9
-      else if ((sym === 'USDC' || sym === 'USDT') && num > 1000) result = tryDecimals(18);  // API uses 18
-      else if (num > 10000) result = tryDecimals(18);  // fallback
+      // SOL uses 9 decimals. If result is wrong (e.g. 2,068,860 vs 0.00206886), API likely used 0/18.
+      if (sym === 'SOL' && (num > 1 || num < 1e-10)) result = tryDecimals(9);
+      else if ((sym === 'USDC' || sym === 'USDT') && num > 1000) result = tryDecimals(18);
+      else if (num > 10000) result = tryDecimals(18);
       return result;
     } catch {
       return String(amount);
@@ -6594,24 +6594,24 @@ const ActivityModal = ({
   };
 
   const copyIcon = (
-    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
     </svg>
   );
   const doCopy = (value: string) => { try { navigator.clipboard.writeText(value); } catch { /* ignore */ } };
   const copyRowAddr = (label: string, addr: string) => (
-    <div className="flex justify-between items-center py-2 border-b border-white/5 last:border-0">
-      <span className="text-gray-400 text-sm">{label}</span>
+    <div className="flex justify-between items-center py-2 border-b border-zinc-700/50 last:border-0">
+      <span className="text-zinc-400 text-sm">{label}</span>
       <div className="flex items-center gap-2">
-        <span className="text-gray-200 text-xs bg-white/10 px-2 py-1 rounded">Omni Wallet</span>
+        <span className="text-zinc-200 text-xs bg-accent-dynamic-10 px-2 py-1 rounded border border-accent-dynamic/30">Omni Wallet</span>
         <span className="text-white font-mono text-sm">{shortenHash(addr)}</span>
-        <button onClick={() => doCopy(addr)} className="p-1 hover:bg-white/10 rounded">{copyIcon}</button>
+        <button onClick={() => doCopy(addr)} className="p-1 hover:bg-zinc-700/50 rounded">{copyIcon}</button>
       </div>
     </div>
   );
   const copyRowTxHash = (hash: string, href: string) => (
     <div className="flex justify-between items-center py-2">
-      <span className="text-gray-400 text-sm">Tx Hash</span>
+      <span className="text-zinc-400 text-sm">Tx Hash</span>
       <a href={href} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-accent-dynamic hover:underline">
         <span className="font-mono text-sm">{shortenHash(hash)}</span>
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
@@ -6619,7 +6619,7 @@ const ActivityModal = ({
     </div>
   );
   const infoIcon = (title: string) => (
-    <span title={title} className="text-gray-500 text-xs ml-0.5 cursor-help">?</span>
+    <span title={title} className="text-zinc-500 text-xs ml-0.5 cursor-help">?</span>
   );
 
   // Transaction Detail View - 1:1 reference layout
@@ -6634,9 +6634,9 @@ const ActivityModal = ({
     const txFeeUsd = formatHexUsd(totals.transactionFeeTokenAmountInUSD);
 
     return (
-      <BottomSheet isOpen={isOpen} onClose={onClose}>
+      <BottomSheet isOpen={isOpen} onClose={onClose} dark>
         <div className="px-6 pb-8 max-h-[80vh] overflow-y-auto">
-          <button onClick={handleBack} className="flex items-center gap-2 text-gray-400 mb-4">
+          <button onClick={handleBack} className="flex items-center gap-2 text-zinc-400 mb-4 hover:text-accent-dynamic transition-colors">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/></svg>
             Back
           </button>
@@ -6656,7 +6656,7 @@ const ActivityModal = ({
               {/* 1. Balance change (first) */}
               {(details.tokenChanges?.decr?.length || details.tokenChanges?.incr?.length) ? (
                 <div className="mb-6">
-                  <div className="text-gray-400 text-sm mb-2">Balance change</div>
+                  <div className="text-zinc-400 text-sm mb-2">Balance change</div>
                   <div className="space-y-2">
                     {(details.tokenChanges?.decr || []).map((d: { amount?: string; rawAmount?: string; amountInUSD?: string; token?: { symbol?: string; tokenType?: string; image?: string; chainId?: number; realDecimals?: number; decimals?: number } }, i: number) => {
                       const sym = (d.token?.symbol || d.token?.tokenType || '').toUpperCase();
@@ -6665,11 +6665,13 @@ const ActivityModal = ({
                       const formatted = formatTokenAmount(raw, decimals, sym || undefined);
                       const num = parseFloat(formatted);
                       const display = formatBalanceDisplay(num, formatted);
+                      const chainMeta = getChainMeta(d.token?.chainId);
                       return (
                         <div key={`decr-${i}`} className="flex items-center justify-between py-2">
                           <div className="flex items-center gap-2">
                             {d.token?.image ? <img src={d.token.image} alt="" className="w-5 h-5 rounded-full" referrerPolicy="no-referrer" /> : null}
-                            <span className="text-amber-400 font-medium">-{display} {d.token?.symbol || d.token?.tokenType || 'Token'}</span>
+                            <span className="text-amber-400/90 font-medium">-{display} {d.token?.symbol || d.token?.tokenType || 'Token'}</span>
+                            <img src={chainMeta.logo} alt={chainMeta.name} className="w-4 h-4 rounded-full object-contain" referrerPolicy="no-referrer" title={chainMeta.name} />
                           </div>
                         </div>
                       );
@@ -6681,11 +6683,13 @@ const ActivityModal = ({
                       const formatted = formatTokenAmount(raw, decimals, sym || undefined);
                       const num = parseFloat(formatted);
                       const display = formatBalanceDisplay(num, formatted);
+                      const chainMeta = getChainMeta(inc.token?.chainId);
                       return (
                         <div key={`incr-${i}`} className="flex items-center justify-between py-2">
                           <div className="flex items-center gap-2">
                             {inc.token?.image ? <img src={inc.token.image} alt="" className="w-5 h-5 rounded-full" referrerPolicy="no-referrer" /> : null}
-                            <span className="text-fuchsia-400 font-medium">+{display} {inc.token?.symbol || inc.token?.tokenType || 'Token'}</span>
+                            <span className="text-accent-dynamic font-medium">+{display} {inc.token?.symbol || inc.token?.tokenType || 'Token'}</span>
+                            <img src={chainMeta.logo} alt={chainMeta.name} className="w-4 h-4 rounded-full object-contain" referrerPolicy="no-referrer" title={chainMeta.name} />
                           </div>
                         </div>
                       );
@@ -6695,21 +6699,21 @@ const ActivityModal = ({
               ) : null}
 
               {/* 2. Transaction details */}
-              <div className="border-t border-white/10 pt-4 space-y-0">
+              <div className="border-t border-zinc-700/50 pt-4 space-y-0">
                 {details.sender && copyRowAddr('From(you)', details.sender)}
                 {details.receiver && copyRowAddr('To', details.receiver)}
                 {getTxDate(details) && (
-                  <div className="flex justify-between items-center py-2 border-b border-white/5">
-                    <span className="text-gray-400 text-sm">Time</span>
+                  <div className="flex justify-between items-center py-2 border-b border-zinc-700/50">
+                    <span className="text-zinc-400 text-sm">Time</span>
                     <span className="text-white text-sm">{formatFullDate(getTxDate(details))}</span>
                   </div>
                 )}
-                <div className="flex justify-between items-center py-2 border-b border-white/5">
-                  <span className="text-gray-400 text-sm">Gas fee{infoIcon('Estimated gas cost')}</span>
+                <div className="flex justify-between items-center py-2 border-b border-zinc-700/50">
+                  <span className="text-zinc-400 text-sm">Gas fee{infoIcon('Estimated gas cost')}</span>
                   <span className="text-white text-sm">≈${gasUsd}</span>
                 </div>
-                <div className="flex justify-between items-center py-2 border-b border-white/5">
-                  <span className="text-gray-400 text-sm">Transaction fee{infoIcon('Service fee')}</span>
+                <div className="flex justify-between items-center py-2 border-b border-zinc-700/50">
+                  <span className="text-zinc-400 text-sm">Transaction fee{infoIcon('Service fee')}</span>
                   <span className="text-white text-sm">${txFeeUsd}</span>
                 </div>
               </div>
@@ -6718,27 +6722,38 @@ const ActivityModal = ({
               {depositOps.map((op: { chainId?: number; txHash?: string }, i: number) => {
                 const chain = getChainMeta(op.chainId);
                 const href = getExplorerTxUrl(op.chainId, op.txHash);
-                const decrForChain = (details.tokenChanges?.decr || []).filter((x: { token?: { chainId?: number } }) => x.token?.chainId === op.chainId);
+                const fromChains = (details.tokenChanges as { fromChains?: number[] })?.fromChains || [];
+                const chainId = op.chainId ?? 0;
+                const decrForChain = (details.tokenChanges?.decr || []).filter((x: { token?: { chainId?: number } }) => Number(x.token?.chainId) === chainId);
+                const incrForChain = (details.tokenChanges?.incr || []).filter((x: { token?: { chainId?: number } }) => Number(x.token?.chainId) === chainId);
+                const depositForChain = (details.depositTokens || []).filter((d: { token?: { chainId?: number } }) => Number(d.token?.chainId) === chainId);
+                const chainTokens = [...decrForChain, ...incrForChain].length > 0
+                  ? [...decrForChain, ...incrForChain]
+                  : depositForChain.map((d: { token?: { symbol?: string }; amount?: string; rawAmount?: string }) => ({ ...d, rawAmount: d.rawAmount ?? d.amount, isDeposit: true }));
                 return (
-                  <div key={`from-${i}`} className="mt-6 border-t border-white/10 pt-4">
+                  <div key={`from-${i}`} className="mt-6 border-t border-zinc-700/50 pt-4">
                     <div className="flex items-center gap-2 mb-3">
                       <img src={chain.logo} alt={chain.name} className="w-4 h-4 rounded-full object-contain" referrerPolicy="no-referrer" />
-                      <span className="text-gray-300 font-medium text-sm">From Tx Hash - on {chain.name}</span>
+                      <span className="text-zinc-300 font-medium text-sm">From Tx Hash - on {chain.name}</span>
                     </div>
-                    {decrForChain.map((item: { amount?: string; rawAmount?: string; token?: { symbol?: string; tokenType?: string; image?: string; realDecimals?: number; decimals?: number } }, j: number) => {
+                    {chainTokens.map((item: { amount?: string; rawAmount?: string; token?: { symbol?: string; tokenType?: string; image?: string; realDecimals?: number; decimals?: number }; isDeposit?: boolean }, j: number) => {
                       const sym = (item.token?.symbol || item.token?.tokenType || '').toUpperCase();
                       const decimals = item.token?.realDecimals ?? item.token?.decimals ?? 18;
                       const raw = item.rawAmount ?? item.amount ?? '0';
                       const formatted = formatTokenAmount(raw, decimals, sym || undefined);
                       const num = parseFloat(formatted);
                       const display = formatBalanceDisplay(num, formatted);
+                      const isIncr = !item.isDeposit && j >= decrForChain.length;
                       return (
                         <div key={`dc-${j}`} className="flex items-center gap-2 py-1 text-sm">
                           {item.token?.image ? <img src={item.token.image} alt="" className="w-4 h-4 rounded-full" referrerPolicy="no-referrer" /> : null}
-                          <span className="text-amber-400">-{display} {item.token?.symbol || item.token?.tokenType || ''}</span>
+                          <span className={isIncr ? 'text-accent-dynamic' : 'text-amber-400/90'}>{isIncr ? '+' : '-'}{display} {item.token?.symbol || item.token?.tokenType || ''}</span>
                         </div>
                       );
                     })}
+                    {chainTokens.length === 0 && fromChains.includes(op.chainId ?? 0) ? (
+                      <div className="text-zinc-500 text-xs py-1">Balance change on chain</div>
+                    ) : null}
                     {op.txHash && copyRowTxHash(op.txHash, href)}
                   </div>
                 );
@@ -6749,10 +6764,10 @@ const ActivityModal = ({
                 const incrForChain = (details.tokenChanges?.incr || []).filter((x: { token?: { chainId?: number } }) => x.token?.chainId === op.chainId);
                 const decrForChain = (details.tokenChanges?.decr || []).filter((x: { token?: { chainId?: number } }) => x.token?.chainId === op.chainId);
                 return (
-                  <div key={`target-${i}`} className="mt-6 border-t border-white/10 pt-4">
+                  <div key={`target-${i}`} className="mt-6 border-t border-zinc-700/50 pt-4">
                     <div className="flex items-center gap-2 mb-3">
                       <img src={chain.logo} alt={chain.name} className="w-4 h-4 rounded-full object-contain" referrerPolicy="no-referrer" />
-                      <span className="text-gray-300 font-medium text-sm">Target Tx Hash - on {chain.name}</span>
+                      <span className="text-zinc-300 font-medium text-sm">Target Tx Hash - on {chain.name}</span>
                     </div>
                     {[...decrForChain, ...incrForChain].map((item: { amount?: string; rawAmount?: string; token?: { symbol?: string; tokenType?: string; image?: string; realDecimals?: number; decimals?: number } }, j: number) => {
                       const sym = (item.token?.symbol || item.token?.tokenType || '').toUpperCase();
@@ -6765,7 +6780,7 @@ const ActivityModal = ({
                       return (
                         <div key={`tc-${j}`} className="flex items-center gap-2 py-1 text-sm">
                           {item.token?.image ? <img src={item.token.image} alt="" className="w-4 h-4 rounded-full" referrerPolicy="no-referrer" /> : null}
-                          <span className={isIncr ? 'text-fuchsia-400' : 'text-amber-400'}>{isIncr ? '+' : '-'}{display} {item.token?.symbol || item.token?.tokenType || ''}</span>
+                          <span className={isIncr ? 'text-accent-dynamic' : 'text-amber-400/90'}>{isIncr ? '+' : '-'}{display} {item.token?.symbol || item.token?.tokenType || ''}</span>
                         </div>
                       );
                     })}
@@ -6775,9 +6790,9 @@ const ActivityModal = ({
               })}
 
               {/* Advanced */}
-              <details className="mt-6 border-t border-white/10 pt-4">
-                <summary className="cursor-pointer text-gray-400 text-sm">Advanced</summary>
-                <pre className="mt-2 text-xs text-gray-500 whitespace-pre-wrap break-all overflow-x-auto">{JSON.stringify(details, null, 2)}</pre>
+              <details className="mt-6 border-t border-zinc-700/50 pt-4">
+                <summary className="cursor-pointer text-zinc-400 text-sm hover:text-accent-dynamic transition-colors">Advanced</summary>
+                <pre className="mt-2 text-xs text-zinc-500 whitespace-pre-wrap break-all overflow-x-auto">{JSON.stringify(details, null, 2)}</pre>
               </details>
             </>
           )}
