@@ -6628,7 +6628,7 @@ const ActivityModal = ({
       8453: { name: 'Base', logo: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png', explorer: 'https://basescan.org/tx/' },
       42161: { name: 'Arbitrum', logo: 'https://assets.coingecko.com/coins/images/16547/small/photo_2023-03-29_21.47.00.jpeg', explorer: 'https://arbiscan.io/tx/' },
       101: { name: 'Solana', logo: 'https://assets.coingecko.com/coins/images/4128/small/solana.png', explorer: 'https://solscan.io/tx/' },
-      2013: { name: 'Settlement', logo: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png', explorer: 'https://universalx.app/activity/details?id=' },
+      2013: { name: 'Particle Alpha', logo: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png', explorer: 'https://universalx.app/activity/details?id=' },
     };
     return map[chainId || 0] || { name: `Chain ${chainId || '-'}`, logo: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png', explorer: 'https://etherscan.io/tx/' };
   };
@@ -6638,21 +6638,75 @@ const ActivityModal = ({
     return `${getChainMeta(chainId).explorer}${txHash}`;
   };
 
-  // Transaction Detail View
+  const SUB = '₀₁₂₃₄₅₆₇₈₉';
+  const formatWithSubscript = (n: number): string => {
+    const s = n.toFixed(8).replace(/\.?0+$/, '');
+    if (s.includes('.')) {
+      const [whole, frac] = s.split('.');
+      const m = frac.match(/^0+/);
+      if (m && m[0].length > 0 && m[0].length <= 9) {
+        return `${whole}.0${SUB[m[0].length]}${frac.slice(m[0].length)}`;
+      }
+    }
+    return s;
+  };
+
+  const copyIcon = (
+    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+    </svg>
+  );
+  const doCopy = (value: string) => { try { navigator.clipboard.writeText(value); } catch { /* ignore */ } };
+  const copyRowFull = (label: string, value: string) => (
+    <div className="flex justify-between items-center py-2 border-b border-white/5 last:border-0">
+      <span className="text-gray-400 text-sm">{label}</span>
+      <div className="flex items-center gap-2">
+        <span className="text-white font-mono text-sm">{value.length > 16 ? shortenHash(value) : value}</span>
+        <button onClick={() => doCopy(value)} className="p-1 hover:bg-white/10 rounded">{copyIcon}</button>
+      </div>
+    </div>
+  );
+  const copyRowAddr = (label: string, addr: string) => (
+    <div className="flex justify-between items-center py-2 border-b border-white/5 last:border-0">
+      <span className="text-gray-400 text-sm">{label}</span>
+      <div className="flex items-center gap-2">
+        <span className="text-gray-200 text-xs bg-white/10 px-2 py-1 rounded">Universal Accou...</span>
+        <span className="text-white font-mono text-sm">{shortenHash(addr)}</span>
+        <button onClick={() => doCopy(addr)} className="p-1 hover:bg-white/10 rounded">{copyIcon}</button>
+      </div>
+    </div>
+  );
+  const copyRowTxHash = (hash: string, href: string) => (
+    <div className="flex justify-between items-center py-2">
+      <span className="text-gray-400 text-sm">Tx Hash</span>
+      <a href={href} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-accent-dynamic hover:underline">
+        <span className="font-mono text-sm">{shortenHash(hash)}</span>
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+      </a>
+    </div>
+  );
+  const infoIcon = (title: string) => (
+    <span title={title} className="text-gray-500 text-xs ml-0.5 cursor-help">?</span>
+  );
+
+  // Transaction Detail View - 1:1 reference layout
   if (selectedTx) {
     const details = txDetails || selectedTx;
     const txType = getTxType(details);
     const status = getTxStatus(details);
     const txId = details.transactionId || details.id || details.transaction_id || '';
+    const settlementOps = details.settlementUserOperations || [];
+    const lendingOps = details.lendingUserOperations || [];
+    const depositOps = details.depositUserOperations || [];
+    const totals = details.fees?.totals || {};
+    const gasUsd = formatHexUsd(totals.gasFeeTokenAmountInUSD);
+    const txFeeUsd = formatHexUsd(totals.transactionFeeTokenAmountInUSD);
 
     return (
       <BottomSheet isOpen={isOpen} onClose={onClose}>
         <div className="px-6 pb-8 max-h-[80vh] overflow-y-auto">
-          {/* Back button */}
           <button onClick={handleBack} className="flex items-center gap-2 text-gray-400 mb-4">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/>
-            </svg>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/></svg>
             Back
           </button>
 
@@ -6662,192 +6716,152 @@ const ActivityModal = ({
             </div>
           ) : (
             <>
-              {/* Header */}
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-2xl">
-                  {getTagIcon(txType)}
+              {/* Header: Title + Status */}
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-white text-xl font-bold capitalize">{txType}</h2>
+                <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(status)}`}>{status}</span>
+              </div>
+
+              {/* 1. Balance change (first) */}
+              {(details.tokenChanges?.decr?.length || details.tokenChanges?.incr?.length) ? (
+                <div className="mb-6">
+                  <div className="text-gray-400 text-sm mb-2">Balance change</div>
+                  <div className="space-y-2">
+                    {(details.tokenChanges?.decr || []).map((d: { amount?: string; rawAmount?: string; amountInUSD?: string; token?: { symbol?: string; tokenType?: string; image?: string; chainId?: number; realDecimals?: number; decimals?: number } }, i: number) => {
+                      const sym = (d.token?.symbol || d.token?.tokenType || '').toUpperCase();
+                      const decimals = d.token?.realDecimals ?? d.token?.decimals ?? (sym === 'USDC' || sym === 'USDT' ? 6 : sym === 'SOL' ? 9 : 18);
+                      const raw = d.rawAmount ?? d.amount ?? '0';
+                      const formatted = formatTokenAmount(raw, decimals, sym || undefined);
+                      const num = parseFloat(formatted);
+                      const display = num > 0 && num < 0.01 ? formatWithSubscript(num) : formatted;
+                      return (
+                        <div key={`decr-${i}`} className="flex items-center justify-between py-2">
+                          <div className="flex items-center gap-2">
+                            {d.token?.image ? <img src={d.token.image} alt="" className="w-5 h-5 rounded-full" referrerPolicy="no-referrer" /> : null}
+                            <span className="text-amber-400 font-medium">-{display} {d.token?.symbol || d.token?.tokenType || 'Token'}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {(details.tokenChanges?.incr || []).map((inc: { amount?: string; rawAmount?: string; amountInUSD?: string; token?: { symbol?: string; tokenType?: string; image?: string; chainId?: number; realDecimals?: number; decimals?: number } }, i: number) => {
+                      const sym = (inc.token?.symbol || inc.token?.tokenType || '').toUpperCase();
+                      const decimals = inc.token?.realDecimals ?? inc.token?.decimals ?? (sym === 'USDC' || sym === 'USDT' ? 6 : sym === 'SOL' ? 9 : 18);
+                      const raw = inc.rawAmount ?? inc.amount ?? '0';
+                      const formatted = formatTokenAmount(raw, decimals, sym || undefined);
+                      const num = parseFloat(formatted);
+                      const display = num > 0 && num < 0.01 ? formatWithSubscript(num) : formatted;
+                      return (
+                        <div key={`incr-${i}`} className="flex items-center justify-between py-2">
+                          <div className="flex items-center gap-2">
+                            {inc.token?.image ? <img src={inc.token.image} alt="" className="w-5 h-5 rounded-full" referrerPolicy="no-referrer" /> : null}
+                            <span className="text-fuchsia-400 font-medium">+{display} {inc.token?.symbol || inc.token?.tokenType || 'Token'}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div>
-                  <h2 className="text-white text-xl font-bold capitalize">{txType}</h2>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusColor(status)}`}>
-                    {status}
-                  </span>
+              ) : null}
+
+              {/* 2. Transaction details */}
+              <div className="border-t border-white/10 pt-4 space-y-0">
+                {txId && copyRowFull('Transaction ID', txId)}
+                {details.sender && copyRowAddr('From(you)', details.sender)}
+                {details.receiver && copyRowAddr('To', details.receiver)}
+                {getTxDate(details) && (
+                  <div className="flex justify-between items-center py-2 border-b border-white/5">
+                    <span className="text-gray-400 text-sm">Time</span>
+                    <span className="text-white text-sm">{formatFullDate(getTxDate(details))}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center py-2 border-b border-white/5">
+                  <span className="text-gray-400 text-sm">Gas fee{infoIcon('Estimated gas cost')}</span>
+                  <span className="text-white text-sm">≈${gasUsd}</span>
+                </div>
+                <div className="flex justify-between items-center py-2 border-b border-white/5">
+                  <span className="text-gray-400 text-sm">Transaction fee{infoIcon('Service fee')}</span>
+                  <span className="text-white text-sm">${txFeeUsd}</span>
                 </div>
               </div>
 
-              {/* Amount - with proper formatting */}
-              {(() => {
-                const amountData = getTxAmount(details);
-                if (!amountData) return null;
+              {/* 3. Multi-chain: Settlement, Target, From */}
+              {settlementOps.map((op: { chainId?: number; txHash?: string }, i: number) => {
+                const chain = getChainMeta(op.chainId);
+                const href = getExplorerTxUrl(op.chainId, op.txHash);
                 return (
-                  <div className="bg-white/5 rounded-xl p-4 mb-4">
-                    <div className="text-gray-400 text-sm mb-1">Amount</div>
-                    <div className={`text-2xl font-bold ${amountData.isNegative ? 'text-red-400' : 'text-green-400'}`}>
-                      {amountData.isNegative ? '-' : '+'}{amountData.amount} {amountData.symbol}
+                  <div key={`settlement-${i}`} className="mt-6 border-t border-white/10 pt-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <img src={chain.logo} alt={chain.name} className="w-4 h-4 rounded-full object-contain" referrerPolicy="no-referrer" />
+                      <span className="text-gray-300 font-medium text-sm">Settlement Tx Hash - on {chain.name}</span>
                     </div>
-                    {amountData.usdValue && (
-                      <div className="text-gray-400 text-sm mt-1">≈ {amountData.usdValue}</div>
-                    )}
+                    {op.txHash && copyRowTxHash(op.txHash, href)}
                   </div>
                 );
-              })()}
-
-              {/* Details (UniversalX-style layout with dynamic theme) */}
-              <div className="space-y-3">
-                <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <div className="text-gray-400">Type</div>
-                      <div className="text-white font-medium capitalize">{txType}</div>
+              })}
+              {lendingOps.map((op: { chainId?: number; txHash?: string }, i: number) => {
+                const chain = getChainMeta(op.chainId);
+                const href = getExplorerTxUrl(op.chainId, op.txHash);
+                const incrForChain = (details.tokenChanges?.incr || []).filter((x: { token?: { chainId?: number } }) => x.token?.chainId === op.chainId);
+                const decrForChain = (details.tokenChanges?.decr || []).filter((x: { token?: { chainId?: number } }) => x.token?.chainId === op.chainId);
+                return (
+                  <div key={`target-${i}`} className="mt-6 border-t border-white/10 pt-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <img src={chain.logo} alt={chain.name} className="w-4 h-4 rounded-full object-contain" referrerPolicy="no-referrer" />
+                      <span className="text-gray-300 font-medium text-sm">Target Tx Hash - on {chain.name}</span>
                     </div>
-                    <div>
-                      <div className="text-gray-400">Status</div>
-                      <div className="text-white font-medium">{status}</div>
-                    </div>
-                    {getTxDate(details) && (
-                      <>
-                        <div>
-                          <div className="text-gray-400">Time</div>
-                          <div className="text-white">{formatFullDate(getTxDate(details))}</div>
+                    {[...decrForChain, ...incrForChain].map((item: { amount?: string; rawAmount?: string; token?: { symbol?: string; tokenType?: string; image?: string; realDecimals?: number; decimals?: number } }, j: number) => {
+                      const sym = (item.token?.symbol || item.token?.tokenType || '').toUpperCase();
+                      const decimals = item.token?.realDecimals ?? item.token?.decimals ?? 18;
+                      const raw = item.rawAmount ?? item.amount ?? '0';
+                      const formatted = formatTokenAmount(raw, decimals, sym || undefined);
+                      const num = parseFloat(formatted);
+                      const display = num > 0 && num < 0.01 ? formatWithSubscript(num) : formatted;
+                      const isIncr = j >= decrForChain.length;
+                      return (
+                        <div key={`tc-${j}`} className="flex items-center gap-2 py-1 text-sm">
+                          {item.token?.image ? <img src={item.token.image} alt="" className="w-4 h-4 rounded-full" referrerPolicy="no-referrer" /> : null}
+                          <span className={isIncr ? 'text-fuchsia-400' : 'text-amber-400'}>{isIncr ? '+' : '-'}{display} {item.token?.symbol || item.token?.tokenType || ''}</span>
                         </div>
-                        <div>
-                          <div className="text-gray-400">Tx Fee (USD)</div>
-                          <div className="text-white">${formatHexUsd(details.fees?.totals?.feeTokenAmountInUSD || details.totalFeeInUSD)}</div>
-                        </div>
-                      </>
-                    )}
+                      );
+                    })}
+                    {op.txHash && copyRowTxHash(op.txHash, href)}
                   </div>
-                </div>
-
-                {(details.tokenChanges?.decr?.length || details.tokenChanges?.incr?.length) ? (
-                  <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-                    <div className="text-gray-300 font-medium mb-2">Balance change</div>
-                    <div className="space-y-2 text-sm">
-                      {(details.tokenChanges?.decr || []).map((d: { amount?: string; rawAmount?: string; amountInUSD?: string; token?: { symbol?: string; tokenType?: string; image?: string; realDecimals?: number; decimals?: number } }, i: number) => {
-                        const sym = (d.token?.symbol || d.token?.tokenType || '').toUpperCase();
-                        const decimals = d.token?.realDecimals ?? d.token?.decimals ?? (sym === 'USDC' || sym === 'USDT' ? 6 : sym === 'SOL' ? 9 : 18);
-                        const raw = d.rawAmount ?? d.amount ?? '0';
-                        return (
-                        <div key={`decr-${i}`} className="flex items-center justify-between bg-black/20 rounded-lg px-3 py-2">
-                          <div className="flex items-center gap-2">
-                            {d.token?.image ? <img src={d.token.image} alt="" className="w-5 h-5 rounded-full" /> : null}
-                            <span className="text-gray-200">{d.token?.symbol || d.token?.tokenType || 'Token'}</span>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-red-400">- {formatTokenAmount(raw, decimals, sym || undefined)}</div>
-                            {d.amountInUSD != null ? <div className="text-xs text-gray-400">${formatAmountInUsd(d.amountInUSD)}</div> : null}
-                          </div>
-                        </div>
-                      );})}
-                      {(details.tokenChanges?.incr || []).map((inc: { amount?: string; rawAmount?: string; amountInUSD?: string; token?: { symbol?: string; tokenType?: string; image?: string; realDecimals?: number; decimals?: number } }, i: number) => {
-                        const sym = (inc.token?.symbol || inc.token?.tokenType || '').toUpperCase();
-                        const decimals = inc.token?.realDecimals ?? inc.token?.decimals ?? (sym === 'USDC' || sym === 'USDT' ? 6 : sym === 'SOL' ? 9 : 18);
-                        const raw = inc.rawAmount ?? inc.amount ?? '0';
-                        return (
-                        <div key={`incr-${i}`} className="flex items-center justify-between bg-black/20 rounded-lg px-3 py-2">
-                          <div className="flex items-center gap-2">
-                            {inc.token?.image ? <img src={inc.token.image} alt="" className="w-5 h-5 rounded-full" /> : null}
-                            <span className="text-gray-200">{inc.token?.symbol || inc.token?.tokenType || 'Token'}</span>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-green-400">+ {formatTokenAmount(raw, decimals, sym || undefined)}</div>
-                            {inc.amountInUSD != null ? <div className="text-xs text-gray-400">${formatAmountInUsd(inc.amountInUSD)}</div> : null}
-                          </div>
-                        </div>
-                      );})}
+                );
+              })}
+              {depositOps.map((op: { chainId?: number; txHash?: string }, i: number) => {
+                const chain = getChainMeta(op.chainId);
+                const href = getExplorerTxUrl(op.chainId, op.txHash);
+                const decrForChain = (details.tokenChanges?.decr || []).filter((x: { token?: { chainId?: number } }) => x.token?.chainId === op.chainId);
+                return (
+                  <div key={`from-${i}`} className="mt-6 border-t border-white/10 pt-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <img src={chain.logo} alt={chain.name} className="w-4 h-4 rounded-full object-contain" referrerPolicy="no-referrer" />
+                      <span className="text-gray-300 font-medium text-sm">From Tx Hash - on {chain.name}</span>
                     </div>
-                  </div>
-                ) : null}
-
-                <div className="bg-white/5 rounded-xl p-4 border border-white/10 space-y-2 text-sm">
-                  {txId && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Tx ID</span>
-                      <span className="text-white font-mono">{shortenHash(txId)}</span>
-                    </div>
-                  )}
-                  {details.sender && <div className="flex justify-between"><span className="text-gray-400">From</span><span className="text-white font-mono">{shortenHash(details.sender)}</span></div>}
-                  {details.receiver && <div className="flex justify-between"><span className="text-gray-400">To</span><span className="text-white font-mono">{shortenHash(details.receiver)}</span></div>}
-                </div>
-
-                {/* View on Explorer - target chain tx (lending/swap), not UniversalX */}
-                {(() => {
-                  const lendingOps = details.lendingUserOperations || [];
-                  const settlementOps = details.settlementUserOperations || [];
-                  const depositOps = details.depositUserOperations || [];
-                  const targetOp = lendingOps[0] || settlementOps[0] || depositOps[0];
-                  const explorerHref = targetOp?.txHash && targetOp?.chainId
-                    ? getExplorerTxUrl(targetOp.chainId, targetOp.txHash)
-                    : null;
-                  return explorerHref ? (
-                    <a
-                      href={explorerHref}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-center gap-2 w-full bg-accent-dynamic/20 border border-accent-dynamic/50 text-accent-dynamic py-3 px-4 rounded-xl font-medium mb-4"
-                    >
-                      View on Explorer
-                      <span>↗</span>
-                    </a>
-                  ) : null;
-                })()}
-
-                {(details.depositUserOperations?.length || details.lendingUserOperations?.length || details.settlementUserOperations?.length) ? (
-                  <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-                    <div className="text-gray-300 font-medium mb-3">Execution</div>
-
-                    {([
-                      { label: 'Deposit', ops: details.depositUserOperations || [] },
-                      { label: 'Lending', ops: details.lendingUserOperations || [] },
-                      { label: 'Settlement', ops: details.settlementUserOperations || [] },
-                    ] as Array<{ label: string; ops: Array<{ chainId?: number; txHash?: string; status?: number }> }>).map((group) => (
-                      group.ops.length ? (
-                        <div key={group.label} className="mb-3 last:mb-0">
-                          <div className="text-xs text-gray-400 mb-1">{group.label}</div>
-                          <div className="space-y-2 text-sm">
-                            {group.ops.map((op, i) => {
-                              const href = getExplorerTxUrl(op.chainId, op.txHash);
-                              const chain = getChainMeta(op.chainId);
-                              const ok = op.status === 3 || op.status === 7;
-                              return (
-                                <div key={`${group.label}-${i}`} className="flex items-center justify-between bg-black/20 rounded-lg px-3 py-2">
-                                  <div className="flex items-center gap-2">
-                                    <img src={chain.logo} alt={chain.name} className="w-4 h-4 rounded-full object-contain" referrerPolicy="no-referrer" />
-                                    <span className="text-gray-200">{chain.name}</span>
-                                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${ok ? 'text-green-300 bg-green-500/20' : 'text-yellow-300 bg-yellow-500/20'}`}>
-                                      {op.status ?? '-'}
-                                    </span>
-                                  </div>
-                                  {op.txHash ? (
-                                    <a
-                                      href={href}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-accent-dynamic font-mono hover:underline"
-                                    >
-                                      {shortenHash(op.txHash)}
-                                    </a>
-                                  ) : (
-                                    <span className="text-gray-400">-</span>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
+                    {decrForChain.map((item: { amount?: string; rawAmount?: string; token?: { symbol?: string; tokenType?: string; image?: string; realDecimals?: number; decimals?: number } }, j: number) => {
+                      const sym = (item.token?.symbol || item.token?.tokenType || '').toUpperCase();
+                      const decimals = item.token?.realDecimals ?? item.token?.decimals ?? 18;
+                      const raw = item.rawAmount ?? item.amount ?? '0';
+                      const formatted = formatTokenAmount(raw, decimals, sym || undefined);
+                      const num = parseFloat(formatted);
+                      const display = num > 0 && num < 0.01 ? formatWithSubscript(num) : formatted;
+                      return (
+                        <div key={`dc-${j}`} className="flex items-center gap-2 py-1 text-sm">
+                          {item.token?.image ? <img src={item.token.image} alt="" className="w-4 h-4 rounded-full" referrerPolicy="no-referrer" /> : null}
+                          <span className="text-amber-400">-{display} {item.token?.symbol || item.token?.tokenType || ''}</span>
                         </div>
-                      ) : null
-                    ))}
+                      );
+                    })}
+                    {op.txHash && copyRowTxHash(op.txHash, href)}
                   </div>
-                ) : null}
+                );
+              })}
 
-                {/* Advanced raw payload (collapsed) */}
-                <details className="mt-3 bg-white/5 rounded-xl p-3">
-                  <summary className="cursor-pointer text-gray-300 text-sm">Advanced</summary>
-                  <pre className="mt-2 text-xs text-gray-400 whitespace-pre-wrap break-all overflow-x-auto">
-{JSON.stringify(details, null, 2)}
-                  </pre>
-                </details>
-              </div>
+              {/* Advanced */}
+              <details className="mt-6 border-t border-white/10 pt-4">
+                <summary className="cursor-pointer text-gray-400 text-sm">Advanced</summary>
+                <pre className="mt-2 text-xs text-gray-500 whitespace-pre-wrap break-all overflow-x-auto">{JSON.stringify(details, null, 2)}</pre>
+              </details>
             </>
           )}
         </div>
