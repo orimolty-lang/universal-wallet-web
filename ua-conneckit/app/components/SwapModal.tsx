@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import type { IAssetsResponse, UniversalAccount } from "@particle-network/universal-account-sdk";
 import { executeSwap, executeSell, getChainIdFromBlockchain, pollTransactionDetails, getChainName } from "../lib/swapService";
 import { useWallets, useSign7702AuthorizationCompat } from "@/app/lib/connectkit-compat";
-import { handleEIP7702Authorizations } from "@/lib/eip7702";
+import { getUserOpsFromTx, handleEIP7702Authorizations } from "@/lib/eip7702";
 
 // Types
 interface TokenInfo {
@@ -427,14 +427,16 @@ export const SwapModal = ({
           const txAny = result.transaction as any;
           let authorizations: Array<{ userOpHash: string; signature: string }> | undefined;
           const walletAddr = walletClient.account?.address as string | undefined;
-          if (Array.isArray(txAny?.userOps) && txAny.userOps.length > 0) {
+          const userOps = getUserOpsFromTx(txAny);
+          if (userOps.length > 0) {
             if (sign7702 && walletAddr) {
-              authorizations = await handleEIP7702Authorizations(txAny.userOps, sign7702, walletAddr);
+              authorizations = await handleEIP7702Authorizations(userOps as Parameters<typeof handleEIP7702Authorizations>[0], sign7702, walletAddr);
             } else {
               const { Signature } = await import("ethers");
               const nonceMap = new Map<string, string>();
               authorizations = [];
-              for (const userOp of txAny.userOps) {
+              for (const op of userOps) {
+                const userOp = op as { eip7702Auth?: { chainId?: number; address: string; nonce: number }; eip7702Delegated?: boolean; chainId?: number; userOpHash?: string };
                 const auth = userOp?.eip7702Auth;
                 if (!auth || userOp?.eip7702Delegated) continue;
                 const chainId = auth.chainId || userOp.chainId;

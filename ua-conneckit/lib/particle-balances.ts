@@ -140,9 +140,59 @@ const CHAIN_ID_TO_BLOCKCHAIN: Record<number, string> = {
   10: "optimism", 137: "polygon", 56: "bsc", 43114: "avalanche",
 };
 
+/** CoinGecko coin IDs for native tokens (WETH≈ETH, WBNB≈BNB, etc.) */
+const SYMBOL_TO_COINGECKO_ID: Record<string, string> = {
+  WETH: "ethereum",
+  ETH: "ethereum",
+  WBNB: "binancecoin",
+  BNB: "binancecoin",
+  WMATIC: "matic-network",
+  POL: "matic-network",
+  MATIC: "matic-network",
+  WAVAX: "avalanche-2",
+  AVAX: "avalanche-2",
+  WBTC: "bitcoin",
+  BTC: "bitcoin",
+};
+
+let priceCache: { prices: Record<string, number>; ts: number } | null = null;
+const PRICE_CACHE_TTL_MS = 60_000; // 1 min
+
+async function fetchPricesForSymbols(symbols: string[]): Promise<Record<string, number>> {
+  const ids = Array.from(new Set(symbols.map((s) => SYMBOL_TO_COINGECKO_ID[s?.toUpperCase()]).filter(Boolean)));
+  if (ids.length === 0) return {};
+
+  const now = Date.now();
+  if (priceCache && now - priceCache.ts < PRICE_CACHE_TTL_MS) {
+    return priceCache.prices;
+  }
+
+  try {
+    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(",")}&vs_currencies=usd`;
+    const res = await fetch(url);
+    if (!res.ok) return {};
+    const data = (await res.json()) as Record<string, { usd?: number }>;
+    const prices: Record<string, number> = {};
+    for (const [id, val] of Object.entries(data)) {
+      if (typeof val?.usd === "number") prices[id] = val.usd;
+    }
+    priceCache = { prices, ts: now };
+    return prices;
+  } catch {
+    return priceCache?.prices ?? {};
+  }
+}
+
+/** Map symbol -> USD price using CoinGecko native token prices (WETH=ETH, WBNB=BNB) */
+function getPriceForSymbol(symbol: string, prices: Record<string, number>): number {
+  const id = SYMBOL_TO_COINGECKO_ID[symbol?.toUpperCase()];
+  return id ? (prices[id] ?? 0) : 0;
+}
+
 /**
  * Fetch all token balances via Particle RPC and aggregate into external asset format.
  * Excludes tokens that match primarySymbols (UA primary assets) to avoid duplicates.
+ * Enriches with USD prices via CoinGecko for total value display.
  */
 export async function fetchParticleExternalAssets(
   walletAddress: string,
@@ -166,23 +216,27 @@ export async function fetchParticleExternalAssets(
     bySymbol.set(sym, list);
   }
 
+  const symbols = Array.from(bySymbol.keys());
+  const prices = await fetchPricesForSymbols(symbols);
+
   const assets: ParticleExternalAsset[] = [];
   for (const items of Array.from(bySymbol.values())) {
     const totalAmount = items.reduce((sum, i) => sum + parseFloat(i.amount) / Math.pow(10, i.decimals), 0);
     if (totalAmount <= 0) continue;
 
     const first = items[0];
+    const price = getPriceForSymbol(first.symbol, prices);
+    const totalUSD = price > 0 ? totalAmount * price : 0;
+
     const chainAggregation = items.map((i) => {
       const amt = parseFloat(i.amount) / Math.pow(10, i.decimals);
+      const amtUsd = price > 0 ? amt * price : 0;
       return {
         token: { chainId: i.chainId, address: i.address },
         amount: amt,
-        amountInUSD: i.amountInUSD || 0,
+        amountInUSD: amtUsd,
       };
     });
-
-    const totalUSD = chainAggregation.reduce((s, c) => s + c.amountInUSD, 0);
-    const price = totalAmount > 0 ? totalUSD / totalAmount : 0;
 
     assets.push({
       symbol: first.symbol,
