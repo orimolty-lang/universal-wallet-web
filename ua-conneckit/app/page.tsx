@@ -7446,13 +7446,10 @@ const App = () => {
     if (!address || typeof address !== "string" || !address.startsWith("0x") || address.length !== 42) {
       return null;
     }
-    const projectId = process.env.NEXT_PUBLIC_PROJECT_ID || "";
-    const clientKey = process.env.NEXT_PUBLIC_CLIENT_KEY || "";
-    const appId = process.env.NEXT_PUBLIC_APP_ID || "";
-    if (!projectId || !clientKey) {
-      console.error("[UA] Particle credentials missing. Use build:gh-pages or set NEXT_PUBLIC_PROJECT_ID, NEXT_PUBLIC_CLIENT_KEY.");
-      return null;
-    }
+    // Fallbacks match build-gh-pages.sh so UA works when env vars aren't set at build time
+    const projectId = process.env.NEXT_PUBLIC_PROJECT_ID || "c0cb9e74-192b-4bdc-ba62-852775c6e7fd";
+    const clientKey = process.env.NEXT_PUBLIC_CLIENT_KEY || "caswUnSdr9LPg5HEhqAZouZAExKOKZPv791XBxSK";
+    const appId = process.env.NEXT_PUBLIC_APP_ID || "e5be9376-1d3a-4882-b4a5-c5c0ce1b5182";
     return {
       projectId,
       projectClientKey: clientKey,
