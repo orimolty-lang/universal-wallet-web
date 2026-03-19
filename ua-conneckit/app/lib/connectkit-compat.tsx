@@ -170,16 +170,18 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
 
 export function MagicAuthProvider({ children }: React.PropsWithChildren) {
   const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID || "cmmvrmj1503730cjx4s1nu78t";
+  const clientId = process.env.NEXT_PUBLIC_PRIVY_CLIENT_ID;
 
   return (
     <PrivyProvider
       appId={appId}
+      clientId={clientId || undefined}
       config={{
         appearance: { theme: "dark" },
         loginMethods: ["email", "google", "apple"],
         embeddedWallets: {
           ethereum: {
-            createOnLogin: "users-without-wallets",
+            createOnLogin: "all-users",
           },
           showWalletUIs: true,
         },
