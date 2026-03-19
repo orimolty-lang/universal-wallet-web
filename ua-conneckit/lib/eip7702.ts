@@ -32,7 +32,7 @@ export async function getEIP7702Deployments(
 /**
  * Handle EIP-7702 authorizations - aligned with Particle demo.
  * No wallet_switchEthereumChain (demo doesn't switch).
- * Uses chainId:nonce cache for multi-chain safety.
+ * Uses chainId:nonce cache for multi-chain (each chain has own delegation contract).
  */
 export type Sign7702Fn = (params: {
   contractAddress: `0x${string}`;
