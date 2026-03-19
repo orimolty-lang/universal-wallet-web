@@ -5937,8 +5937,28 @@ const SearchTab = ({
         ) : null}
       </div>
 
+      {/* Search bar at top - below header */}
+      <div className="shrink-0 px-4 py-3 bg-[#0a0a0a]">
+        <div className="relative flex items-center bg-gray-800 rounded-full px-4 py-2.5">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search for anything..."
+            className="flex-1 bg-transparent text-white placeholder-gray-500 outline-none text-sm"
+          />
+          <button
+            type="button"
+            onClick={handlePaste}
+            className="ml-2 px-3 py-1 rounded-lg bg-gray-700 text-white text-sm font-medium hover:bg-gray-600 transition-colors"
+          >
+            Paste
+          </button>
+        </div>
+      </div>
+
       {/* Content area */}
-      <div className="flex-1 overflow-auto px-4 pb-4">
+      <div className="flex-1 overflow-auto px-4 pb-24">
         {loading && <div className="text-gray-500 text-center py-4">Searching...</div>}
         {error && <div className="text-red-500 text-center py-4 text-sm">Error: {error}</div>}
 
@@ -6113,26 +6133,6 @@ const SearchTab = ({
           console.log("Swap success:", txId);
         }}
       />
-
-      {/* Search bar at bottom - matches screenshot */}
-      <div className="shrink-0 px-4 pb-4 pt-2 bg-[#0a0a0a]">
-        <div className="relative flex items-center bg-gray-800 rounded-full px-4 py-2.5">
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search for anything..."
-            className="flex-1 bg-transparent text-white placeholder-gray-500 outline-none text-sm"
-          />
-          <button
-            type="button"
-            onClick={handlePaste}
-            className="ml-2 px-3 py-1 rounded-lg bg-gray-700 text-white text-sm font-medium hover:bg-gray-600 transition-colors"
-          >
-            Paste
-          </button>
-        </div>
-      </div>
     </div>
   );
 };
