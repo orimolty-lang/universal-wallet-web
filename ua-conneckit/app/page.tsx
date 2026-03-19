@@ -7,6 +7,7 @@ import {
   useDisconnect,
   useParticleAuth,
   useSign7702AuthorizationCompat,
+  useExportWalletCompat,
 } from "@/app/lib/connectkit-compat";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
@@ -7011,6 +7012,22 @@ const SettingsModal = ({
   onOpenMasterPassword?: () => void;
   onOpenAppLock?: () => void;
 }) => {
+  const exportWallet = useExportWalletCompat();
+  const { address } = useAccount();
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportKey = async () => {
+    if (!exportWallet || !address) return;
+    setExporting(true);
+    try {
+      await exportWallet({ address });
+    } catch (e) {
+      console.error("[Export]", e);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
   <BottomSheet isOpen={isOpen} onClose={onClose}>
     <div className="px-6 pb-8">
@@ -7063,6 +7080,32 @@ const SettingsModal = ({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.25 4.5l7.5 7.5-7.5 7.5"/>
           </svg>
         </button>
+
+        {exportWallet && address && (
+          <button
+            type="button"
+            onClick={handleExportKey}
+            disabled={exporting}
+            className="w-full flex items-center justify-between py-3 border-b border-gray-800 hover:bg-white/5 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"/>
+              </svg>
+              <div className="text-left">
+                <span className="text-white block">Export Private Key</span>
+                <span className="text-gray-500 text-[11px]">Reveal and copy in secure modal</span>
+              </div>
+            </div>
+            {exporting ? (
+              <div className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.25 4.5l7.5 7.5-7.5 7.5"/>
+              </svg>
+            )}
+          </button>
+        )}
         
         <div className="text-gray-500 text-xs uppercase tracking-wider mb-2 mt-6">Signing</div>
         <div className="w-full flex items-center justify-between py-3 border-b border-gray-800">

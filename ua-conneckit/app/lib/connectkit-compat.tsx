@@ -36,6 +36,8 @@ type SignMessageFn = (
   options: { uiOptions?: { title?: string }; address: string }
 ) => Promise<{ signature: string }>;
 
+type ExportWalletFn = (options?: { address?: string }) => Promise<void>;
+
 type CompatContextType = {
   isConnected: boolean;
   address?: `0x${string}`;
@@ -44,6 +46,7 @@ type CompatContextType = {
   getWalletClient: () => WalletClientLike;
   sign7702Authorization: Sign7702Fn | null;
   signMessage: SignMessageFn | null;
+  exportWallet: ExportWalletFn | null;
 };
 
 const CompatContext = createContext<CompatContextType>({
@@ -56,10 +59,11 @@ const CompatContext = createContext<CompatContextType>({
   },
   sign7702Authorization: null,
   signMessage: null,
+  exportWallet: null,
 });
 
 function PrivyAuthInner({ children }: React.PropsWithChildren) {
-  const { ready, authenticated, logout } = usePrivy();
+  const { ready, authenticated, logout, exportWallet } = usePrivy();
   const { login } = useLogin();
   const { createWallet } = useCreateWallet();
   const { wallets } = usePrivyWallets();
@@ -172,8 +176,9 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
       getWalletClient,
       sign7702Authorization: address ? sign7702Authorization : null,
       signMessage: address ? signMessage : null,
+      exportWallet: address ? (exportWallet as ExportWalletFn) : null,
     }),
-    [ready, authenticated, address, doLogin, doLogout, getWalletClient, sign7702Authorization, signMessage]
+    [ready, authenticated, address, doLogin, doLogout, getWalletClient, sign7702Authorization, signMessage, exportWallet]
   );
 
   return <CompatContext.Provider value={value}>{children}</CompatContext.Provider>;
@@ -189,7 +194,7 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
       clientId={clientId || undefined}
       config={{
         appearance: { theme: "dark" },
-        loginMethods: ["email", "google", "apple"],
+        loginMethods: ["email", "google", "apple", "passkey"],
         embeddedWallets: {
           ethereum: {
             createOnLogin: "all-users",
@@ -218,6 +223,11 @@ export function useSign7702AuthorizationCompat() {
 export function useSignMessageCompat() {
   const { signMessage } = useContext(CompatContext);
   return signMessage;
+}
+
+export function useExportWalletCompat() {
+  const { exportWallet } = useContext(CompatContext);
+  return exportWallet;
 }
 
 type CompatWallet = { getWalletClient: () => WalletClientLike };
