@@ -1,11 +1,12 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useMemo } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo } from "react";
 import { BrowserProvider, getBytes } from "ethers";
 import {
   PrivyProvider,
   useLogin,
   usePrivy,
+  useCreateWallet,
   useSign7702Authorization,
   useSignMessage,
   useWallets as usePrivyWallets,
@@ -60,15 +61,25 @@ const CompatContext = createContext<CompatContextType>({
 function PrivyAuthInner({ children }: React.PropsWithChildren) {
   const { ready, authenticated, logout } = usePrivy();
   const { login } = useLogin();
+  const { createWallet } = useCreateWallet();
   const { wallets } = usePrivyWallets();
   const { signAuthorization } = useSign7702Authorization();
   const { signMessage: signMessagePrivy } = useSignMessage();
 
   const embeddedWallet = useMemo(
-    () => wallets.find((w) => w.walletClientType === "privy") || wallets[0],
+    () => wallets?.find((w) => w.walletClientType === "privy") || wallets?.[0],
     [wallets]
   );
   const address = embeddedWallet?.address as `0x${string}` | undefined;
+
+  // Ensure embedded wallet exists (like Particle example)
+  useEffect(() => {
+    if (!ready || !authenticated) return;
+    const hasEmbedded = embeddedWallet != null;
+    if (!hasEmbedded) {
+      createWallet().catch((err) => console.warn("[Privy] createWallet:", err));
+    }
+  }, [ready, authenticated, embeddedWallet, createWallet]);
 
   const doLogin = useCallback(async () => {
     await login();
