@@ -4754,9 +4754,9 @@ const PerpsModal = ({
               <div className="mb-3 p-3 rounded-lg bg-red-900/30 border border-red-500/50 text-red-300 text-sm">{error}</div>
             )}
 
-            {/* Single order card - back + market name (no duplicate) */}
-            <div className="rounded-2xl bg-[#151515] border border-[#252525] p-4">
-              <div className="flex items-center justify-between mb-3 pb-3 border-b border-[#2a2a2a]">
+            {/* Single order card - back + market name (no duplicate) - on black sheet */}
+            <div className="pt-1">
+              <div className="flex items-center justify-between mb-3 pb-3 border-b border-[#252525]">
                 <button onClick={() => setView('markets')} className="w-9 h-9 rounded-full bg-[#1a1a1a] flex items-center justify-center shrink-0">
                   <span className="text-white text-lg">←</span>
                 </button>
@@ -4913,7 +4913,7 @@ const PerpsModal = ({
 
             {/* TP/SL inputs when expanded */}
             {showTpSlInputs && (
-              <div className="rounded-xl p-3 mb-3 bg-[#151515] border border-[#252525]">
+              <div className="p-3 mb-3">
                 <div className="grid grid-cols-2 gap-2">
                   <input type="number" value={takeProfit} onChange={(e) => setTakeProfit(e.target.value)} placeholder="Take Profit" className="bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-2 text-white text-sm outline-none" />
                   <input type="number" value={stopLoss} onChange={(e) => setStopLoss(e.target.value)} placeholder="Stop Loss" className="bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-2 text-white text-sm outline-none" />
@@ -4923,7 +4923,7 @@ const PerpsModal = ({
 
             {/* Position Summary - Avantis style */}
             {positionSize > 0 && liquidationPrice && (
-              <div className="bg-[#151515] border border-[#2a2a2a] rounded-xl p-3 mb-4 text-sm space-y-2">
+              <div className="p-3 mb-4 text-sm space-y-2">
                 <div className="flex justify-between">
                   <span className="text-gray-400">Entry Price</span>
                   <span className="text-white">${currentPrice?.toLocaleString()}</span>
