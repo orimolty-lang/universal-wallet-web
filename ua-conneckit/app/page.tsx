@@ -1225,7 +1225,7 @@ const SendModal = ({
             )}
 
             {/* Token + Chain Selection */}
-            <div className="mb-3 bg-zinc-900 rounded-xl p-3 border border-zinc-800">
+            <div className="mb-3">
               <label className="text-gray-400 text-sm mb-2 block">You are sending</label>
               <div className="relative">
                 <button
@@ -1279,7 +1279,7 @@ const SendModal = ({
               </div>
             </div>
 
-            <div className="mb-3 bg-zinc-900 rounded-xl p-3 border border-zinc-800">
+            <div className="mb-3">
               <label className="text-gray-400 text-sm mb-2 block">Recipient Address</label>
               <input
                 type="text"
@@ -1290,7 +1290,7 @@ const SendModal = ({
               />
             </div>
 
-            <div className="mb-6 bg-zinc-900 rounded-xl p-3 border border-zinc-800">
+            <div className="mb-6">
               <label className="text-gray-400 text-sm mb-2 block">Amount</label>
               <input
                 type="number"
@@ -1804,7 +1804,7 @@ const ConvertModal = ({
         )}
 
         {/* From Section - Compact */}
-        <div className="bg-zinc-900 rounded-xl p-3 mb-1 border border-zinc-800">
+        <div className="mb-1">
           <div className="text-gray-400 text-xs mb-1">From</div>
           
           <div className="flex gap-2 mb-1">
@@ -1905,13 +1905,13 @@ const ConvertModal = ({
 
         {/* Swap Arrow */}
         <div className="flex justify-center -my-1 relative z-10">
-          <div className="w-8 h-8 rounded-full bg-zinc-900 border-2 border-[#0a0a0a] flex items-center justify-center text-gray-400">
+          <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-gray-400">
             ↓
           </div>
         </div>
 
         {/* To Section - Compact */}
-        <div className="bg-zinc-900 rounded-xl p-3 mb-2 border border-zinc-800">
+        <div className="mb-2">
           <div className="text-gray-400 text-xs mb-1">To</div>
           
           <div className="flex gap-2">
