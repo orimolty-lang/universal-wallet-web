@@ -2787,7 +2787,7 @@ const PerpsModal = ({
         }))
         .filter((x): x is { pairName: string; feedId: string } => !!x.feedId);
       if (feedTargets.length === 0) {
-        setMarketPrices({});
+        // Keep prior prices while Avantis socket metadata (feedIds) is still loading.
         return;
       }
 
@@ -2821,8 +2821,9 @@ const PerpsModal = ({
         if (!price) continue;
         prices[pairName] = { price, change24h: Number.NaN };
       }
-      
-      setMarketPrices(prices);
+
+      // Merge so a partial Hermes failure does not wipe prices that were valid on the last tick.
+      setMarketPrices((prev) => (Object.keys(prices).length > 0 ? { ...prev, ...prices } : prev));
     };
     
     if (isOpen && view === 'markets') {
