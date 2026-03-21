@@ -8,6 +8,7 @@ const nextConfig = {
   output: 'export',
   basePath: '/universal-wallet-web',
   assetPrefix: '/universal-wallet-web/',
+  transpilePackages: ['@pythnetwork/hermes-client', 'eventsource'],
   images: {
     unoptimized: true,
   },

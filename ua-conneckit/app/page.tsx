@@ -30,6 +30,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
+import { HermesClient } from "@pythnetwork/hermes-client";
 import { decodeFunctionResult, encodeFunctionData } from "viem";
 import { toBeHex, formatUnits } from "ethers";
 import { useUniversalAccountWS } from "./hooks/useUniversalAccountWS";
@@ -2503,6 +2504,7 @@ const PerpsModal = ({
   const BASE_USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
   const AVANTIS_HEADER_LOGO_URL = 'https://1312337203-files.gitbook.io/~/files/v0/b/gitbook-x-prod.appspot.com/o/spaces%2F76vAZHPcNKY10NzuKsC4%2Fuploads%2FfM44ZIUWnrYhajk68ioy%2FAvantis%20White%20Logo%20-%20Iconmark.png?alt=media';
   const marketPricesRef = useRef<Record<string, { price: number; change24h: number }>>({});
+  const hermesSseSourcesRef = useRef<EventSource[]>([]);
   const previousPositionIdsRef = useRef<Set<string>>(new Set());
   const [showPerpsHistoryModal, setShowPerpsHistoryModal] = useState(false);
   const [showPerpsExplainerModal, setShowPerpsExplainerModal] = useState(false);
@@ -2778,60 +2780,133 @@ const PerpsModal = ({
     };
   }, [isOpen, selectedPair.name, pairLeverageLimits]);
 
-  // Single Hermes poll for all markets while modal is open — drives list, trade price, and position marks.
+  // Real-time marks: Pyth Hermes SSE (same oracle Avantis uses). Pair → feedId comes from Avantis Socket API above.
   useEffect(() => {
-    const fetchAllPrices = async () => {
-      const prices: Record<string, { price: number; change24h: number }> = {};
-      const feedTargets = availableMarkets
-        .map((market) => ({
-          pairName: market.pairName,
-          feedId: pairLeverageLimits[market.pairName]?.feedId,
-        }))
-        .filter((x): x is { pairName: string; feedId: string } => !!x.feedId);
-      if (feedTargets.length === 0) {
-        // Keep prior prices while Avantis socket metadata (feedIds) is still loading.
-        return;
-      }
+    if (!isOpen) return;
 
-      const uniqueFeedIds = Array.from(new Set(feedTargets.map((x) => x.feedId)));
-      const normalizeFeedId = (id: string) => id.replace(/^0x/i, '').toLowerCase();
-      const priceByFeedId = new Map<string, number>();
-      const fetchPriceForFeedId = async (feedId: string) => {
-        try {
-          const response = await fetch(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${feedId}`);
-          if (!response.ok) return;
-          const data = await response.json();
-          const parsed = Array.isArray(data?.parsed) ? data.parsed : [];
-          for (const item of parsed) {
-            const id = typeof item?.id === 'string' ? item.id : '';
-            const p = item?.price;
-            if (!id || !p || !Number.isFinite(Number(p.price)) || !Number.isFinite(Number(p.expo))) continue;
-            const price = Number(p.price) * Math.pow(10, Number(p.expo));
-            if (Number.isFinite(price) && price > 0) {
-              priceByFeedId.set(normalizeFeedId(id), price);
-            }
-          }
-        } catch {
-          // per-feed failures are ignored so one broken id doesn't nuke all prices
-        }
-      };
-      for (let i = 0; i < uniqueFeedIds.length; i += 12) {
-        await Promise.all(uniqueFeedIds.slice(i, i + 12).map(fetchPriceForFeedId));
-      }
-      for (const { pairName, feedId } of feedTargets) {
-        const price = priceByFeedId.get(normalizeFeedId(feedId));
-        if (!price) continue;
-        prices[pairName] = { price, change24h: Number.NaN };
-      }
+    const feedTargets = availableMarkets
+      .map((market) => ({
+        pairName: market.pairName,
+        feedId: pairLeverageLimits[market.pairName]?.feedId,
+      }))
+      .filter((x): x is { pairName: string; feedId: string } => !!x.feedId);
 
-      // Merge so a partial Hermes failure does not wipe prices that were valid on the last tick.
-      setMarketPrices((prev) => (Object.keys(prices).length > 0 ? { ...prev, ...prices } : prev));
+    if (feedTargets.length === 0) return;
+
+    const normalizeKey = (id: string) => id.replace(/^0x/i, '').toLowerCase();
+    const normalizeHermesId = (id: string) => {
+      const s = id.trim();
+      return s.startsWith('0x') || s.startsWith('0X') ? s : `0x${s}`;
     };
 
-    if (!isOpen) return;
-    fetchAllPrices();
-    const t = setInterval(fetchAllPrices, 1000);
-    return () => clearInterval(t);
+    const feedKeyToPairs = new Map<string, string[]>();
+    for (const { pairName, feedId } of feedTargets) {
+      const key = normalizeKey(feedId);
+      const list = feedKeyToPairs.get(key) || [];
+      list.push(pairName);
+      feedKeyToPairs.set(key, list);
+    }
+
+    const uniqueIds = Array.from(new Set(feedTargets.map((t) => normalizeHermesId(t.feedId))));
+    const hermes = new HermesClient('https://hermes.pyth.network/');
+    hermesSseSourcesRef.current.forEach((es) => {
+      try {
+        es.close();
+      } catch {
+        // ignore
+      }
+    });
+    hermesSseSourcesRef.current = [];
+    let cancelled = false;
+
+    const applyParsed = (parsed: unknown) => {
+      if (!Array.isArray(parsed)) return;
+      const slice: Record<string, { price: number; change24h: number }> = {};
+      for (const item of parsed as Array<{ id?: string; price?: { price?: string; expo?: number } }>) {
+        const id = typeof item?.id === 'string' ? item.id : '';
+        const p = item?.price;
+        if (!id || !p || !Number.isFinite(Number(p.price)) || !Number.isFinite(Number(p.expo))) continue;
+        const px = Number(p.price) * Math.pow(10, Number(p.expo));
+        if (!Number.isFinite(px) || px <= 0) continue;
+        const pairNames = feedKeyToPairs.get(normalizeKey(id));
+        if (!pairNames) continue;
+        for (const pairName of pairNames) {
+          slice[pairName] = { price: px, change24h: Number.NaN };
+        }
+      }
+      if (Object.keys(slice).length === 0) return;
+      setMarketPrices((prev) => ({ ...prev, ...slice }));
+    };
+
+    const openStreams = async () => {
+      const chunkSize = 28;
+      for (let i = 0; i < uniqueIds.length; i += chunkSize) {
+        if (cancelled) return;
+        const chunk = uniqueIds.slice(i, i + chunkSize);
+        try {
+          const es = await hermes.getPriceUpdatesStream(chunk, {
+            parsed: true,
+            allowUnordered: true,
+            benchmarksOnly: false,
+            ignoreInvalidPriceIds: true,
+          });
+          if (cancelled) {
+            es.close();
+            return;
+          }
+          es.onmessage = (ev) => {
+            try {
+              const body = JSON.parse(ev.data as string) as { parsed?: unknown };
+              if (body?.parsed) applyParsed(body.parsed);
+            } catch {
+              // ignore malformed SSE payloads
+            }
+          };
+          es.onerror = () => {
+            try {
+              es.close();
+            } catch {
+              // ignore
+            }
+          };
+          hermesSseSourcesRef.current.push(es);
+        } catch {
+          // chunk failed — others may still connect
+        }
+      }
+    };
+
+    const seedLatest = async () => {
+      const batch = 45;
+      for (let i = 0; i < uniqueIds.length; i += batch) {
+        if (cancelled) return;
+        const slice = uniqueIds.slice(i, i + batch);
+        try {
+          const res = await hermes.getLatestPriceUpdates(slice, {
+            parsed: true,
+            ignoreInvalidPriceIds: true,
+          });
+          if (res?.parsed) applyParsed(res.parsed);
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    void seedLatest();
+    void openStreams();
+
+    return () => {
+      cancelled = true;
+      for (const es of hermesSseSourcesRef.current) {
+        try {
+          es.close();
+        } catch {
+          // ignore
+        }
+      }
+      hermesSseSourcesRef.current = [];
+    };
   }, [isOpen, availableMarkets, pairLeverageLimits]);
 
   // Fetch live leverage limits (including Zero Fee Perps ranges) from Avantis Socket API.
