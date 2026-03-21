@@ -51,6 +51,22 @@ html, body {
   scrollbar-color: var(--accent-color-30) transparent;
 }
 
+/* Wallet activity toast — checkmark stroke draw */
+@keyframes wallet-toast-check-draw {
+  from {
+    stroke-dashoffset: 18;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.wallet-toast-check-stroke {
+  stroke-dasharray: 18;
+  stroke-dashoffset: 18;
+  animation: wallet-toast-check-draw 0.42s ease-out 0.08s forwards;
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;

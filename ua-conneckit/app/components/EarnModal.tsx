@@ -18,6 +18,7 @@ import {
   type EarnPosition,
 } from "../lib/earnService";
 import { build7702Authorizations } from "@/lib/eip7702";
+import type { WalletActivityToastKind } from "@/app/components/WalletActivityToast";
 
 type WalletClientLike = {
   account?: { address?: `0x${string}` };
@@ -91,6 +92,7 @@ interface EarnModalProps {
   blindSigningEnabled: boolean;
   sign7702?: Sign7702Fn | null;
   onSuccess?: () => void;
+  onWalletActivity?: (kind: WalletActivityToastKind) => void;
 }
 
 export default function EarnModal({
@@ -103,6 +105,7 @@ export default function EarnModal({
   blindSigningEnabled,
   sign7702,
   onSuccess,
+  onWalletActivity,
 }: EarnModalProps) {
   const [primaryWallet] = useWallets();
   const { address } = useAccount();
@@ -231,6 +234,7 @@ export default function EarnModal({
         : [];
       const result = await universalAccount.sendTransaction(tx, signature, authorizations);
       setTxResult({ txId: result.transactionId });
+      onWalletActivity?.("deposited");
       loadPositions();
       onSuccess?.();
     } catch (err) {
@@ -312,8 +316,19 @@ export default function EarnModal({
     EURC: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x1aBaEA1f7C830bD89Acc67eC4af516284b1bC33c/logo.png",
   };
   const getAssetLogo = (symbol: string) => {
-    const s = symbol?.trim() || "";
-    return ASSET_LOGOS[s] ?? ASSET_LOGOS[s.toUpperCase()] ?? ASSET_LOGOS.USDC;
+    const raw = (symbol?.trim() || "").toUpperCase();
+    const compact = raw.replace(/[^A-Z0-9]/g, "");
+    if (compact.startsWith("USDT")) return ASSET_LOGOS.USDT;
+    if (compact.startsWith("USDC")) return ASSET_LOGOS.USDC;
+    if (compact.startsWith("WSTETH")) return ASSET_LOGOS.wstETH;
+    if (compact.startsWith("WETH")) return ASSET_LOGOS.WETH;
+    if (compact.startsWith("STETH")) return ASSET_LOGOS.stETH;
+    if (compact.startsWith("ETH")) return ASSET_LOGOS.ETH;
+    if (compact.startsWith("WBTC")) return ASSET_LOGOS.WBTC;
+    if (compact.startsWith("BTC")) return ASSET_LOGOS.BTC;
+    if (compact.startsWith("DAI")) return ASSET_LOGOS.DAI;
+    if (compact.startsWith("EURC")) return ASSET_LOGOS.EURC;
+    return ASSET_LOGOS[raw] ?? ASSET_LOGOS.USDC;
   };
   const getChainLogo = (chainId: number) => chainMeta[chainId]?.logo ?? chainMeta[1]?.logo;
   const [chainDropdownOpen, setChainDropdownOpen] = useState(false);

@@ -23,6 +23,7 @@ import TokenDetailModal from "./components/TokenDetailModal";
 import SwapModal from "./components/SwapModal";
 import PolymarketModal from "./components/PolymarketModal";
 import EarnModal from "./components/EarnModal";
+import WalletActivityToast, { type WalletActivityToastKind } from "./components/WalletActivityToast";
 import BottomSheet from "../components/BottomSheet";
 import {
   DropdownMenu,
@@ -909,11 +910,13 @@ const ReceiveModal = ({
   onClose,
   evmAddress,
   solanaAddress,
+  onWalletActivity,
 }: {
   isOpen: boolean;
   onClose: () => void;
   evmAddress: string;
   solanaAddress: string;
+  onWalletActivity?: (kind: WalletActivityToastKind) => void;
 }) => {
   const [copied, setCopied] = useState<string | null>(null);
   const [qrAddress, setQrAddress] = useState<{ chain: string; address: string } | null>(null);
@@ -921,6 +924,7 @@ const ReceiveModal = ({
   const handleCopy = (addr: string, type: string) => {
     copyToClipboard(addr);
     setCopied(type);
+    onWalletActivity?.("copied");
     setTimeout(() => setCopied(null), 2000);
   };
 
@@ -1074,6 +1078,7 @@ const SendModal = ({
   blindSigningEnabled,
   sign7702,
   onSuccess,
+  onWalletActivity,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -1082,6 +1087,7 @@ const SendModal = ({
   blindSigningEnabled: boolean;
   sign7702: ((p: { contractAddress: `0x${string}`; chainId: number; nonce: number }, o: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>) | null;
   onSuccess?: () => void;
+  onWalletActivity?: (kind: WalletActivityToastKind) => void;
 }) => {
   const [primaryWallet] = useWallets();
   const { address } = useAccount();
@@ -1181,6 +1187,7 @@ const SendModal = ({
       const authorizations = await build7702Authorizations(tx, sign7702, address);
       const result = await universalAccount.sendTransaction(tx, signature as string, authorizations);
       setTxResult({ txId: result.transactionId });
+      onWalletActivity?.("send");
       onSuccess?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Transfer failed");
@@ -1360,6 +1367,7 @@ const ConvertModal = ({
   signMessage,
   onTransactionCreated,
   onSuccess,
+  onWalletActivity,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -1370,6 +1378,7 @@ const ConvertModal = ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onTransactionCreated?: (tx: any) => void;
   onSuccess?: () => void; // Callback to refresh balances
+  onWalletActivity?: (kind: WalletActivityToastKind) => void;
 }) => {
   const [primaryWallet] = useWallets();
   const sign7702 = useSign7702AuthorizationCompat();
@@ -1747,6 +1756,7 @@ const ConvertModal = ({
                   status: 'complete',
                 });
                 setLoadingStatus('');
+                onWalletActivity?.('converted');
                 
                 // Reset form
                 setFromAsset('');
@@ -6884,6 +6894,16 @@ const App = () => {
   const [showPerpsModal, setShowPerpsModal] = useState(false);
   const [showPolymarketModal, setShowPolymarketModal] = useState(false);
   const [showEarnModal, setShowEarnModal] = useState(false);
+  const walletToastKeyRef = useRef(0);
+  const [walletToastPayload, setWalletToastPayload] = useState<{ kind: WalletActivityToastKind; key: number } | null>(null);
+  const showWalletActivityToast = useCallback((kind: WalletActivityToastKind) => {
+    const key = ++walletToastKeyRef.current;
+    setWalletToastPayload({ kind, key });
+    const ms = kind === "copied" ? 1900 : 2700;
+    window.setTimeout(() => {
+      setWalletToastPayload((cur) => (cur?.key === key ? null : cur));
+    }, ms);
+  }, []);
   const [showDepositDialog, setShowDepositDialog] = useState(false);
   const [showAssetBreakdown, setShowAssetBreakdown] = useState(false);
   const [showActivityModal, setShowActivityModal] = useState(false);
@@ -7313,11 +7333,14 @@ const App = () => {
         onUpdateProfile={updateProfile}
       />
       
+      <WalletActivityToast payload={walletToastPayload} />
+
       <ReceiveModal
         isOpen={showReceiveModal}
         onClose={() => setShowReceiveModal(false)}
         evmAddress={accountInfo?.evmSmartAccount || ""}
         solanaAddress={accountInfo?.solanaSmartAccount || ""}
+        onWalletActivity={showWalletActivityToast}
       />
       
       <SendModal
@@ -7327,6 +7350,7 @@ const App = () => {
         universalAccount={universalAccountInstance}
         blindSigningEnabled={profile.blindSigningEnabled}
         sign7702={sign7702}
+        onWalletActivity={showWalletActivityToast}
         onSuccess={() => {
           fetchAssets();
           fetchMobulaAssets();
@@ -7344,6 +7368,7 @@ const App = () => {
         onTransactionCreated={(tx) => {
           console.log('[Convert] Transaction created:', tx);
         }}
+        onWalletActivity={showWalletActivityToast}
         onSuccess={() => {
           fetchAssets();
           fetchMobulaAssets();
@@ -7385,6 +7410,7 @@ const App = () => {
         smartAccountAddress={accountInfo?.evmSmartAccount}
         blindSigningEnabled={profile.blindSigningEnabled}
         sign7702={sign7702}
+        onWalletActivity={showWalletActivityToast}
         onSuccess={() => {
           fetchAssets();
           fetchMobulaAssets();
