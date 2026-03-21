@@ -43,7 +43,6 @@ import {
   mobulaAssetPositionKeys,
   parseChainIdMobula,
   positionKeysFromMergedShape,
-  primaryPortfolioContractKeys,
   tokenContractKeySet,
   mergedAssetMatchesContractKeys,
   isMobulaDuplicateOfUaPrimaryStaple,
@@ -485,6 +484,8 @@ type DexPairMetrics = {
   liquidity?: number;
   priceChange24h?: number;
   marketCap?: number;
+  /** DexScreener pair priceUsd — used to refresh list row price vs stale Mobula search snapshot. */
+  priceUsd?: number;
 };
 
 function mergeTokenWithDexMetrics(token: TokenResult, metrics: DexPairMetrics): TokenResult {
@@ -494,8 +495,13 @@ function mergeTokenWithDexMetrics(token: TokenResult, metrics: DexPairMetrics): 
       : metrics.marketCap && metrics.marketCap > 0
         ? metrics.marketCap
         : token.market_cap;
+  const nextPrice =
+    typeof metrics.priceUsd === "number" && Number.isFinite(metrics.priceUsd) && metrics.priceUsd > 0
+      ? metrics.priceUsd
+      : token.price;
   return {
     ...token,
+    price: nextPrice,
     volume: token.volume ?? metrics.volume,
     liquidity: token.liquidity ?? metrics.liquidity,
     price_change_24h: typeof token.price_change_24h === "number" ? token.price_change_24h : metrics.priceChange24h,
@@ -5507,14 +5513,17 @@ const SearchTab = ({
             priceChange?: { h24?: number | string };
             fdv?: number | string;
             marketCap?: number | string;
+            priceUsd?: string | number;
           };
 
           const fdvOrMc = Number(best?.fdv || best?.marketCap || 0);
+          const px = Number(best?.priceUsd);
           const metrics: DexPairMetrics = {
             volume: Number(best?.volume?.h24 || 0) || undefined,
             liquidity: Number(best?.liquidity?.usd || 0) || undefined,
             priceChange24h: Number(best?.priceChange?.h24 || 0) || undefined,
             marketCap: fdvOrMc > 0 ? fdvOrMc : undefined,
+            priceUsd: Number.isFinite(px) && px > 0 ? px : undefined,
           };
           dexMetricsCacheRef.current[cacheKey] = metrics;
           return metrics;
@@ -5645,9 +5654,6 @@ const SearchTab = ({
     const enrichRecent = async () => {
       const updated = await Promise.all(recentTokens.map(async (token, idx) => {
         if (idx > 9) return token;
-        const hasMc = typeof token.market_cap === "number" && token.market_cap > 0;
-        const hasVolLiq = !!(token.volume && token.liquidity);
-        if (hasMc && hasVolLiq) return token;
         const primary = pickPrimaryContract(token, "");
         if (!primary?.address) return token;
         const metrics = await fetchDexMetrics(primary.address, primary.blockchain);
@@ -5656,6 +5662,7 @@ const SearchTab = ({
       }));
       if (cancelled) return;
       const changed = updated.some((token, i) =>
+        token.price !== recentTokens[i]?.price ||
         token.volume !== recentTokens[i]?.volume ||
         token.liquidity !== recentTokens[i]?.liquidity ||
         token.price_change_24h !== recentTokens[i]?.price_change_24h ||
@@ -5678,9 +5685,6 @@ const SearchTab = ({
     const enrichWatchlist = async () => {
       const updated = await Promise.all(watchlistTokens.map(async (token, idx) => {
         if (idx > 9) return token;
-        const hasMc = typeof token.market_cap === "number" && token.market_cap > 0;
-        const hasVolLiq = !!(token.volume && token.liquidity);
-        if (hasMc && hasVolLiq) return token;
         const primary = pickPrimaryContract(token, "");
         if (!primary?.address) return token;
         const metrics = await fetchDexMetrics(primary.address, primary.blockchain);
@@ -5689,6 +5693,7 @@ const SearchTab = ({
       }));
       if (cancelled) return;
       const changed = updated.some((token, i) =>
+        token.price !== watchlistTokens[i]?.price ||
         token.volume !== watchlistTokens[i]?.volume ||
         token.liquidity !== watchlistTokens[i]?.liquidity ||
         token.price_change_24h !== watchlistTokens[i]?.price_change_24h ||
@@ -5735,6 +5740,7 @@ const SearchTab = ({
         if (!metrics) return;
         const patched = mergeTokenWithDexMetrics(token, metrics);
         const same =
+          patched.price === token.price &&
           patched.volume === token.volume &&
           patched.liquidity === token.liquidity &&
           patched.price_change_24h === token.price_change_24h &&
@@ -7307,12 +7313,10 @@ const App = () => {
     console.log("[CombinedAssets] mobulaAssets:", mobulaAssets?.length || 0, "particleAssets:", particleAssets?.length || 0);
     if (!primaryAssets) return null;
     
-    const primaryContractKeys = primaryPortfolioContractKeys(primaryAssets);
-
     const fromMobula = mobulaAssets
       .filter((ma) => {
         if (ma.token_balance <= 0) return false;
-        if (isMobulaDuplicateOfUaPrimaryStaple(ma, primaryAssets, primaryContractKeys)) return false;
+        if (isMobulaDuplicateOfUaPrimaryStaple(ma, primaryAssets)) return false;
         return true;
       })
       .map((ma) => {
@@ -7390,7 +7394,7 @@ const App = () => {
         const pk = positionKeysFromMergedShape(pa);
         if (pk.length === 0) return false;
         if (pk.some((k) => mobulaContractKeys.has(k))) return false;
-        if (isPositionKeysDuplicateOfUaPrimaryStaple(pa.symbol, pk, primaryAssets, primaryContractKeys)) return false;
+        if (isPositionKeysDuplicateOfUaPrimaryStaple(pa.symbol, pk, primaryAssets)) return false;
         return true;
       })
       .map((pa) => ({

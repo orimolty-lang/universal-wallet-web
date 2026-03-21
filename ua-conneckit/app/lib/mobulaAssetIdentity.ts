@@ -181,34 +181,22 @@ export function positionKeysFromMergedShape(a: {
   return keys;
 }
 
-/** UA `getPrimaryAssets()` staples — hide external rows that mirror these when chains overlap. */
+/** UA `getPrimaryAssets()` staples — hide Mobula rows that use these *symbols* (not WETH/WBNB/WSOL). */
 export const PRIMARY_UA_STAPLE_TOKEN_TYPES = new Set(["ETH", "BNB", "USDC", "SOL", "USDT"]);
 
 const AGGREGATED_STAPLE_PLACEHOLDER = -2;
 
-const STAPLE_SYMBOL_TO_TYPE: Record<string, string> = {
-  ETH: "ETH",
-  WETH: "ETH",
-  BNB: "BNB",
-  WBNB: "BNB",
-  USDC: "USDC",
-  USDBC: "USDC",
-  SOL: "SOL",
-  WSOL: "SOL",
-  USDT: "USDT",
-};
-
-/** Dotless Mobula variants e.g. USDT.E → USDTE */
-const STAPLE_COMPACT_TO_TYPE: Record<string, string> = {
-  USDTE: "USDT",
-  USDCE: "USDC",
-};
-
+/**
+ * Map Mobula symbol → UA staple tokenType only for exact primary names and obvious USDC/USDT bridges.
+ * WETH / WBNB / WSOL are intentionally excluded so they stay visible as Mobula “external” wrapped assets.
+ */
 export function mobulaSymbolToPrimaryStapleType(symbol: string): string | null {
   const s = symbol.trim().toUpperCase().replace(/\s+/g, "");
   const compact = s.replace(/\./g, "");
-  const st = STAPLE_SYMBOL_TO_TYPE[s] || STAPLE_SYMBOL_TO_TYPE[compact] || STAPLE_COMPACT_TO_TYPE[compact];
-  if (st && PRIMARY_UA_STAPLE_TOKEN_TYPES.has(st)) return st;
+  if (PRIMARY_UA_STAPLE_TOKEN_TYPES.has(s)) return s;
+  if (compact === "USDTE" || s === "USDT.E") return "USDT";
+  if (compact === "USDCE" || s === "USDC.E") return "USDC";
+  if (s === "USDBC") return "USDC";
   return null;
 }
 
@@ -260,15 +248,26 @@ export function primaryStapleChainCoverage(primaryAssets: IAssetsResponse): Map<
   return map;
 }
 
-/** Contract overlap with UA primary, or same staple (ETH/WETH, …) on a chain UA already holds. */
+/** Exact on-chain contract keys from UA primary (no native↔WETH expansion). Used to filter Mobula without hiding WETH rows. */
+export function primaryPortfolioContractKeysExact(primaryAssets: IAssetsResponse): Set<string> {
+  const set = new Set<string>();
+  for (const a of primaryAssets.assets || []) {
+    positionKeysFromMergedShape(a as unknown as Parameters<typeof positionKeysFromMergedShape>[0]).forEach((k) =>
+      set.add(k),
+    );
+  }
+  return set;
+}
+
+/** Exact contract overlap, or Mobula row symbol is ETH/BNB/USDC/SOL/USDT (not WETH) on a chain UA already holds. */
 export function isPositionKeysDuplicateOfUaPrimaryStaple(
   symbol: string,
   positionKeys: string[],
   primaryAssets: IAssetsResponse,
-  primaryContractKeys: Set<string>,
 ): boolean {
   if (positionKeys.length === 0) return true;
-  if (positionKeys.some((k) => primaryContractKeys.has(k))) return true;
+  const exactKeys = primaryPortfolioContractKeysExact(primaryAssets);
+  if (positionKeys.some((k) => exactKeys.has(k))) return true;
 
   const staple = mobulaSymbolToPrimaryStapleType(symbol);
   if (!staple) return false;
@@ -290,23 +289,16 @@ export function isPositionKeysDuplicateOfUaPrimaryStaple(
 export function isMobulaDuplicateOfUaPrimaryStaple(
   ma: MobulaPortfolioAsset,
   primaryAssets: IAssetsResponse,
-  primaryContractKeys: Set<string>,
 ): boolean {
   return isPositionKeysDuplicateOfUaPrimaryStaple(
     ma.asset.symbol,
     mobulaAssetPositionKeys(ma),
     primaryAssets,
-    primaryContractKeys,
   );
 }
 
 export function primaryPortfolioContractKeys(primaryAssets: IAssetsResponse): Set<string> {
-  const set = new Set<string>();
-  for (const a of primaryAssets.assets || []) {
-    positionKeysFromMergedShape(a as unknown as Parameters<typeof positionKeysFromMergedShape>[0]).forEach((k) =>
-      set.add(k),
-    );
-  }
+  const set = primaryPortfolioContractKeysExact(primaryAssets);
   expandNativeWrappedEquivalentKeys(set);
   return set;
 }
