@@ -485,6 +485,29 @@ const formatMarketCap = (mc: number): string => {
   return `$${mc.toFixed(2)}`;
 };
 
+type DexPairMetrics = {
+  volume?: number;
+  liquidity?: number;
+  priceChange24h?: number;
+  marketCap?: number;
+};
+
+function mergeTokenWithDexMetrics(token: TokenResult, metrics: DexPairMetrics): TokenResult {
+  const cap =
+    typeof token.market_cap === "number" && token.market_cap > 0
+      ? token.market_cap
+      : metrics.marketCap && metrics.marketCap > 0
+        ? metrics.marketCap
+        : token.market_cap;
+  return {
+    ...token,
+    volume: token.volume ?? metrics.volume,
+    liquidity: token.liquidity ?? metrics.liquidity,
+    price_change_24h: typeof token.price_change_24h === "number" ? token.price_change_24h : metrics.priceChange24h,
+    market_cap: cap,
+  };
+}
+
 // Animated Login Screen - Omni branding
 const LoginScreen = () => {
   return (
@@ -5285,7 +5308,21 @@ const SearchTab = ({
   const [selectedToken, setSelectedToken] = useState<TokenResult | null>(null);
   const [showSwapModal, setShowSwapModal] = useState(false);
   const [swapTargetToken, setSwapTargetToken] = useState<TokenResult | null>(null);
-  const dexMetricsCacheRef = useRef<Record<string, { volume?: number; liquidity?: number; priceChange24h?: number }>>({});
+  const dexMetricsCacheRef = useRef<Record<string, DexPairMetrics>>({});
+  const dexMetricsGateRef = useRef(Promise.resolve());
+  const dexMetricsNextSlotRef = useRef(0);
+
+  const enqueueDexMetricsFetch = useCallback(<T,>(fn: () => Promise<T>): Promise<T> => {
+    const run = dexMetricsGateRef.current.then(async () => {
+      const now = Date.now();
+      const wait = Math.max(0, dexMetricsNextSlotRef.current - now);
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      dexMetricsNextSlotRef.current = Date.now() + 1050;
+      return fn();
+    });
+    dexMetricsGateRef.current = run.then(() => undefined).catch(() => undefined);
+    return run;
+  }, []);
 
   // Calculate user balance for selected token
   const getUserBalance = useCallback((token: TokenResult | null) => {
@@ -5395,55 +5432,66 @@ const SearchTab = ({
     return sorted[0];
   }, []);
 
-  const fetchDexMetrics = useCallback(async (address: string, blockchain: string) => {
-    const normalizedChain = normalizeBlockchain(blockchain);
-    const dexChain = BLOCKCHAIN_TO_DEX_CHAIN[normalizedChain];
-    const cacheKey = `${normalizedChain}:${address.toLowerCase()}`;
-    const cached = dexMetricsCacheRef.current[cacheKey];
-    if (cached) return cached;
+  const fetchDexMetrics = useCallback(
+    async (address: string, blockchain: string, options?: { force?: boolean }) => {
+      const normalizedChain = normalizeBlockchain(blockchain);
+      const dexChain = BLOCKCHAIN_TO_DEX_CHAIN[normalizedChain];
+      const cacheKey = `${normalizedChain}:${address.toLowerCase()}`;
+      if (!options?.force) {
+        const cached = dexMetricsCacheRef.current[cacheKey];
+        if (cached) return cached;
+      }
 
-    try {
-      const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${address}`);
-      if (!res.ok) return null;
-      const data = await res.json();
-      const allPairs = Array.isArray(data?.pairs) ? data.pairs : [];
-      if (!allPairs.length) return null;
+      return enqueueDexMetricsFetch(async () => {
+        try {
+          const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${address}`);
+          if (!res.ok) return null;
+          const data = await res.json();
+          const allPairs = Array.isArray(data?.pairs) ? data.pairs : [];
+          if (!allPairs.length) return null;
 
-      const pairs = dexChain
-        ? allPairs.filter((p: { chainId?: string }) => (p.chainId || "").toLowerCase() === dexChain)
-        : allPairs;
-      const candidates = pairs.length ? pairs : allPairs;
-      if (!candidates.length) return null;
+          const pairs = dexChain
+            ? allPairs.filter((p: { chainId?: string }) => (p.chainId || "").toLowerCase() === dexChain)
+            : allPairs;
+          const candidates = pairs.length ? pairs : allPairs;
+          if (!candidates.length) return null;
 
-      const best = [...candidates].sort((a: {
-        volume?: { h24?: number | string };
-        liquidity?: { usd?: number | string };
-      }, b: {
-        volume?: { h24?: number | string };
-        liquidity?: { usd?: number | string };
-      }) => {
-        const av = Number(a?.volume?.h24 || 0);
-        const bv = Number(b?.volume?.h24 || 0);
-        const al = Number(a?.liquidity?.usd || 0);
-        const bl = Number(b?.liquidity?.usd || 0);
-        return (bv * 1.5 + bl) - (av * 1.5 + al);
-      })[0] as {
-        volume?: { h24?: number | string };
-        liquidity?: { usd?: number | string };
-        priceChange?: { h24?: number | string };
-      };
+          const best = [...candidates].sort((a: {
+            volume?: { h24?: number | string };
+            liquidity?: { usd?: number | string };
+          }, b: {
+            volume?: { h24?: number | string };
+            liquidity?: { usd?: number | string };
+          }) => {
+            const av = Number(a?.volume?.h24 || 0);
+            const bv = Number(b?.volume?.h24 || 0);
+            const al = Number(a?.liquidity?.usd || 0);
+            const bl = Number(b?.liquidity?.usd || 0);
+            return (bv * 1.5 + bl) - (av * 1.5 + al);
+          })[0] as {
+            volume?: { h24?: number | string };
+            liquidity?: { usd?: number | string };
+            priceChange?: { h24?: number | string };
+            fdv?: number | string;
+            marketCap?: number | string;
+          };
 
-      const metrics = {
-        volume: Number(best?.volume?.h24 || 0) || undefined,
-        liquidity: Number(best?.liquidity?.usd || 0) || undefined,
-        priceChange24h: Number(best?.priceChange?.h24 || 0) || undefined,
-      };
-      dexMetricsCacheRef.current[cacheKey] = metrics;
-      return metrics;
-    } catch {
-      return null;
-    }
-  }, []);
+          const fdvOrMc = Number(best?.fdv || best?.marketCap || 0);
+          const metrics: DexPairMetrics = {
+            volume: Number(best?.volume?.h24 || 0) || undefined,
+            liquidity: Number(best?.liquidity?.usd || 0) || undefined,
+            priceChange24h: Number(best?.priceChange?.h24 || 0) || undefined,
+            marketCap: fdvOrMc > 0 ? fdvOrMc : undefined,
+          };
+          dexMetricsCacheRef.current[cacheKey] = metrics;
+          return metrics;
+        } catch {
+          return null;
+        }
+      });
+    },
+    [enqueueDexMetricsFetch],
+  );
 
   const scoreToken = useCallback((token: TokenResult, searchInput: string) => {
     const q = searchInput.trim().toLowerCase();
@@ -5530,17 +5578,15 @@ const SearchTab = ({
         };
       });
       const enriched = await Promise.all(tokens.map(async (token, idx) => {
-        if ((token.volume && token.liquidity) || idx > 12) return token;
+        if (idx > 12) return token;
+        const hasMc = typeof token.market_cap === "number" && token.market_cap > 0;
+        const hasVolLiq = !!(token.volume && token.liquidity);
+        if (hasMc && hasVolLiq) return token;
         const primary = pickPrimaryContract(token, q);
         if (!primary?.address) return token;
         const metrics = await fetchDexMetrics(primary.address, primary.blockchain);
         if (!metrics) return token;
-        return {
-          ...token,
-          volume: token.volume ?? metrics.volume,
-          liquidity: token.liquidity ?? metrics.liquidity,
-          price_change_24h: typeof token.price_change_24h === "number" ? token.price_change_24h : metrics.priceChange24h,
-        };
+        return mergeTokenWithDexMetrics(token, metrics);
       }));
 
       const ranked = enriched
@@ -5565,23 +5611,22 @@ const SearchTab = ({
     let cancelled = false;
     const enrichRecent = async () => {
       const updated = await Promise.all(recentTokens.map(async (token, idx) => {
-        if ((token.volume && token.liquidity) || idx > 7) return token;
+        if (idx > 9) return token;
+        const hasMc = typeof token.market_cap === "number" && token.market_cap > 0;
+        const hasVolLiq = !!(token.volume && token.liquidity);
+        if (hasMc && hasVolLiq) return token;
         const primary = pickPrimaryContract(token, "");
         if (!primary?.address) return token;
         const metrics = await fetchDexMetrics(primary.address, primary.blockchain);
         if (!metrics) return token;
-        return {
-          ...token,
-          volume: token.volume ?? metrics.volume,
-          liquidity: token.liquidity ?? metrics.liquidity,
-          price_change_24h: typeof token.price_change_24h === "number" ? token.price_change_24h : metrics.priceChange24h,
-        };
+        return mergeTokenWithDexMetrics(token, metrics);
       }));
       if (cancelled) return;
       const changed = updated.some((token, i) =>
         token.volume !== recentTokens[i]?.volume ||
         token.liquidity !== recentTokens[i]?.liquidity ||
-        token.price_change_24h !== recentTokens[i]?.price_change_24h
+        token.price_change_24h !== recentTokens[i]?.price_change_24h ||
+        token.market_cap !== recentTokens[i]?.market_cap
       );
       if (changed) {
         setRecentTokens(updated);
@@ -5593,6 +5638,98 @@ const SearchTab = ({
       cancelled = true;
     };
   }, [query, recentTokens, pickPrimaryContract, fetchDexMetrics]);
+
+  useEffect(() => {
+    if (query || !watchlistTokens.length) return;
+    let cancelled = false;
+    const enrichWatchlist = async () => {
+      const updated = await Promise.all(watchlistTokens.map(async (token, idx) => {
+        if (idx > 9) return token;
+        const hasMc = typeof token.market_cap === "number" && token.market_cap > 0;
+        const hasVolLiq = !!(token.volume && token.liquidity);
+        if (hasMc && hasVolLiq) return token;
+        const primary = pickPrimaryContract(token, "");
+        if (!primary?.address) return token;
+        const metrics = await fetchDexMetrics(primary.address, primary.blockchain);
+        if (!metrics) return token;
+        return mergeTokenWithDexMetrics(token, metrics);
+      }));
+      if (cancelled) return;
+      const changed = updated.some((token, i) =>
+        token.volume !== watchlistTokens[i]?.volume ||
+        token.liquidity !== watchlistTokens[i]?.liquidity ||
+        token.price_change_24h !== watchlistTokens[i]?.price_change_24h ||
+        token.market_cap !== watchlistTokens[i]?.market_cap
+      );
+      if (changed) {
+        setWatchlistTokens(updated);
+        localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(updated));
+      }
+    };
+    enrichWatchlist();
+    return () => {
+      cancelled = true;
+    };
+  }, [query, watchlistTokens, pickPrimaryContract, fetchDexMetrics]);
+
+  const recentTokensRef = useRef(recentTokens);
+  const watchlistTokensRef = useRef(watchlistTokens);
+  const searchSectionRef = useRef(searchSection);
+  useEffect(() => {
+    recentTokensRef.current = recentTokens;
+  }, [recentTokens]);
+  useEffect(() => {
+    watchlistTokensRef.current = watchlistTokens;
+  }, [watchlistTokens]);
+  useEffect(() => {
+    searchSectionRef.current = searchSection;
+  }, [searchSection]);
+  const listRotateIndexRef = useRef(0);
+
+  useEffect(() => {
+    if (query.trim()) return;
+    const id = window.setInterval(() => {
+      void (async () => {
+        const section = searchSectionRef.current;
+        const list = section === "recents" ? recentTokensRef.current : watchlistTokensRef.current;
+        if (!list.length) return;
+        const idx = listRotateIndexRef.current % list.length;
+        listRotateIndexRef.current = idx + 1;
+        const token = list[idx];
+        const primary = pickPrimaryContract(token, "");
+        if (!primary?.address) return;
+        const metrics = await fetchDexMetrics(primary.address, primary.blockchain, { force: true });
+        if (!metrics) return;
+        const patched = mergeTokenWithDexMetrics(token, metrics);
+        const same =
+          patched.volume === token.volume &&
+          patched.liquidity === token.liquidity &&
+          patched.price_change_24h === token.price_change_24h &&
+          patched.market_cap === token.market_cap;
+        if (same) return;
+        if (section === "recents") {
+          setRecentTokens((prev) => {
+            const j = prev.findIndex((t) => t.id === token.id);
+            if (j < 0) return prev;
+            const next = [...prev];
+            next[j] = patched;
+            localStorage.setItem("recentTokensV2", JSON.stringify(next));
+            return next;
+          });
+        } else {
+          setWatchlistTokens((prev) => {
+            const j = prev.findIndex((t) => t.id === token.id);
+            if (j < 0) return prev;
+            const next = [...prev];
+            next[j] = patched;
+            localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(next));
+            return next;
+          });
+        }
+      })();
+    }, 1100);
+    return () => window.clearInterval(id);
+  }, [query, pickPrimaryContract, fetchDexMetrics]);
 
   const displayList = !query
     ? (searchSection === "recents" ? recentTokens : watchlistTokens)
@@ -5691,7 +5828,7 @@ const SearchTab = ({
                   <div className="min-w-0">
                     <div className="text-white font-semibold text-sm truncate">{token.symbol}</div>
                     <div className="text-gray-500 text-xs">
-                      ${token.market_cap && token.market_cap > 0 ? formatMarketCap(token.market_cap) : "—"} MC
+                      {token.market_cap && token.market_cap > 0 ? formatMarketCap(token.market_cap) : "—"} MC
                     </div>
                   </div>
                 </div>
@@ -5771,7 +5908,8 @@ const SearchTab = ({
                   </div>
                   <div className="text-gray-500 text-sm uppercase">{token.symbol}</div>
                   <div className="text-gray-500 text-xs mt-0.5">
-                    VOL {token.volume && token.volume > 0 ? formatMarketCap(token.volume) : "N/A"} • LIQ {token.liquidity && token.liquidity > 0 ? formatMarketCap(token.liquidity) : "N/A"}
+                    VOL {token.volume && token.volume > 0 ? formatMarketCap(token.volume) : "N/A"} • LIQ {token.liquidity && token.liquidity > 0 ? formatMarketCap(token.liquidity) : "N/A"} • MC{" "}
+                    {token.market_cap && token.market_cap > 0 ? formatMarketCap(token.market_cap) : "—"}
                   </div>
                 </div>
               </div>
