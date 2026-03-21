@@ -1070,12 +1070,6 @@ function isSolanaAddress(addr: string): boolean {
   return a.length >= 32 && a.length <= 44 && !a.startsWith("0x");
 }
 
-/** UA `transactionId` is often a Universal activity id, not a Base tx hash — `eth_getTransactionReceipt` will hang until timeout. */
-function isLikelyEvmTxHash(hash: string): boolean {
-  const h = hash.trim();
-  return /^0x[0-9a-fA-F]{64}$/.test(h);
-}
-
 // Send Modal - wired transfer for UA primary assets
 const SendModal = ({
   isOpen,
@@ -3436,7 +3430,7 @@ const PerpsModal = ({
     }
   }, [ownerEOA, pairLeverageLimits, baseRpcCall, availableMarkets]);
 
-  /** Same completion path as SwapModal: `ua.getTransaction` until FINISHED, then optional Base receipt check. */
+  /** UA-only completion like Swap: `pollTransactionDetails` → `getTransaction` until FINISHED / failed — no Base receipt RPC. */
   const waitForPerpsUniversalActivity = useCallback(
     async (transactionId: string, failureLabel: string) => {
       const tid = (transactionId || '').trim();
@@ -3459,47 +3453,14 @@ const PerpsModal = ({
           throw new Error(`${failureLabel}: Universal transaction failed`);
         }
         if (details.status === 'completed') {
-          // UA FINISHED is authoritative; Base `eth_getTransactionReceipt` often lags or flakes on public RPC.
-          if (details.txHash && isLikelyEvmTxHash(details.txHash)) {
-            try {
-              const receipt = (await waitForBaseReceipt(details.txHash)) as unknown as { status?: string };
-              if (receipt?.status !== '0x1') {
-                throw new Error(`${failureLabel} on-chain status=${receipt?.status || 'unknown'}`);
-              }
-            } catch (e) {
-              const msg = e instanceof Error ? e.message : String(e);
-              if (/confirmation timeout|timeout/i.test(msg)) {
-                console.warn('[Perps] Receipt wait timed out after UA FINISHED; trusting UA and refreshing positions.', msg);
-              } else {
-                throw e;
-              }
-            }
-          }
           await fetchOpenPositions();
           return;
         }
       }
 
-      if (isLikelyEvmTxHash(tid)) {
-        try {
-          const receipt = (await waitForBaseReceipt(tid)) as unknown as { status?: string };
-          if (receipt?.status !== '0x1') throw new Error(`${failureLabel} status=${receipt?.status || 'unknown'}`);
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          if (/confirmation timeout|timeout/i.test(msg)) {
-            console.warn('[Perps] Receipt poll timeout; refreshing positions (close may still have succeeded).', msg);
-            await refreshPositionsFallback();
-            return;
-          }
-          throw e;
-        }
-        await fetchOpenPositions();
-        return;
-      }
-
       await refreshPositionsFallback();
     },
-    [universalAccount, waitForBaseReceipt, fetchOpenPositions],
+    [universalAccount, fetchOpenPositions],
   );
 
   useEffect(() => {
