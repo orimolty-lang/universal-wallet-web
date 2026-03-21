@@ -2533,6 +2533,10 @@ const PerpsModal = ({
   const [pairLeverageLimits, setPairLeverageLimits] = useState<Record<string, PairLeverageLimits>>({});
   const [marketSearch, setMarketSearch] = useState('');
   const [marketGroupFilter, setMarketGroupFilter] = useState<'all' | PerpsMarketGroup | 'zfp'>('all');
+  const [showAllMarkets, setShowAllMarkets] = useState(false);
+  useEffect(() => {
+    setShowAllMarkets(false);
+  }, [marketGroupFilter]);
   const [showTpSlInputs, setShowTpSlInputs] = useState(false);
   const [displayOpenPositions, setDisplayOpenPositions] = useState<OpenPerpsPosition[]>([]);
   const [, setPositionsLoading] = useState(false);
@@ -2722,10 +2726,22 @@ const PerpsModal = ({
     }
   }, [ownerEOA, displayOpenPositions]);
 
-  // Unified UA balance shown in Perps flows
+  /** Prefer summing per-asset USD so we keep cents when `totalAmountInUSD` is rounded to a whole dollar. */
   const unifiedUaBalance = useMemo(() => {
-    if (!assets?.totalAmountInUSD) return 0;
-    return Number(assets.totalAmountInUSD);
+    const list = (assets?.assets || []) as Array<{ amountInUSD?: number | string }>;
+    if (list.length > 0) {
+      let sum = 0;
+      for (const a of list) {
+        const raw = a.amountInUSD;
+        const v = typeof raw === 'string' ? parseFloat(raw) : Number(raw || 0);
+        if (Number.isFinite(v)) sum += v;
+      }
+      return sum;
+    }
+    const t = assets?.totalAmountInUSD as number | string | undefined;
+    if (t === undefined || t === null) return 0;
+    const n = typeof t === 'string' ? parseFloat(t) : Number(t);
+    return Number.isFinite(n) ? n : 0;
   }, [assets]);
 
   // Available USDC already present on Base inside UA
@@ -3932,9 +3948,9 @@ const PerpsModal = ({
         : depositStage === 'gas'
           ? 'Top up gas'
           : 'Deposit + Top up gas';
-  const filteredSortedMarkets = useMemo(() => {
+  const marketsFiltered = useMemo(() => {
     const searchLower = marketSearch.trim().toLowerCase();
-    const filtered = availableMarkets.filter((m) => {
+    return availableMarkets.filter((m) => {
       const groupOk = marketGroupFilter === 'all'
         ? true
         : marketGroupFilter === 'zfp'
@@ -3948,6 +3964,10 @@ const PerpsModal = ({
         m.pairName.toLowerCase().includes(searchLower)
       );
     });
+  }, [marketSearch, marketGroupFilter, availableMarkets, pairLeverageLimits]);
+
+  const filteredSortedMarkets = useMemo(() => {
+    const filtered = [...marketsFiltered];
     filtered.sort((a, b) => {
       const pa = marketPrices[a.pairName]?.price || 0;
       const pb = marketPrices[b.pairName]?.price || 0;
@@ -3960,7 +3980,24 @@ const PerpsModal = ({
       return vb - va;
     });
     return filtered;
-  }, [marketSearch, marketGroupFilter, marketPrices, pairLeverageLimits, sortBy, availableMarkets]);
+  }, [marketsFiltered, marketPrices, pairLeverageLimits, sortBy]);
+
+  /** Top 5 by open interest / volume proxy (Socket `pairOI`), within current group filter (no search). */
+  const marketsTopFiveByVolume = useMemo(() => {
+    const arr = [...marketsFiltered];
+    arr.sort((a, b) => {
+      const vb = pairLeverageLimits[b.pairName]?.pairOI || 0;
+      const va = pairLeverageLimits[a.pairName]?.pairOI || 0;
+      return vb - va;
+    });
+    return arr.slice(0, 5);
+  }, [marketsFiltered, pairLeverageLimits]);
+
+  const marketsListForUi = useMemo(() => {
+    const hasSearch = marketSearch.trim().length > 0;
+    if (hasSearch || showAllMarkets) return filteredSortedMarkets;
+    return marketsTopFiveByVolume;
+  }, [marketSearch, showAllMarkets, filteredSortedMarkets, marketsTopFiveByVolume]);
   const totalOpenCollateralUsd = displayOpenPositions.reduce((sum, p) => sum + p.collateralUsd, 0);
   const totalOpenPnlUsd = displayOpenPositions.reduce((sum, p) => sum + p.pnlUsd, 0);
 
@@ -3995,16 +4032,15 @@ const PerpsModal = ({
             <div className="px-4 mb-5">
               <div className="rounded-2xl border border-gray-700 bg-[#171717] px-3 py-3 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-full bg-[#1f1f1f] border border-gray-600 flex items-center justify-center overflow-hidden">
-                    <img
-                      src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png"
-                      alt="USDC"
-                      className="w-6 h-6 rounded-full"
-                    />
-                  </div>
                   <div>
-                    <div className="text-[11px] uppercase tracking-wide text-gray-300 font-semibold">Available Balance</div>
-                    <div className="text-2xl font-bold text-white">${perpsUnifiedBalance.toFixed(2)}</div>
+                    <div className="text-[11px] uppercase tracking-wide text-gray-300 font-semibold">Unified balance (UA)</div>
+                    <div className="text-2xl font-bold text-white">
+                      $
+                      {Number(perpsUnifiedBalance).toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 6,
+                      })}
+                    </div>
                   </div>
                 </div>
                 <div className="flex gap-2">
@@ -4038,7 +4074,8 @@ const PerpsModal = ({
                 <div>RPC USDC (execution): <span className="text-white">{eoaUsdcBalance.toFixed(4)}</span></div>
                 <div>Effective Perps USDC: <span className="text-white">{perpsUsdcBalance.toFixed(4)}</span></div>
                 <div>Unified UA USD: <span className="text-white">{unifiedUaBalance.toFixed(4)}</span></div>
-                <div>Effective Perps Balance: <span className="text-white">{perpsUnifiedBalance.toFixed(4)}</span></div>\n                <div>Last tx: <span className="text-white">{txResult ? `${txResult.action}/${txResult.status}` : 'none'}</span></div>
+                <div>Effective Perps Balance: <span className="text-white">{perpsUnifiedBalance.toFixed(4)}</span></div>
+                <div>Last tx: <span className="text-white">{txResult ? `${txResult.action}/${txResult.status}` : 'none'}</span></div>
               </div>
             </div>
 
@@ -4170,7 +4207,7 @@ const PerpsModal = ({
 
             {/* Markets List */}
             <div className="space-y-1">
-              {filteredSortedMarkets.map((market) => {
+              {marketsListForUi.map((market) => {
                 const priceData = marketPrices[market.pairName];
                 const price = priceData?.price || 0;
                 const change = Number.isFinite(priceData?.change24h) ? (priceData?.change24h as number) : Number.NaN;
@@ -4234,9 +4271,7 @@ const PerpsModal = ({
                     {/* Price & Change */}
                     <div className="text-right">
                       <div className="text-white font-medium">
-                        {price > 0
-                          ? `$${price >= 1000 ? price.toLocaleString(undefined, { maximumFractionDigits: 0 }) : price.toFixed(2)}`
-                          : '--'}
+                        {price > 0 ? formatPrice(price) : '--'}
                       </div>
                       <div className={`text-sm ${Number.isFinite(change) ? (change >= 0 ? 'text-green-400' : 'text-red-400') : 'text-gray-500'}`}>
                         {Number.isFinite(change) ? `${change >= 0 ? '+' : ''}${change.toFixed(2)}%` : '—'}
@@ -4247,12 +4282,17 @@ const PerpsModal = ({
               })}
             </div>
 
-            {/* View All */}
-            <div className="px-4 mt-4">
-              <button className="w-full text-center text-accent-dynamic py-2">
-                View All
-              </button>
-            </div>
+            {marketSearch.trim() === '' && filteredSortedMarkets.length > 5 && (
+              <div className="px-4 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowAllMarkets((v) => !v)}
+                  className="w-full text-center text-accent-dynamic py-2 font-semibold text-sm"
+                >
+                  {showAllMarkets ? 'Show less' : 'View all markets'}
+                </button>
+              </div>
+            )}
 
             {/* Debug Panel - Main Perps View */}
             <div className="px-4 mt-3">
@@ -4475,7 +4515,6 @@ const PerpsModal = ({
                 <div className="w-9" />
               </div>
 
-              {/* ZFP #1 - when available */}
               {zfpAvailable && (
                 <div className="flex items-center justify-between mb-4 py-1">
                   <span className="text-gray-400 text-sm">Zero Fee Perpetuals (ZFP)</span>
@@ -4490,16 +4529,6 @@ const PerpsModal = ({
                 <button onClick={() => setIsLong(true)} className={`flex-1 py-3.5 rounded-xl font-bold text-white border-2 transition-colors ${isLong ? 'border-[#22c55e] bg-[#22c55e]/5' : 'border-[#2a2a2a] bg-[#1a1a1a]'}`} style={isLong ? { backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px)', backgroundSize: '6px 6px' } : undefined}>Long</button>
                 <button onClick={() => setIsLong(false)} className={`flex-1 py-3.5 rounded-xl font-bold text-white border-2 transition-colors ${!isLong ? 'border-[#ef4444] bg-[#ef4444]/5' : 'border-[#2a2a2a] bg-[#1a1a1a]'}`}>Short</button>
               </div>
-
-              {/* ZFP #2 - when available (Avantis shows twice) */}
-              {zfpAvailable && (
-                <div className="flex items-center justify-between mb-4 py-1">
-                  <span className="text-gray-400 text-sm">Zero Fee Perpetuals (ZFP)</span>
-                  <button type="button" onClick={() => setIsZeroFeeMode((p) => !p)} className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full ${isZeroFeeMode ? 'bg-[#22c55e]' : 'bg-[#404040]'}`}>
-                    <span className={`inline-block h-4 w-4 rounded-full bg-white transition-transform ${isZeroFeeMode ? 'translate-x-6' : 'translate-x-1'}`} />
-                  </button>
-                </div>
-              )}
 
               {/* Order type + Current Price - white labels, dropdown chevron on Order type */}
               <div className="flex gap-3 mb-4">
@@ -4519,21 +4548,21 @@ const PerpsModal = ({
                 </div>
               </div>
 
-              {/* Collateral - label row: Collateral | wallet, 0, Add Funds. Input full width. USDC + $ logo BELOW input. Then % buttons */}
               <div className="mb-4">
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-white text-sm">Collateral (USD)</span>
-                  <div className="flex items-center gap-2 text-xs">
-                    <svg className="w-4 h-4 text-white/70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
-                    <span className="text-white">{perpsUnifiedBalance.toFixed(0)}</span>
-                    <button type="button" onClick={() => setView('deposit')} className="text-[#60a5fa] hover:underline">Add Funds</button>
-                  </div>
+                  <span className="text-white text-sm">Collateral (USDC)</span>
+                  <span className="text-xs text-gray-400">
+                    Available{' '}
+                    <span className="text-white">
+                      $
+                      {Number(perpsUnifiedBalance).toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 6,
+                      })}
+                    </span>
+                  </span>
                 </div>
                 <input type="number" value={collateral} onChange={(e) => setCollateral(e.target.value)} placeholder="0" className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-3 text-white outline-none text-base mb-2" />
-                <div className="flex items-center gap-1.5 mb-2 text-gray-400 text-sm">
-                  <span>USDC</span>
-                  <div className="w-5 h-5 rounded-full bg-[#3b82f6] flex items-center justify-center"><span className="text-white text-[10px] font-bold">$</span></div>
-                </div>
                 <div className="flex gap-2">
                   {[10, 25, 50, 75, 100].map((p) => (
                     <button key={p} type="button" onClick={() => setCollateral((perpsUnifiedBalance * p / 100).toFixed(2))} className="flex-1 py-2 rounded-lg bg-[#1a1a1a] border border-[#333] text-white text-xs font-medium hover:bg-[#252525]">{p}%</button>
