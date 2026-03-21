@@ -3067,6 +3067,7 @@ const PerpsModal = ({
   }, [pairLeverageLimits]);
 
   const fetchOpenPositions = useCallback(async () => {
+    addDebug(`Positions fetch start: owner=${ownerEOA || 'none'} markets=${availableMarkets.length}`);
     if (!ownerEOA) {
       setDisplayOpenPositions([]);
       previousPositionIdsRef.current = new Set();
@@ -3078,6 +3079,7 @@ const PerpsModal = ({
         const pairName = market.pairName;
         return pairLeverageLimits[pairName]?.pairIndex !== undefined ? count + 1 : count;
       }, 0);
+      addDebug(`Positions fetch: knownPairCount=${knownPairCount}`);
       if (knownPairCount === 0) {
         // Socket metadata not ready yet; preserve current UI until we can query positions reliably.
         return;
@@ -3099,6 +3101,7 @@ const PerpsModal = ({
         const countHex = await baseRpcCall('eth_call', [{ to: AVANTIS_TRADING_STORAGE_ADDRESS, data: countCallData }, 'latest']);
         if (typeof countHex === 'string') queriedAnyCountSuccessfully = true;
         const openCount = countHex ? Number(BigInt(countHex)) : 0;
+        addDebug(`Pair ${pairName} (${pairIndex}) openCount=${openCount}`);
         if (!Number.isFinite(openCount) || openCount <= 0) continue;
 
         // Position indices may not be contiguous after closes, so scan a wider window.
@@ -3194,6 +3197,7 @@ const PerpsModal = ({
           const pnlPercent = collateralUsd > 0 ? (pnlUsd / collateralUsd) * 100 : 0;
           const liqDistance = (entryPrice / Math.max(leverageNum, 1e-9)) * 0.9;
           const liquidationPrice = trade.buy ? entryPrice - liqDistance : entryPrice + liqDistance;
+          addDebug(`Position found ${pairName} idx=${positionIndex}`);
           positions.push({
             id: `${pairIndex}-${positionIndex}`,
             pairName,
@@ -3226,6 +3230,7 @@ const PerpsModal = ({
       const currentIds = new Set(positions.map((p) => p.id));
       previousPositionIdsRef.current = currentIds;
 
+      addDebug(`Positions fetch complete: ${positions.length} positions`);
       setDisplayOpenPositions(positions);
       setPositionEdits((prev) => {
         const next = { ...prev };
