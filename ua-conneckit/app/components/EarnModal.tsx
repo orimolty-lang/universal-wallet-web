@@ -92,7 +92,7 @@ interface EarnModalProps {
   blindSigningEnabled: boolean;
   sign7702?: Sign7702Fn | null;
   onSuccess?: () => void;
-  onWalletActivity?: (kind: WalletActivityToastKind) => void;
+  onWalletActivity?: (kind: WalletActivityToastKind, detail?: string) => void;
 }
 
 export default function EarnModal({

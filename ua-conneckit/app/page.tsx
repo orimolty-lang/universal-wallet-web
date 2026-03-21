@@ -23,7 +23,7 @@ import TokenDetailModal from "./components/TokenDetailModal";
 import SwapModal from "./components/SwapModal";
 import PolymarketModal from "./components/PolymarketModal";
 import EarnModal from "./components/EarnModal";
-import WalletActivityToast, { type WalletActivityToastKind } from "./components/WalletActivityToast";
+import WalletActivityToast, { type WalletActivityToastKind, type WalletToastPayload } from "./components/WalletActivityToast";
 import BottomSheet from "../components/BottomSheet";
 import {
   DropdownMenu,
@@ -916,7 +916,7 @@ const ReceiveModal = ({
   onClose: () => void;
   evmAddress: string;
   solanaAddress: string;
-  onWalletActivity?: (kind: WalletActivityToastKind) => void;
+  onWalletActivity?: (kind: WalletActivityToastKind, detail?: string) => void;
 }) => {
   const [copied, setCopied] = useState<string | null>(null);
   const [qrAddress, setQrAddress] = useState<{ chain: string; address: string } | null>(null);
@@ -1069,6 +1069,12 @@ function isSolanaAddress(addr: string): boolean {
   return a.length >= 32 && a.length <= 44 && !a.startsWith("0x");
 }
 
+/** UA `transactionId` is often a Universal activity id, not a Base tx hash — `eth_getTransactionReceipt` will hang until timeout. */
+function isLikelyEvmTxHash(hash: string): boolean {
+  const h = hash.trim();
+  return /^0x[0-9a-fA-F]{64}$/.test(h);
+}
+
 // Send Modal - wired transfer for UA primary assets
 const SendModal = ({
   isOpen,
@@ -1087,7 +1093,7 @@ const SendModal = ({
   blindSigningEnabled: boolean;
   sign7702: ((p: { contractAddress: `0x${string}`; chainId: number; nonce: number }, o: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>) | null;
   onSuccess?: () => void;
-  onWalletActivity?: (kind: WalletActivityToastKind) => void;
+  onWalletActivity?: (kind: WalletActivityToastKind, detail?: string) => void;
 }) => {
   const [primaryWallet] = useWallets();
   const { address } = useAccount();
@@ -1378,7 +1384,7 @@ const ConvertModal = ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onTransactionCreated?: (tx: any) => void;
   onSuccess?: () => void; // Callback to refresh balances
-  onWalletActivity?: (kind: WalletActivityToastKind) => void;
+  onWalletActivity?: (kind: WalletActivityToastKind, detail?: string) => void;
 }) => {
   const [primaryWallet] = useWallets();
   const sign7702 = useSign7702AuthorizationCompat();
@@ -2510,6 +2516,7 @@ const PerpsModal = ({
   smartAccountAddress,
   sign7702,
   onSuccess,
+  onWalletActivity,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -2519,6 +2526,7 @@ const PerpsModal = ({
   smartAccountAddress?: string;
   sign7702: ((p: { contractAddress: `0x${string}`; chainId: number; nonce: number }, o: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>) | null;
   onSuccess?: () => void;
+  onWalletActivity?: (kind: WalletActivityToastKind, detail?: string) => void;
 }) => {
   const [primaryWallet] = useWallets();
   const [view, setView] = useState<'markets' | 'trade' | 'deposit' | 'withdraw'>('markets');
@@ -2582,7 +2590,7 @@ const PerpsModal = ({
     lastDebugAtRef.current[key] = now;
     console.log('[Perps Debug]', msg);
   };
-  const [txResult, setTxResult] = useState<{ txId: string; status: 'pending' | 'complete'; action: 'open' | 'close' | 'update' } | null>(null);
+  const [perpsBusyAction, setPerpsBusyAction] = useState<null | 'open' | 'close' | 'tpsl'>(null);
   const [sortBy, setSortBy] = useState<'volume' | 'price' | 'change'>('volume');
   const selectedPairConfig = pairLeverageLimits[selectedPair.name];
   const executionPairIndex = selectedPairConfig?.pairIndex ?? selectedPair.index;
@@ -3427,6 +3435,23 @@ const PerpsModal = ({
     }
   }, [ownerEOA, pairLeverageLimits, baseRpcCall, availableMarkets]);
 
+  const confirmOrSkipBaseTx = useCallback(
+    async (txHash: string, failureLabel: string) => {
+      if (isLikelyEvmTxHash(txHash)) {
+        const receipt = (await waitForBaseReceipt(txHash)) as unknown as { status?: string };
+        if (receipt?.status !== '0x1') throw new Error(`${failureLabel} status=${receipt?.status || 'unknown'}`);
+        return;
+      }
+      addDebug(`Perps: skip receipt poll (not a 0x tx hash): ${(txHash || '').slice(0, 48)}`);
+      for (let i = 0; i < 4; i++) {
+        await new Promise((r) => setTimeout(r, i === 0 ? 1000 : 1600));
+        await fetchOpenPositions();
+      }
+    },
+    // addDebug omitted from deps (recreated each render); only used for log line
+    [waitForBaseReceipt, fetchOpenPositions],
+  );
+
   useEffect(() => {
     if (!isOpen || !ownerEOA) return;
     fetchOpenPositions();
@@ -3692,9 +3717,9 @@ const PerpsModal = ({
     }
 
     setIsLoading(true);
+    setPerpsBusyAction('open');
     setError(null);
     setLoadingStatus('Preparing position...');
-    setTxResult(null);
 
     try {
       const collateralAmount = parseFloat(collateral);
@@ -3760,22 +3785,19 @@ const PerpsModal = ({
       const authorizations = await build7702Authorizations(uaTx, sign7702, signerAddress);
       setLoadingStatus('Opening position...');
       const sendRes = await universalAccount.sendTransaction(uaTx, signature as string, authorizations);
-      const txHash = sendRes?.transactionId || 'pending';
+      const txHash = sendRes?.transactionId ?? '';
+      const sym = selectedMarket.symbol.toUpperCase();
+      onWalletActivity?.(isLong ? 'perps_long_submit' : 'perps_short_submit', sym);
 
-      upsertPerpsActivity({ id: `open-${txHash}`, action: 'Open', pairName: selectedPair.name, txHash, status: 'pending', timestamp: Date.now() });
-      setTxResult({ txId: txHash, status: 'pending', action: 'open' });
-      if (txHash !== 'pending') {
-        const receipt = await waitForBaseReceipt(txHash) as unknown as { status?: string };
-        if (receipt?.status !== '0x1') throw new Error(`OpenTrade failed onchain. status=${receipt?.status || 'unknown'}`);
-      }
-      upsertPerpsActivity({ id: `open-${txHash}`, action: 'Open', pairName: selectedPair.name, txHash, status: 'confirmed', timestamp: Date.now() });
-      setTxResult({ txId: txHash, status: 'complete', action: 'open' });
+      upsertPerpsActivity({ id: `open-${txHash || 'na'}`, action: 'Open', pairName: selectedPair.name, txHash: txHash || '-', status: 'pending', timestamp: Date.now() });
+      await confirmOrSkipBaseTx(txHash, 'OpenTrade failed onchain.');
+      upsertPerpsActivity({ id: `open-${txHash || 'na'}`, action: 'Open', pairName: selectedPair.name, txHash: txHash || '-', status: 'confirmed', timestamp: Date.now() });
+      onWalletActivity?.(isLong ? 'perps_long_confirmed' : 'perps_short_confirmed', sym);
       await fetchOpenPositions();
       await refreshOwnerBalances();
       setCollateral('');
       setTakeProfit('');
       setStopLoss('');
-      setTimeout(() => setTxResult(null), 2500);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const lower = msg.toLowerCase();
@@ -3787,6 +3809,7 @@ const PerpsModal = ({
       addDebug(`FINAL ERROR: ${msg}`);
     } finally {
       setIsLoading(false);
+      setPerpsBusyAction(null);
       setLoadingStatus('');
     }
   };
@@ -3797,6 +3820,7 @@ const PerpsModal = ({
       return;
     }
     setIsLoading(true);
+    setPerpsBusyAction('close');
     setError(null);
     setLoadingStatus('Preparing close...');
     try {
@@ -3818,20 +3842,17 @@ const PerpsModal = ({
       const auths = await build7702Authorizations(tx, sign7702, signerAddress);
       addDebug('Submitting close position via UA...');
       const res = await universalAccount.sendTransaction(tx, signature as string, auths);
-      const txHash = res?.transactionId || 'pending';
+      const txHash = res?.transactionId ?? '';
       addDebug(`Close send result tx=${txHash}`);
+      const sym = position.symbol.toUpperCase();
+      onWalletActivity?.('perps_close_submit', sym);
 
-      upsertPerpsActivity({ id: `close-${txHash}`, action: 'Close', pairName: position.pairName, txHash, status: 'pending', timestamp: Date.now() });
-      setTxResult({ txId: txHash, status: 'pending', action: 'close' });
-      if (txHash !== 'pending') {
-        const receipt = await waitForBaseReceipt(txHash) as unknown as { status?: string };
-        if (receipt?.status !== '0x1') throw new Error(`Close transaction failed onchain. status=${receipt?.status || 'unknown'}`);
-      }
-      upsertPerpsActivity({ id: `close-${txHash}`, action: 'Close', pairName: position.pairName, txHash, status: 'confirmed', timestamp: Date.now() });
-      setTxResult({ txId: txHash, status: 'complete', action: 'close' });
+      upsertPerpsActivity({ id: `close-${txHash || 'na'}`, action: 'Close', pairName: position.pairName, txHash: txHash || '-', status: 'pending', timestamp: Date.now() });
+      await confirmOrSkipBaseTx(txHash, 'Close transaction failed onchain.');
+      upsertPerpsActivity({ id: `close-${txHash || 'na'}`, action: 'Close', pairName: position.pairName, txHash: txHash || '-', status: 'confirmed', timestamp: Date.now() });
+      onWalletActivity?.('perps_close_confirmed', sym);
       await fetchOpenPositions();
       await refreshOwnerBalances();
-      setTimeout(() => setTxResult(null), 2500);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const lower = msg.toLowerCase();
@@ -3845,6 +3866,7 @@ const PerpsModal = ({
       addDebug(`Close failed: ${msg}`);
     } finally {
       setIsLoading(false);
+      setPerpsBusyAction(null);
       setLoadingStatus('');
     }
   };
@@ -3870,6 +3892,7 @@ const PerpsModal = ({
     }
 
     setIsLoading(true);
+    setPerpsBusyAction('tpsl');
     setError(null);
     setLoadingStatus('Updating TP/SL...');
     addDebug('TP/SL update flow started');
@@ -3904,26 +3927,31 @@ const PerpsModal = ({
       const auths = await build7702Authorizations(tx, sign7702, signerAddress);
       addDebug('Submitting TP/SL transaction via UA...');
       const res = await universalAccount.sendTransaction(tx, signature as string, auths);
-      const txHash = res?.transactionId || 'pending';
+      const txHash = res?.transactionId ?? '';
       addDebug(`TP/SL send result tx=${txHash}`);
+      const sym = position.symbol.toUpperCase();
+      onWalletActivity?.('perps_tpsl_submit', sym);
 
-      upsertPerpsActivity({ id: `update-${txHash}`, action: 'Update TP/SL', pairName: position.pairName, txHash, status: 'pending', timestamp: Date.now() });
-      setTxResult({ txId: txHash, status: 'pending', action: 'update' });
-      if (txHash !== 'pending') {
-        const updateReceipt = await waitForBaseReceipt(txHash) as unknown as { status?: string };
-        if (updateReceipt?.status !== '0x1') throw new Error(`Update TP/SL transaction failed onchain. status=${updateReceipt?.status || 'unknown'}`);
-      }
-      upsertPerpsActivity({ id: `update-${txHash}`, action: 'Update TP/SL', pairName: position.pairName, txHash, status: 'confirmed', timestamp: Date.now() });
-      setTxResult({ txId: txHash, status: 'complete', action: 'update' });
+      upsertPerpsActivity({ id: `update-${txHash || 'na'}`, action: 'Update TP/SL', pairName: position.pairName, txHash: txHash || '-', status: 'pending', timestamp: Date.now() });
+      await confirmOrSkipBaseTx(txHash, 'Update TP/SL transaction failed onchain.');
+      upsertPerpsActivity({ id: `update-${txHash || 'na'}`, action: 'Update TP/SL', pairName: position.pairName, txHash: txHash || '-', status: 'confirmed', timestamp: Date.now() });
+      onWalletActivity?.('perps_tpsl_confirmed', sym);
+      setPositionEdits((prev) => ({
+        ...prev,
+        [position.id]: {
+          tp: edits.tp.trim() || '',
+          sl: edits.sl.trim() || '',
+        },
+      }));
       await fetchOpenPositions();
       await refreshOwnerBalances();
-      setTimeout(() => setTxResult(null), 2500);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(`TP/SL update failed: ${msg}`);
       addDebug(`TP/SL update failed: ${msg}`);
     } finally {
       setIsLoading(false);
+      setPerpsBusyAction(null);
       setLoadingStatus('');
     }
   };
@@ -4147,7 +4175,7 @@ const PerpsModal = ({
                           disabled={isLoading}
                           className="flex-1 bg-gray-800 text-gray-200 rounded-lg py-2 text-xs font-semibold disabled:opacity-50"
                         >
-                          {isLoading && txResult?.action === 'update' ? (loadingStatus || 'Updating...') : 'Update TP/SL'}
+                          {isLoading && perpsBusyAction === 'tpsl' ? (loadingStatus || 'Updating...') : 'Update TP/SL'}
                         </button>
                         <button
                           onClick={() => handleClosePosition(p)}
@@ -4671,26 +4699,8 @@ const PerpsModal = ({
                   : 'bg-[#2a2a2a] text-gray-500'
               }`}
             >
-              {isLoading ? loadingStatus : `Open ${isLong ? 'Long' : 'Short'}`}
+              {isLoading && perpsBusyAction === 'open' ? (loadingStatus || '…') : `Open ${isLong ? 'Long' : 'Short'}`}
             </button>
-
-            {/* Transaction Result */}
-            {txResult && (
-              <div className={`mt-4 p-4 rounded-xl text-sm ${
-                txResult.status === 'pending' 
-                  ? 'bg-yellow-900/30 border border-yellow-500/50 text-yellow-300'
-                  : 'bg-green-900/30 border border-green-500/50 text-green-300'
-              }`}>
-                <div className="font-bold mb-1">
-                  {txResult.status === 'pending'
-                    ? (txResult.action === 'open' ? '⏳ Opening...' : txResult.action === 'close' ? '⏳ Closing...' : '⏳ Updating TP/SL...')
-                    : (txResult.action === 'open' ? '✅ Position Opened!' : txResult.action === 'close' ? '✅ Close Requested' : '✅ TP/SL Updated')}
-                </div>
-                <div className="text-xs font-mono break-all">
-                  TX: {txResult.txId.slice(0, 20)}...
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -6895,11 +6905,26 @@ const App = () => {
   const [showPolymarketModal, setShowPolymarketModal] = useState(false);
   const [showEarnModal, setShowEarnModal] = useState(false);
   const walletToastKeyRef = useRef(0);
-  const [walletToastPayload, setWalletToastPayload] = useState<{ kind: WalletActivityToastKind; key: number } | null>(null);
-  const showWalletActivityToast = useCallback((kind: WalletActivityToastKind) => {
+  const [walletToastPayload, setWalletToastPayload] = useState<WalletToastPayload>(null);
+  const showWalletActivityToast = useCallback((kind: WalletActivityToastKind, detail?: string) => {
     const key = ++walletToastKeyRef.current;
-    setWalletToastPayload({ kind, key });
-    const ms = kind === "copied" ? 1900 : 2700;
+    setWalletToastPayload({ kind, key, ...(detail ? { detail } : {}) });
+    let ms = 2700;
+    if (kind === "copied") ms = 1900;
+    else if (
+      kind === "perps_long_submit" ||
+      kind === "perps_short_submit" ||
+      kind === "perps_close_submit" ||
+      kind === "perps_tpsl_submit"
+    )
+      ms = 2200;
+    else if (
+      kind === "perps_long_confirmed" ||
+      kind === "perps_short_confirmed" ||
+      kind === "perps_close_confirmed" ||
+      kind === "perps_tpsl_confirmed"
+    )
+      ms = 2800;
     window.setTimeout(() => {
       setWalletToastPayload((cur) => (cur?.key === key ? null : cur));
     }, ms);
@@ -7384,6 +7409,7 @@ const App = () => {
         blindSigningEnabled={profile.blindSigningEnabled}
         smartAccountAddress={accountInfo?.evmSmartAccount}
         sign7702={sign7702}
+        onWalletActivity={showWalletActivityToast}
         onSuccess={() => {
           fetchAssets();
           fetchMobulaAssets();
