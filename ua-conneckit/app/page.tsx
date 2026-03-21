@@ -703,7 +703,7 @@ const CHAIN_ICONS: Record<string, string> = {
 const TOKEN_LOGOS: Record<string, string> = {
   "ETH": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png",
   "USDC": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png",
-  "USDT": "https://assets.coingecko.com/coins/images/325/large/Tether.png",
+  "USDT": "https://assets.coincap.io/assets/icons/usdt@2x.png",
   "SOL": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png",
   "BTC": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/bitcoin/info/logo.png",
   "WBTC": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599/logo.png",
@@ -745,7 +745,7 @@ const TokenLogo = ({ symbol, size = 40 }: { symbol: string; size?: number }) => 
     <img 
       src={logoUrl}
       alt={symbol}
-      className="rounded-full bg-gray-800"
+      className="rounded-full object-contain bg-transparent"
       style={{ width: size, height: size }}
       onError={() => setImgError(true)}
     />
@@ -2317,7 +2317,7 @@ const BASE_PERPS_MARKETS: Omit<PerpsMarket, 'pairName'>[] = [
   { index: 0, symbol: 'BTC', name: 'Bitcoin', maxLeverage: 100, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/bitcoin/info/logo.png', color: '#F7931A', group: 'crypto' },
   { index: 1, symbol: 'ETH', name: 'Ethereum', maxLeverage: 100, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png', color: '#627EEA', group: 'crypto' },
   { index: 2, symbol: 'SOL', name: 'Solana', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png', color: '#9945FF', group: 'crypto' },
-  { index: 3, symbol: 'LINK', name: 'Chainlink', maxLeverage: 50, logo: 'https://assets.coingecko.com/coins/images/877/large/chainlink-new-logo.png', color: '#375BD2', group: 'crypto' },
+  { index: 3, symbol: 'LINK', name: 'Chainlink', maxLeverage: 50, logo: 'https://assets.coincap.io/assets/icons/link@2x.png', color: '#375BD2', group: 'crypto' },
   { index: 4, symbol: 'DOGE', name: 'Dogecoin', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/doge/info/logo.png', color: '#C2A633', group: 'crypto' },
   { index: 5, symbol: 'XRP', name: 'Ripple', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/xrp/info/logo.png', color: '#23292F', group: 'crypto' },
   { index: 6, symbol: 'BNB', name: 'BNB', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/binance/info/logo.png', color: '#F3BA2F', group: 'crypto' },
@@ -2326,12 +2326,12 @@ const BASE_PERPS_MARKETS: Omit<PerpsMarket, 'pairName'>[] = [
   { index: 9, symbol: 'MATIC', name: 'Polygon', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png', color: '#8247E5', group: 'crypto' },
   { index: 10, symbol: 'ARB', name: 'Arbitrum', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png', color: '#28A0F0', group: 'crypto' },
   { index: 11, symbol: 'OP', name: 'Optimism', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/optimism/info/logo.png', color: '#FF0420', group: 'crypto' },
-  { index: 12, symbol: 'NEAR', name: 'NEAR', maxLeverage: 50, logo: 'https://cryptologos.cc/logos/near-protocol-near-logo.png', color: '#00C08B', group: 'crypto' },
+  { index: 12, symbol: 'NEAR', name: 'NEAR', maxLeverage: 50, logo: 'https://assets.coincap.io/assets/icons/near@2x.png', color: '#00C08B', group: 'crypto' },
   { index: 13, symbol: 'AAVE', name: 'Aave', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9/logo.png', color: '#B6509E', group: 'crypto' },
   { index: 14, symbol: 'UNI', name: 'Uniswap', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984/logo.png', color: '#FF007A', group: 'crypto' },
-  { index: 15, symbol: 'PEPE', name: 'Pepe', maxLeverage: 25, logo: 'https://assets.coingecko.com/coins/images/29850/small/pepe-token.jpeg', color: '#479F53', group: 'crypto' },
-  { index: 16, symbol: 'WIF', name: 'dogwifhat', maxLeverage: 25, logo: 'https://assets.coingecko.com/coins/images/33566/small/wif.png', color: '#D4A96D', group: 'crypto' },
-  { index: 17, symbol: 'SUI', name: 'Sui', maxLeverage: 50, logo: 'https://assets.coingecko.com/coins/images/26375/small/sui_asset.jpeg', color: '#6FBCF0', group: 'crypto' },
+  { index: 15, symbol: 'PEPE', name: 'Pepe', maxLeverage: 25, logo: 'https://assets.coincap.io/assets/icons/pepe@2x.png', color: '#479F53', group: 'crypto' },
+  { index: 16, symbol: 'WIF', name: 'dogwifhat', maxLeverage: 25, logo: 'https://assets.coincap.io/assets/icons/wif@2x.png', color: '#D4A96D', group: 'crypto' },
+  { index: 17, symbol: 'SUI', name: 'Sui', maxLeverage: 50, logo: 'https://assets.coincap.io/assets/icons/sui@2x.png', color: '#6FBCF0', group: 'crypto' },
   { index: 18, symbol: 'TRX', name: 'Tron', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/tron/info/logo.png', color: '#FF0013', group: 'crypto' },
   // Forex (Group 2)
   { index: 30, symbol: 'EUR', name: 'Euro', maxLeverage: 500, logo: 'https://flagcdn.com/w80/eu.png', color: '#003399', group: 'forex' },
@@ -2418,8 +2418,8 @@ const MARKET_LOGO_OVERRIDES: Record<string, string> = {
   TSLA: 'https://coin-images.coingecko.com/coins/images/68628/standard/tslaon_160x160.png',
   GOOG: 'https://coin-images.coingecko.com/coins/images/68606/standard/googlon_160x160.png',
   HOOD: 'https://coin-images.coingecko.com/coins/images/68581/standard/hoodon_160x160.png',
-  HYPE: 'https://coin-images.coingecko.com/coins/images/50882/large/hyperliquid.jpg',
-  PUMP: 'https://coin-images.coingecko.com/coins/images/67164/large/pump.jpg',
+  HYPE: 'https://assets.coincap.io/assets/icons/hype@2x.png',
+  PUMP: 'https://assets.coincap.io/assets/icons/pump@2x.png',
   AERO: 'https://coin-images.coingecko.com/coins/images/31745/large/token.png',
   SHIB: 'https://coin-images.coingecko.com/coins/images/11939/large/shiba.png',
   LIT: 'https://coin-images.coingecko.com/coins/images/13825/large/logo_200x200.png',
@@ -2429,7 +2429,7 @@ const MARKET_LOGO_OVERRIDES: Record<string, string> = {
   VIRTUAL: 'https://coin-images.coingecko.com/coins/images/34057/large/LOGOMARK.png',
   ZEC: 'https://coin-images.coingecko.com/coins/images/486/large/circle-zcash-color.png',
   ONDO: 'https://coin-images.coingecko.com/coins/images/26580/large/ONDO.png',
-  BONK: 'https://coin-images.coingecko.com/coins/images/28600/large/bonk.jpg',
+  BONK: 'https://assets.coincap.io/assets/icons/bonk@2x.png',
   POL: 'https://coin-images.coingecko.com/coins/images/32440/large/pol.png',
   MON: 'https://coin-images.coingecko.com/coins/images/38927/large/mon.png',
   RENDER: 'https://coin-images.coingecko.com/coins/images/11636/large/rndr.png',
@@ -2524,8 +2524,6 @@ const PerpsModal = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingStatus, setLoadingStatus] = useState<string>('');
-  const [debugLog, setDebugLog] = useState<string[]>([]);
-  const [showDebug, setShowDebug] = useState(false);
   const [depositMode, setDepositMode] = useState<'usdc_gas' | 'usdc_only' | 'gas_only'>('usdc_gas');
   const [depositStage, setDepositStage] = useState<'idle' | 'usdc' | 'gas'>('idle');
   const [depositAmount, setDepositAmount] = useState<string>('');
@@ -2573,7 +2571,6 @@ const PerpsModal = ({
     if (now - lastAt < throttleMs) return;
     lastDebugAtRef.current[key] = now;
     console.log('[Perps Debug]', msg);
-    setDebugLog(prev => [...prev.slice(-30), `${new Date().toLocaleTimeString()}: ${msg}`]);
   };
   const [txResult, setTxResult] = useState<{ txId: string; status: 'pending' | 'complete'; action: 'open' | 'close' | 'update' } | null>(null);
   const [sortBy, setSortBy] = useState<'volume' | 'price' | 'change'>('volume');
@@ -3688,7 +3685,6 @@ const PerpsModal = ({
     setError(null);
     setLoadingStatus('Preparing position...');
     setTxResult(null);
-    setDebugLog([]);
 
     try {
       const collateralAmount = parseFloat(collateral);
@@ -4298,25 +4294,6 @@ const PerpsModal = ({
                 </button>
               </div>
             )}
-
-            {/* Debug Panel - Main Perps View */}
-            <div className="px-4 mt-3">
-              <button
-                onClick={() => setShowDebug(!showDebug)}
-                className="text-xs text-gray-500 underline"
-              >
-                {showDebug ? 'Hide Debug' : 'Show Debug'} ({debugLog.length} logs)
-              </button>
-              {showDebug && debugLog.length > 0 && (
-                <div className="mt-2 bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs font-mono text-gray-300 max-h-40 overflow-y-auto">
-                  {debugLog.map((log, i) => (
-                    <div key={i} className="py-0.5 border-b border-gray-800 last:border-0">
-                      {log}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </>
         ) : view === 'deposit' ? (
           /* ========== DEPOSIT VIEW (Receive-style layout) ========== */
@@ -4447,24 +4424,6 @@ const PerpsModal = ({
             >
               {isLoading ? loadingStatus || depositCtaLabel : depositCtaLabel}
             </button>
-
-            <div className="mt-4">
-              <button
-                onClick={() => setShowDebug(!showDebug)}
-                className="text-xs text-gray-500 underline"
-              >
-                {showDebug ? 'Hide Debug' : 'Show Debug'} ({debugLog.length} logs)
-              </button>
-              {showDebug && debugLog.length > 0 && (
-                <div className="mt-2 bg-gray-900 border border-gray-700 rounded-lg p-2 text-xs font-mono text-gray-300 max-h-40 overflow-y-auto">
-                  {debugLog.map((log, i) => (
-                    <div key={i} className="py-0.5 border-b border-gray-800 last:border-0">
-                      {log}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         ) : view === 'withdraw' ? (
           <div className="px-5 pb-8">
@@ -5720,7 +5679,7 @@ const SearchTab = ({
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="relative shrink-0">
                     {token.logo ? (
-                      <img src={token.logo} alt={token.symbol} className="w-9 h-9 rounded-full bg-gray-800 object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; (e.target as HTMLImageElement).nextElementSibling?.classList.remove("hidden"); }} />
+                      <img src={token.logo} alt={token.symbol} className="w-9 h-9 rounded-full object-contain bg-transparent" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; (e.target as HTMLImageElement).nextElementSibling?.classList.remove("hidden"); }} />
                     ) : null}
                     <div className={`w-9 h-9 rounded-full bg-purple-600 flex items-center justify-center text-white text-sm font-bold ${token.logo ? "hidden" : ""}`}>
                       ?
