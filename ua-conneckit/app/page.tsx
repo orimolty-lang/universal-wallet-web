@@ -2508,10 +2508,16 @@ const PerpsModal = ({
   const [showPerpsExplainerModal, setShowPerpsExplainerModal] = useState(false);
   const [perpsExplainerStep, setPerpsExplainerStep] = useState(0);
 
-  // Helper to add debug messages
-  const addDebug = (msg: string) => {
+  const lastDebugAtRef = useRef<Record<string, number>>({});
+  // Helper to add debug messages (throttled to keep logs readable)
+  const addDebug = (msg: string, throttleMs = 2500) => {
+    const now = Date.now();
+    const key = msg.slice(0, 120);
+    const lastAt = lastDebugAtRef.current[key] || 0;
+    if (now - lastAt < throttleMs) return;
+    lastDebugAtRef.current[key] = now;
     console.log('[Perps Debug]', msg);
-    setDebugLog(prev => [...prev.slice(-20), `${new Date().toLocaleTimeString()}: ${msg}`]);
+    setDebugLog(prev => [...prev.slice(-30), `${new Date().toLocaleTimeString()}: ${msg}`]);
   };
   const [txResult, setTxResult] = useState<{ txId: string; status: 'pending' | 'complete'; action: 'open' | 'close' | 'update' } | null>(null);
   const [sortBy, setSortBy] = useState<'volume' | 'price' | 'change'>('volume');
@@ -3067,7 +3073,7 @@ const PerpsModal = ({
   }, [pairLeverageLimits]);
 
   const fetchOpenPositions = useCallback(async () => {
-    addDebug(`Positions fetch start: owner=${ownerEOA || 'none'} markets=${availableMarkets.length}`);
+    
     if (!ownerEOA) {
       setDisplayOpenPositions([]);
       previousPositionIdsRef.current = new Set();
@@ -3101,7 +3107,7 @@ const PerpsModal = ({
         const countHex = await baseRpcCall('eth_call', [{ to: AVANTIS_TRADING_STORAGE_ADDRESS, data: countCallData }, 'latest']);
         if (typeof countHex === 'string') queriedAnyCountSuccessfully = true;
         const openCount = countHex ? Number(BigInt(countHex)) : 0;
-        addDebug(`Pair ${pairName} (${pairIndex}) openCount=${openCount}`);
+        
         if (!Number.isFinite(openCount) || openCount <= 0) continue;
 
         // Position indices may not be contiguous after closes, so scan a wider window.
@@ -3197,7 +3203,7 @@ const PerpsModal = ({
           const pnlPercent = collateralUsd > 0 ? (pnlUsd / collateralUsd) * 100 : 0;
           const liqDistance = (entryPrice / Math.max(leverageNum, 1e-9)) * 0.9;
           const liquidationPrice = trade.buy ? entryPrice - liqDistance : entryPrice + liqDistance;
-          addDebug(`Position found ${pairName} idx=${positionIndex}`);
+          
           positions.push({
             id: `${pairIndex}-${positionIndex}`,
             pairName,
@@ -3223,14 +3229,14 @@ const PerpsModal = ({
       }
       positions.sort((a, b) => b.timestamp - a.timestamp);
       if (!queriedAnyCountSuccessfully) {
-        addDebug('Positions refresh skipped (temporary RPC gap), keeping last known positions visible.');
+        addDebug('Positions: RPC gap, keeping last known', 8000);
         return;
       }
 
       const currentIds = new Set(positions.map((p) => p.id));
       previousPositionIdsRef.current = currentIds;
 
-      addDebug(`Positions fetch complete: ${positions.length} positions`);
+      addDebug(`Positions: ${positions.length} open`);
       setDisplayOpenPositions(positions);
       setPositionEdits((prev) => {
         const next = { ...prev };
