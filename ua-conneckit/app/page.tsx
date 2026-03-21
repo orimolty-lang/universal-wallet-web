@@ -2221,6 +2221,13 @@ const BASE_USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 // Cap allowance to 10,000 USDC (6 decimals), never unlimited.
 const AVANTIS_APPROVAL_CAP_USDC = BigInt(10_000 * 1_000_000);
 
+/** Base mainnet JSON-RPC for perps reads (fee quote, balances, receipts). Override at build time with NEXT_PUBLIC_BASE_RPC_URL. */
+const BASE_MAINNET_RPC_URL =
+  typeof process.env.NEXT_PUBLIC_BASE_RPC_URL === 'string' &&
+  process.env.NEXT_PUBLIC_BASE_RPC_URL.startsWith('http')
+    ? process.env.NEXT_PUBLIC_BASE_RPC_URL
+    : 'https://base-mainnet.g.alchemy.com/v2/v3bdP1lrHsi275voe1icZ';
+
 // Multicall3 on Base (standard address across all chains)
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const MULTICALL3_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11';
@@ -3012,12 +3019,12 @@ const PerpsModal = ({
 
   const fetchOwnerBalances = useCallback(async (eoa: string) => {
     const [ethRes, usdcRes] = await Promise.all([
-      fetch('https://mainnet.base.org', {
+      fetch(BASE_MAINNET_RPC_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_getBalance', params: [eoa, 'latest'], id: 1 }),
       }).then(r => r.json()),
-      fetch('https://mainnet.base.org', {
+      fetch(BASE_MAINNET_RPC_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3088,11 +3095,14 @@ const PerpsModal = ({
   };
 
   const baseRpcCall = useCallback(async (method: string, params: unknown[]) => {
-    const resp = await fetch('https://mainnet.base.org', {
+    const resp = await fetch(BASE_MAINNET_RPC_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', method, params, id: 1 }),
-    }).then(r => r.json());
+    }).then((r) => r.json());
+    if (resp?.error && process.env.NODE_ENV === 'development') {
+      console.warn('[Base RPC]', method, resp.error);
+    }
     return resp?.result as string | undefined;
   }, []);
   const waitForBaseReceipt = useCallback(async (txHash: string) => {
@@ -3156,12 +3166,28 @@ const PerpsModal = ({
         functionName: 'getUpdateFee',
         args: [bytes],
       });
-      const feeHex = await baseRpcCall('eth_call', [{ to: AVANTIS_TRADE_FEE_PYTH_ADDRESS, data: calldata }, 'latest']);
-      if (!feeHex) throw new Error('Could not read trade ETH (value/gas) quote on Base (RPC returned no result).');
+      const feeResp = await fetch(BASE_MAINNET_RPC_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'eth_call',
+          params: [{ to: AVANTIS_TRADE_FEE_PYTH_ADDRESS, data: calldata }, 'latest'],
+          id: 1,
+        }),
+      }).then((r) => r.json());
+      const feeHex = typeof feeResp?.result === 'string' ? feeResp.result : undefined;
+      if (!feeHex) {
+        const errMsg =
+          feeResp?.error && typeof feeResp.error.message === 'string'
+            ? feeResp.error.message
+            : 'RPC returned no result';
+        throw new Error(`Could not read trade ETH (value/gas) quote on Base: ${errMsg}`);
+      }
       const raw = BigInt(feeHex);
       return (raw * BigInt(120)) / BigInt(100);
     },
-    [baseRpcCall, fetchPythUpdateData],
+    [fetchPythUpdateData],
   );
 
   const fetchOpenPositions = useCallback(async () => {
