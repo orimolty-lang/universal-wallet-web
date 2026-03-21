@@ -2697,23 +2697,30 @@ const PerpsModal = ({
     const baseEntry = usdcAsset.chainAggregation?.find(
       (c) => Number(c.token?.chainId) === CHAIN_ID.BASE_MAINNET
     );
-    if (baseEntry) {
-      const baseAmount =
-        typeof baseEntry.amount === "string"
-          ? parseFloat(baseEntry.amount)
-          : Number(baseEntry.amount || 0);
-      return Number.isFinite(baseAmount) ? baseAmount : 0;
-    }
+    if (!baseEntry) return 0;
+    const baseAmount =
+      typeof baseEntry.amount === "string"
+        ? parseFloat(baseEntry.amount)
+        : Number(baseEntry.amount || 0);
+    return Number.isFinite(baseAmount) ? baseAmount : 0;
+  }, [assets]);
 
-    // Fallback when chain breakdown isn't available from SDK response.
+  const uaTotalUsdcAvailable = useMemo(() => {
+    const assetList = (assets?.assets || []) as Array<{ tokenType?: string; symbol?: string; amount?: number | string }>;
+    const usdcAsset = assetList.find((a) => {
+      const tokenType = a.tokenType?.toUpperCase();
+      const symbol = a.symbol?.toUpperCase();
+      return tokenType === "USDC" || symbol === "USDC";
+    });
+    if (!usdcAsset) return 0;
     const totalAmount =
       typeof usdcAsset.amount === "string"
         ? parseFloat(usdcAsset.amount)
         : Number(usdcAsset.amount || 0);
     return Number.isFinite(totalAmount) ? totalAmount : 0;
   }, [assets]);
-  // Perps trades execute from 7702 UA execution wallet; collateral checks/MAX use that wallet USDC.
-  const perpsUsdcBalance = Math.max(eoaUsdcBalance, uaBaseUsdcAvailable);
+  // Perps trades execute from 7702 UA execution wallet; collateral checks/MAX use unified UA USDC.
+  const perpsUsdcBalance = Math.max(eoaUsdcBalance, uaBaseUsdcAvailable, uaTotalUsdcAvailable);
   const usdcBalance = perpsUsdcBalance;
 
   // Calculate position details
@@ -3529,7 +3536,10 @@ const PerpsModal = ({
       const approveSpenders = [AVANTIS_TRADING_ADDRESS as `0x${string}`, AVANTIS_TRADING_STORAGE_ADDRESS as `0x${string}`];
       const uaTx = await universalAccount.createUniversalTransaction({
         chainId: CHAIN_ID.BASE_MAINNET,
-        expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: (Number(executionFee) / 1e18).toString() }],
+        expectTokens: [
+          { type: SUPPORTED_TOKEN_TYPE.USDC, amount: collateralAmount.toString() },
+          { type: SUPPORTED_TOKEN_TYPE.ETH, amount: (Number(executionFee) / 1e18).toString() },
+        ],
         transactions: [
           ...approveSpenders.map((spender) => ({
             to: BASE_USDC_ADDRESS as `0x${string}`,
@@ -3830,6 +3840,7 @@ const PerpsModal = ({
                 <div>smartAccount: <span className="text-white font-mono break-all">{smartAccountAddress || 'n/a'}</span></div>
                 <div>execution wallet: <span className="text-white font-mono break-all">{ownerEOA || 'n/a'}</span></div>
                 <div>UA Base USDC: <span className="text-white">{uaBaseUsdcAvailable.toFixed(4)}</span></div>
+                <div>UA Total USDC: <span className="text-white">{uaTotalUsdcAvailable.toFixed(4)}</span></div>
                 <div>RPC USDC (execution): <span className="text-white">{eoaUsdcBalance.toFixed(4)}</span></div>
                 <div>Effective Perps USDC: <span className="text-white">{perpsUsdcBalance.toFixed(4)}</span></div>
               </div>
