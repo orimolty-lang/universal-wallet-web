@@ -3073,7 +3073,7 @@ const PerpsModal = ({
   }, [pairLeverageLimits]);
 
   const fetchOpenPositions = useCallback(async () => {
-    
+    addDebug('Positions: refresh start', 2000);
     if (!ownerEOA) {
       setDisplayOpenPositions([]);
       previousPositionIdsRef.current = new Set();
@@ -3081,172 +3081,161 @@ const PerpsModal = ({
     }
     setPositionsLoading(true);
     try {
-      const knownPairCount = availableMarkets.reduce((count, market) => {
-        const pairName = market.pairName;
-        return pairLeverageLimits[pairName]?.pairIndex !== undefined ? count + 1 : count;
-      }, 0);
-      addDebug(`Positions fetch: knownPairCount=${knownPairCount}`);
-      if (knownPairCount === 0) {
-        // Socket metadata not ready yet; preserve current UI until we can query positions reliably.
+      const marketsWithPair = availableMarkets
+        .map((m) => ({ market: m, pairIndex: pairLeverageLimits[m.pairName]?.pairIndex }))
+        .filter((x): x is { market: PerpsMarket; pairIndex: number } => Number.isFinite(x.pairIndex as number));
+
+      if (marketsWithPair.length === 0) {
+        addDebug('Positions: no Avantis pair metadata yet', 5000);
         return;
       }
 
-      const positions: OpenPerpsPosition[] = [];
-      let queriedAnyCountSuccessfully = false;
-      const cyclePythPrices: Record<string, number> = {};
-      for (const market of availableMarkets) {
-        const pairName = market.pairName;
-        const pairIndex = pairLeverageLimits[pairName]?.pairIndex;
-        if (pairIndex === undefined) continue;
-
-        const countCallData = encodeFunctionData({
+      const countCalls = marketsWithPair.map(({ pairIndex }) => ({
+        target: AVANTIS_TRADING_STORAGE_ADDRESS as `0x${string}`,
+        allowFailure: true,
+        value: BigInt(0),
+        callData: encodeFunctionData({
           abi: AVANTIS_TRADING_STORAGE_ABI,
           functionName: 'openTradesCount',
           args: [ownerEOA as `0x${string}`, BigInt(pairIndex)],
-        });
-        const countHex = await baseRpcCall('eth_call', [{ to: AVANTIS_TRADING_STORAGE_ADDRESS, data: countCallData }, 'latest']);
-        if (typeof countHex === 'string') queriedAnyCountSuccessfully = true;
-        const openCount = countHex ? Number(BigInt(countHex)) : 0;
-        
-        if (!Number.isFinite(openCount) || openCount <= 0) continue;
+        }),
+      }));
 
-        // Position indices may not be contiguous after closes, so scan a wider window.
-        const scanLimit = Math.min(60, Math.max(20, openCount * 3));
-        const seenIndices = new Set<number>();
-        for (let i = 0; i < scanLimit; i++) {
-          const tradeCallData = encodeFunctionData({
-            abi: AVANTIS_TRADING_STORAGE_ABI,
-            functionName: 'openTrades',
-            args: [ownerEOA as `0x${string}`, BigInt(pairIndex), BigInt(i)],
-          });
-          const tradeHex = await baseRpcCall('eth_call', [{ to: AVANTIS_TRADING_STORAGE_ADDRESS, data: tradeCallData }, 'latest']);
-          if (!tradeHex) continue;
-          const trade = decodeFunctionResult({
-            abi: AVANTIS_TRADING_STORAGE_ABI,
-            functionName: 'openTrades',
-            data: tradeHex as `0x${string}`,
-          }) as {
-            trader: `0x${string}`;
-            index: bigint;
-            initialPosToken: bigint;
-            positionSizeUSDC: bigint;
-            openPrice: bigint;
-            buy: boolean;
-            leverage: bigint;
-            tp: bigint;
-            sl: bigint;
-            timestamp: bigint;
-          };
-          if (!trade || trade.trader.toLowerCase() === '0x0000000000000000000000000000000000000000') continue;
-          const positionIndex = Number(trade.index);
-          if (!Number.isFinite(positionIndex) || positionIndex < 0) continue;
-          if (seenIndices.has(positionIndex)) continue;
-          seenIndices.add(positionIndex);
+      const countData = encodeFunctionData({
+        abi: MULTICALL3_ABI,
+        functionName: 'aggregate3Value',
+        args: [countCalls],
+      });
+      const countHex = await baseRpcCall('eth_call', [{ to: MULTICALL3_ADDRESS, data: countData }, 'latest']);
+      if (!countHex) throw new Error('Multicall counts returned empty');
+      const countResults = decodeFunctionResult({
+        abi: MULTICALL3_ABI,
+        functionName: 'aggregate3Value',
+        data: countHex as `0x${string}`,
+      }) as Array<{ success: boolean; returnData: `0x${string}` }>;
 
-          const infoCallData = encodeFunctionData({
-            abi: AVANTIS_TRADING_STORAGE_ABI,
-            functionName: 'openTradesInfo',
-            args: [ownerEOA as `0x${string}`, BigInt(pairIndex), BigInt(positionIndex)],
-          });
-          const infoHex = await baseRpcCall('eth_call', [{ to: AVANTIS_TRADING_STORAGE_ADDRESS, data: infoCallData }, 'latest']);
-          let beingMarketClosed = false;
-          if (infoHex) {
-            const info = decodeFunctionResult({
-              abi: AVANTIS_TRADING_STORAGE_ABI,
-              functionName: 'openTradesInfo',
-              data: infoHex as `0x${string}`,
-            }) as { beingMarketClosed: boolean };
-            beingMarketClosed = !!info?.beingMarketClosed;
-          }
+      const tradeKeys: Array<{ pairName: string; pairIndex: number; idx: number; symbol: string }> = [];
+      marketsWithPair.forEach(({ market, pairIndex }, i) => {
+        const r = countResults[i];
+        if (!r?.success) return;
+        const n = Number(BigInt(r.returnData || '0x0'));
+        if (!Number.isFinite(n) || n <= 0) return;
+        const scan = Math.min(12, Math.max(3, n * 2));
+        for (let idx = 0; idx < scan; idx++) tradeKeys.push({ pairName: market.pairName, pairIndex, idx, symbol: market.symbol });
+      });
 
-          const leverageNum = Number(trade.leverage) / 1e10;
-          const initialCollateralUsd = Number(trade.initialPosToken) / 1e6;
-          const rawPositionUsd = Number(trade.positionSizeUSDC) / 1e6;
-          const collateralUsd = initialCollateralUsd > 0
-            ? initialCollateralUsd
-            : leverageNum > 0
-              ? rawPositionUsd / leverageNum
-              : rawPositionUsd;
-          if (!Number.isFinite(collateralUsd) || collateralUsd <= 0) continue;
-          // Avantis storage raw position field can vary by mode; derive notional from collateral * leverage for stable UI/PnL.
-          const sizeUsd = collateralUsd * Math.max(leverageNum, 0);
-          const entryPrice = Number(trade.openPrice) / 1e10;
-          let markPrice = marketPricesRef.current[pairName]?.price;
-          if (!Number.isFinite(markPrice) || (markPrice as number) <= 0) {
-            if (Number.isFinite(cyclePythPrices[pairName]) && cyclePythPrices[pairName] > 0) {
-              markPrice = cyclePythPrices[pairName];
-            } else {
-              const feedId = pairLeverageLimits[pairName]?.feedId;
-              if (feedId) {
-                try {
-                  const response = await fetch(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${feedId}`);
-                  const json = await response.json();
-                  const parsed = json?.parsed?.[0]?.price;
-                  if (parsed?.price && Number.isFinite(Number(parsed.price)) && Number.isFinite(Number(parsed.expo))) {
-                    const p = Number(parsed.price) * Math.pow(10, Number(parsed.expo));
-                    if (Number.isFinite(p) && p > 0) {
-                      markPrice = p;
-                      cyclePythPrices[pairName] = p;
-                    }
-                  }
-                } catch {}
-              }
-            }
-          }
-          if (!Number.isFinite(markPrice) || (markPrice as number) <= 0) {
-            addDebug(`Skipping ${pairName} position ${positionIndex}: no Avantis/Pyth mark price available`);
-            continue;
-          }
-          const pnlUsd = trade.buy
-            ? (((markPrice as number) - entryPrice) / Math.max(entryPrice, 1e-9)) * sizeUsd
-            : ((entryPrice - (markPrice as number)) / Math.max(entryPrice, 1e-9)) * sizeUsd;
-          const pnlPercent = collateralUsd > 0 ? (pnlUsd / collateralUsd) * 100 : 0;
-          const liqDistance = (entryPrice / Math.max(leverageNum, 1e-9)) * 0.9;
-          const liquidationPrice = trade.buy ? entryPrice - liqDistance : entryPrice + liqDistance;
-          
-          positions.push({
-            id: `${pairIndex}-${positionIndex}`,
-            pairName,
-            symbol: market.symbol,
-            pairIndex,
-            positionIndex,
-            isLong: trade.buy,
-            collateralUsd,
-            sizeUsd,
-            leverage: leverageNum,
-            entryPrice,
-            markPrice,
-            pnlUsd,
-            pnlPercent,
-            liquidationPrice,
-            beingMarketClosed,
-            tpPrice: Number(trade.tp) > 0 ? Number(trade.tp) / 1e10 : 0,
-            slPrice: Number(trade.sl) > 0 ? Number(trade.sl) / 1e10 : 0,
-            timestamp: Number(trade.timestamp),
-          });
-          if (positions.filter((p) => p.pairIndex === pairIndex).length >= openCount) break;
-        }
-      }
-      positions.sort((a, b) => b.timestamp - a.timestamp);
-      if (!queriedAnyCountSuccessfully) {
-        addDebug('Positions: RPC gap, keeping last known', 8000);
+      if (tradeKeys.length === 0) {
+        setDisplayOpenPositions([]);
+        previousPositionIdsRef.current = new Set();
+        addDebug('Positions: 0 open');
         return;
       }
 
-      const currentIds = new Set(positions.map((p) => p.id));
-      previousPositionIdsRef.current = currentIds;
+      const tradeCalls = tradeKeys.map((k) => ({
+        target: AVANTIS_TRADING_STORAGE_ADDRESS as `0x${string}`,
+        allowFailure: true,
+        value: BigInt(0),
+        callData: encodeFunctionData({
+          abi: AVANTIS_TRADING_STORAGE_ABI,
+          functionName: 'openTrades',
+          args: [ownerEOA as `0x${string}`, BigInt(k.pairIndex), BigInt(k.idx)],
+        }),
+      }));
+      const tradeData = encodeFunctionData({ abi: MULTICALL3_ABI, functionName: 'aggregate3Value', args: [tradeCalls] });
+      const tradeHex = await baseRpcCall('eth_call', [{ to: MULTICALL3_ADDRESS, data: tradeData }, 'latest']);
+      if (!tradeHex) throw new Error('Multicall trades returned empty');
+      const tradeResults = decodeFunctionResult({ abi: MULTICALL3_ABI, functionName: 'aggregate3Value', data: tradeHex as `0x${string}` }) as Array<{ success: boolean; returnData: `0x${string}` }>;
 
+      const found: Array<{ key: typeof tradeKeys[number]; trade: { trader: `0x${string}`; index: bigint; initialPosToken: bigint; positionSizeUSDC: bigint; openPrice: bigint; buy: boolean; leverage: bigint; tp: bigint; sl: bigint; timestamp: bigint; } }> = [];
+      tradeResults.forEach((r, i) => {
+        if (!r?.success) return;
+        const key = tradeKeys[i];
+        const trade = decodeFunctionResult({ abi: AVANTIS_TRADING_STORAGE_ABI, functionName: 'openTrades', data: r.returnData }) as { trader: `0x${string}`; index: bigint; initialPosToken: bigint; positionSizeUSDC: bigint; openPrice: bigint; buy: boolean; leverage: bigint; tp: bigint; sl: bigint; timestamp: bigint; };
+        if (!trade || trade.trader.toLowerCase() === '0x0000000000000000000000000000000000000000') return;
+        found.push({ key, trade });
+      });
+
+      const infoCalls = found.map(({ key, trade }) => ({
+        target: AVANTIS_TRADING_STORAGE_ADDRESS as `0x${string}`,
+        allowFailure: true,
+        value: BigInt(0),
+        callData: encodeFunctionData({
+          abi: AVANTIS_TRADING_STORAGE_ABI,
+          functionName: 'openTradesInfo',
+          args: [ownerEOA as `0x${string}`, BigInt(key.pairIndex), trade.index],
+        }),
+      }));
+      const infoData = encodeFunctionData({ abi: MULTICALL3_ABI, functionName: 'aggregate3Value', args: [infoCalls] });
+      const infoHex = await baseRpcCall('eth_call', [{ to: MULTICALL3_ADDRESS, data: infoData }, 'latest']);
+      if (!infoHex) throw new Error('Multicall infos returned empty');
+      const infoResults = decodeFunctionResult({ abi: MULTICALL3_ABI, functionName: 'aggregate3Value', data: infoHex as `0x${string}` }) as Array<{ success: boolean; returnData: `0x${string}` }>;
+
+      const positions: OpenPerpsPosition[] = [];
+      const cyclePythPrices: Record<string, number> = {};
+      found.forEach(({ key, trade }, i) => {
+        const info = infoResults[i]?.success
+          ? decodeFunctionResult({ abi: AVANTIS_TRADING_STORAGE_ABI, functionName: 'openTradesInfo', data: infoResults[i].returnData }) as { beingMarketClosed: boolean }
+          : { beingMarketClosed: false };
+
+        const leverageNum = Number(trade.leverage) / 1e10;
+        const collateralUsd = Number(trade.initialPosToken) / 1e6;
+        if (!Number.isFinite(collateralUsd) || collateralUsd <= 0) return;
+        const sizeUsd = collateralUsd * Math.max(leverageNum, 0);
+        const entryPrice = Number(trade.openPrice) / 1e10;
+
+        let markPrice = marketPricesRef.current[key.pairName]?.price;
+        if (!Number.isFinite(markPrice) || (markPrice as number) <= 0) {
+          if (Number.isFinite(cyclePythPrices[key.pairName])) markPrice = cyclePythPrices[key.pairName];
+          else {
+            const feedId = pairLeverageLimits[key.pairName]?.feedId;
+            if (feedId) {
+              // best-effort direct Pyth read for this pair
+              // eslint-disable-next-line @typescript-eslint/no-floating-promises
+              fetch(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${feedId}`).then(r=>r.json()).then(j=>{
+                const parsed = j?.parsed?.[0]?.price;
+                if (parsed?.price && Number.isFinite(Number(parsed.price)) && Number.isFinite(Number(parsed.expo))) {
+                  const p = Number(parsed.price) * Math.pow(10, Number(parsed.expo));
+                  if (Number.isFinite(p) && p > 0) cyclePythPrices[key.pairName] = p;
+                }
+              }).catch(()=>{});
+            }
+          }
+        }
+        const safeMark = Number.isFinite(markPrice) && (markPrice as number) > 0 ? Number(markPrice) : entryPrice;
+        const pnlUsd = trade.buy ? ((safeMark - entryPrice) / Math.max(entryPrice, 1e-9)) * sizeUsd : ((entryPrice - safeMark) / Math.max(entryPrice, 1e-9)) * sizeUsd;
+        const pnlPercent = collateralUsd > 0 ? (pnlUsd / collateralUsd) * 100 : 0;
+        const liqDistance = (entryPrice / Math.max(leverageNum, 1e-9)) * 0.9;
+        const liquidationPrice = trade.buy ? entryPrice - liqDistance : entryPrice + liqDistance;
+        positions.push({
+          id: `${key.pairIndex}-${Number(trade.index)}`,
+          pairName: key.pairName,
+          symbol: key.symbol,
+          pairIndex: key.pairIndex,
+          positionIndex: Number(trade.index),
+          isLong: trade.buy,
+          collateralUsd,
+          sizeUsd,
+          leverage: leverageNum,
+          entryPrice,
+          markPrice: safeMark,
+          pnlUsd,
+          pnlPercent,
+          liquidationPrice,
+          beingMarketClosed: !!info?.beingMarketClosed,
+          tpPrice: Number(trade.tp) > 0 ? Number(trade.tp) / 1e10 : 0,
+          slPrice: Number(trade.sl) > 0 ? Number(trade.sl) / 1e10 : 0,
+          timestamp: Number(trade.timestamp),
+        });
+      });
+
+      positions.sort((a, b) => b.timestamp - a.timestamp);
+      previousPositionIdsRef.current = new Set(positions.map((p) => p.id));
       addDebug(`Positions: ${positions.length} open`);
       setDisplayOpenPositions(positions);
       setPositionEdits((prev) => {
         const next = { ...prev };
-        for (const p of positions) {
-          if (!next[p.id]) {
-            next[p.id] = {
-              tp: p.tpPrice > 0 ? p.tpPrice.toString() : '',
-              sl: p.slPrice > 0 ? p.slPrice.toString() : '',
-            };
-          }
+        for (const pos of positions) {
+          if (!next[pos.id]) next[pos.id] = { tp: pos.tpPrice > 0 ? pos.tpPrice.toString() : '', sl: pos.slPrice > 0 ? pos.slPrice.toString() : '' };
         }
         return next;
       });
@@ -3255,7 +3244,7 @@ const PerpsModal = ({
     } finally {
       setPositionsLoading(false);
     }
-  }, [ownerEOA, pairLeverageLimits, baseRpcCall, upsertPerpsActivity, availableMarkets]);
+  }, [ownerEOA, pairLeverageLimits, baseRpcCall, availableMarkets]);
 
   useEffect(() => {
     if (!isOpen || !ownerEOA) return;
