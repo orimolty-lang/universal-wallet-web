@@ -74,7 +74,8 @@ async function fetchMobulaWalletBalances(address: string): Promise<MobulaAsset[]
   
   try {
     // Use our proxy for Mobula API (handles CORS)
-    const url = `${MOBULA_PROXY_BASE}/mobula/api/1/wallet/portfolio?wallet=${address}&blockchains=base,ethereum,arbitrum,polygon,solana,optimism,bnb`;
+    // Mobula expects `optimistic` for Optimism; `optimism` returns 400 and breaks the whole portfolio call.
+    const url = `${MOBULA_PROXY_BASE}/mobula/api/1/wallet/portfolio?wallet=${address}&blockchains=base,ethereum,arbitrum,polygon,solana,optimistic,bnb`;
     console.log("[Mobula] URL (via proxy):", url);
     
     const response = await fetch(url, {
@@ -7220,17 +7221,26 @@ const App = () => {
           }
         }
         
-        // Fallback: extract from cross_chain_balances if available
+        // Fallback: extract from cross_chain_balances if available (chainId often string "8453" from Mobula)
         if (contracts.length === 0 && ma.cross_chain_balances) {
           const chainIdToName: Record<number, string> = {
-            1: "ethereum", 8453: "base", 42161: "arbitrum", 
+            1: "ethereum", 8453: "base", 42161: "arbitrum",
             10: "optimism", 137: "polygon", 56: "bsc", 101: "solana",
           };
+          const parseMobulaChainId = (raw: unknown): number | undefined => {
+            if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+            if (typeof raw === "string") {
+              const n = parseInt(raw.replace(/^evm:/i, ""), 10);
+              return Number.isFinite(n) ? n : undefined;
+            }
+            return undefined;
+          };
           Object.values(ma.cross_chain_balances).forEach((data) => {
-            if (data.address && data.chainId) {
+            const cid = parseMobulaChainId(data.chainId);
+            if (data.address && cid) {
               contracts.push({
                 address: data.address,
-                blockchain: chainIdToName[data.chainId] || `chain-${data.chainId}`,
+                blockchain: chainIdToName[cid] || `chain-${cid}`,
               });
             }
           });
@@ -7248,12 +7258,21 @@ const App = () => {
           isExternal: true, // Flag to identify external assets
           contracts, // Now properly populated
           // Build chain aggregation from cross_chain_balances
-          chainAggregation: ma.cross_chain_balances 
-            ? Object.values(ma.cross_chain_balances).map((data) => ({
-                token: { chainId: data.chainId, address: data.address },
-                amount: data.balance,
-                amountInUSD: data.balance * ma.price,
-              }))
+          chainAggregation: ma.cross_chain_balances
+            ? Object.values(ma.cross_chain_balances).map((data) => {
+                const rawCid = data.chainId as string | number | undefined;
+                const cid =
+                  typeof rawCid === "number"
+                    ? rawCid
+                    : typeof rawCid === "string"
+                      ? parseInt(rawCid.replace(/^evm:/i, ""), 10)
+                      : NaN;
+                return {
+                  token: { chainId: Number.isFinite(cid) ? cid : rawCid, address: data.address },
+                  amount: data.balance,
+                  amountInUSD: data.balance * ma.price,
+                };
+              })
             : [],
         };
       });

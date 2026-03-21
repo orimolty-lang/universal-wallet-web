@@ -168,15 +168,35 @@ export const SwapModal = ({
     }
   }, [isOpen]);
 
-  // Get user's token balance (for sell mode)
+  // Get user's token balance (for sell mode) — prefer contract match so Base tokens map to Mobula `combinedAssets` rows
   const getTokenBalance = useCallback(() => {
     if (!targetToken || !primaryAssets?.assets) return 0;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const asset = primaryAssets.assets.find((a: any) => 
-      a.symbol?.toUpperCase() === targetToken.symbol?.toUpperCase()
+    const targetAddrs = new Set(
+      (targetToken.contracts || [])
+        .map((c) => c.address?.toLowerCase())
+        .filter((x): x is string => !!x)
     );
+    if (targetAddrs.size > 0) {
+      const byContract = primaryAssets.assets.find((a) => {
+        const rec = a as { contracts?: { address?: string }[]; amount?: number | string };
+        const list = rec.contracts;
+        return (
+          Array.isArray(list) &&
+          list.some((x) => targetAddrs.has((x.address || "").toLowerCase()))
+        );
+      });
+      if (byContract) {
+        const amt = (byContract as { amount?: number | string }).amount;
+        return typeof amt === "string" ? parseFloat(amt) : (amt || 0);
+      }
+    }
+    const asset = primaryAssets.assets.find((a) => {
+      const sym = (a as { symbol?: string }).symbol?.toUpperCase();
+      return sym === targetToken.symbol?.toUpperCase();
+    });
     if (!asset) return 0;
-    return typeof asset.amount === 'string' ? parseFloat(asset.amount) : (asset.amount || 0);
+    const amt = (asset as { amount?: number | string }).amount;
+    return typeof amt === "string" ? parseFloat(amt) : (amt || 0);
   }, [primaryAssets, targetToken]);
 
   const tokenBalance = getTokenBalance();
