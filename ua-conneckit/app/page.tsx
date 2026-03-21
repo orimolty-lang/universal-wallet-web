@@ -2743,43 +2743,38 @@ const PerpsModal = ({
     return isLong ? currentPrice - liqDistance : currentPrice + liqDistance;
   }, [currentPrice, collateral, leverage, isLong]);
 
-  // Fetch current price from Pyth oracle
+  // Keep selected market price aligned with shared market feed prices.
+  useEffect(() => {
+    const live = marketPrices[selectedPair.name]?.price;
+    if (Number.isFinite(live) && (live as number) > 0) {
+      setCurrentPrice(Number(live));
+    }
+  }, [marketPrices, selectedPair.name]);
+
+  // Fallback: only if selected pair is missing from shared feed.
   useEffect(() => {
     const fetchPythPrice = async () => {
+      const live = marketPrices[selectedPair.name]?.price;
+      if (Number.isFinite(live) && (live as number) > 0) return;
       const feedId = pairLeverageLimits[selectedPair.name]?.feedId;
-      if (!feedId) {
-        console.log('[Perps] No Pyth feed ID for', selectedPair.name);
-        setCurrentPrice(null);
-        return;
-      }
-      
+      if (!feedId) return;
       try {
-        // Pyth Hermes API for real-time prices
-        const response = await fetch(
-          `https://hermes.pyth.network/v2/updates/price/latest?ids[]=${feedId}`
-        );
+        const response = await fetch(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${feedId}`);
         const data = await response.json();
-        
-        if (data.parsed?.[0]?.price) {
-          const priceData = data.parsed[0].price;
-          // Pyth returns price with exponent, e.g. price=9500000000, expo=-8 means $95000.00
-          const price = Number(priceData.price) * Math.pow(10, priceData.expo);
-          setCurrentPrice(price);
-          console.log('[Perps] Pyth price for', selectedPair.name, ':', price);
-        } else {
-          setCurrentPrice(null);
+        const priceData = data?.parsed?.[0]?.price;
+        if (priceData?.price && Number.isFinite(Number(priceData.price)) && Number.isFinite(Number(priceData.expo))) {
+          const price = Number(priceData.price) * Math.pow(10, Number(priceData.expo));
+          if (Number.isFinite(price) && price > 0) setCurrentPrice(price);
         }
-      } catch (err) {
-        console.error('[Perps] Failed to fetch Pyth price:', err);
-        setCurrentPrice(null);
+      } catch {
+        // ignore
       }
     };
-    
+    if (!isOpen) return;
     fetchPythPrice();
-    // Refresh price every 5 seconds
-    const interval = setInterval(fetchPythPrice, 5000);
+    const interval = setInterval(fetchPythPrice, 1200);
     return () => clearInterval(interval);
-  }, [selectedPair, pairLeverageLimits]);
+  }, [isOpen, selectedPair.name, pairLeverageLimits, marketPrices]);
 
   // Fetch all market prices for the markets list
   useEffect(() => {
@@ -2824,7 +2819,7 @@ const PerpsModal = ({
       for (const { pairName, feedId } of feedTargets) {
         const price = priceByFeedId.get(normalizeFeedId(feedId));
         if (!price) continue;
-        prices[pairName] = { price, change24h: 0 };
+        prices[pairName] = { price, change24h: Number.NaN };
       }
       
       setMarketPrices(prices);
@@ -3792,8 +3787,8 @@ const PerpsModal = ({
     filtered.sort((a, b) => {
       const pa = marketPrices[a.pairName]?.price || 0;
       const pb = marketPrices[b.pairName]?.price || 0;
-      const ca = marketPrices[a.pairName]?.change24h || 0;
-      const cb = marketPrices[b.pairName]?.change24h || 0;
+      const ca = Number.isFinite(marketPrices[a.pairName]?.change24h) ? (marketPrices[a.pairName]?.change24h as number) : 0;
+      const cb = Number.isFinite(marketPrices[b.pairName]?.change24h) ? (marketPrices[b.pairName]?.change24h as number) : 0;
       const va = pairLeverageLimits[a.pairName]?.pairOI || 0;
       const vb = pairLeverageLimits[b.pairName]?.pairOI || 0;
       if (sortBy === 'price') return pb - pa;
@@ -4014,7 +4009,7 @@ const PerpsModal = ({
               {filteredSortedMarkets.map((market) => {
                 const priceData = marketPrices[market.pairName];
                 const price = priceData?.price || 0;
-                const change = priceData?.change24h || 0;
+                const change = Number.isFinite(priceData?.change24h) ? (priceData?.change24h as number) : Number.NaN;
                 const pairName = market.pairName;
                 const marketMeta = pairLeverageLimits[pairName];
                 const zfpEligible = (marketMeta?.zfpMax ?? 0) > 0;
@@ -4079,8 +4074,8 @@ const PerpsModal = ({
                           ? `$${price >= 1000 ? price.toLocaleString(undefined, { maximumFractionDigits: 0 }) : price.toFixed(2)}`
                           : '--'}
                       </div>
-                      <div className={`text-sm ${change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {change >= 0 ? '+' : ''}{change.toFixed(2)}%
+                      <div className={`text-sm ${Number.isFinite(change) ? (change >= 0 ? 'text-green-400' : 'text-red-400') : 'text-gray-500'}`}>
+                        {Number.isFinite(change) ? `${change >= 0 ? '+' : ''}${change.toFixed(2)}%` : '—'}
                       </div>
                     </div>
                   </button>
