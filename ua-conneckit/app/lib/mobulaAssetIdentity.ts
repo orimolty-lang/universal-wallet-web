@@ -22,6 +22,22 @@ export const BLOCKCHAIN_SLUG_TO_CHAIN_ID: Record<string, number> = {
   avax: 43114,
 };
 
+/** Canonical wrapped native per chain — UA often uses 0x0/0xeee for gas while Mobula uses these. */
+export const WRAPPED_NATIVE_BY_CHAIN_ID: Partial<Record<number, string>> = {
+  1: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+  8453: "0x4200000000000000000000000000000000000006",
+  42161: "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+  10: "0x4200000000000000000000000000000000000006",
+  56: "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+  137: "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270",
+  43114: "0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7",
+};
+
+const NATIVE_SENTINEL_LOWER = new Set([
+  "0x0000000000000000000000000000000000000000",
+  "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+]);
+
 export interface MobulaPortfolioAsset {
   asset: {
     name: string;
@@ -59,21 +75,60 @@ export function contractPositionKey(chainId: number, address: string): string {
   return `${chainId}:${address.trim().toLowerCase()}`;
 }
 
+/** EVM: `chainId:0x...` lowercased. Solana: `101:<base58>` (case-preserved). */
+export function positionKeyForChainAddress(chainId: number, addressRaw: string): string | null {
+  const trimmed = addressRaw.trim();
+  if (chainId === 101) {
+    if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trimmed)) return `101:${trimmed}`;
+    return null;
+  }
+  if (!/^0x[a-fA-F0-9]{40}$/i.test(trimmed)) return null;
+  return `${chainId}:${trimmed.toLowerCase()}`;
+}
+
 export function chainIdFromBlockchainSlug(slug: string | undefined): number | undefined {
   if (!slug) return undefined;
-  return BLOCKCHAIN_SLUG_TO_CHAIN_ID[slug.toLowerCase().replace(/\s+/g, "")];
+  const k = slug.toLowerCase().replace(/\s+/g, "");
+  if (BLOCKCHAIN_SLUG_TO_CHAIN_ID[k] !== undefined) return BLOCKCHAIN_SLUG_TO_CHAIN_ID[k];
+  if (/^\d+$/.test(k)) {
+    const n = parseInt(k, 10);
+    return Number.isFinite(n) ? n : undefined;
+  }
+  return undefined;
+}
+
+/** Add wrapped-native / native-sentinel aliases so Mobula WETH rows match UA ETH rows. */
+export function expandNativeWrappedEquivalentKeys(keys: Set<string>): void {
+  const toAdd: string[] = [];
+  for (const k of Array.from(keys)) {
+    const idx = k.indexOf(":");
+    if (idx <= 0) continue;
+    const chainId = Number(k.slice(0, idx));
+    if (!Number.isFinite(chainId) || chainId === 101) continue;
+    const addr = k.slice(idx + 1).toLowerCase();
+    const wrapped = WRAPPED_NATIVE_BY_CHAIN_ID[chainId];
+    const w = wrapped?.toLowerCase();
+    if (!w) continue;
+    if (NATIVE_SENTINEL_LOWER.has(addr)) {
+      toAdd.push(`${chainId}:${w}`);
+    }
+    if (addr === w) {
+      toAdd.push(`${chainId}:0x0000000000000000000000000000000000000000`);
+      toAdd.push(`${chainId}:0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee`);
+    }
+  }
+  for (const x of toAdd) keys.add(x);
 }
 
 export function mobulaAssetPositionKeys(ma: MobulaPortfolioAsset): string[] {
   const keys: string[] = [];
   const seen = new Set<string>();
   const add = (cid: number | undefined, addr: string | undefined) => {
-    if (!cid || !addr || !/^0x[a-fA-F0-9]{40}$/i.test(addr)) return;
-    const k = contractPositionKey(cid, addr);
-    if (!seen.has(k)) {
-      seen.add(k);
-      keys.push(k);
-    }
+    if (!cid || !addr) return;
+    const k = positionKeyForChainAddress(cid, addr);
+    if (!k || seen.has(k)) return;
+    seen.add(k);
+    keys.push(k);
   };
   if (Array.isArray(ma.contracts_balances)) {
     for (const row of ma.contracts_balances) {
@@ -101,12 +156,11 @@ export function positionKeysFromMergedShape(a: {
   const keys: string[] = [];
   const seen = new Set<string>();
   const add = (cid: number | undefined, addr: string | undefined) => {
-    if (!cid || !addr || !/^0x[a-fA-F0-9]{40}$/i.test(addr)) return;
-    const k = contractPositionKey(cid, addr);
-    if (!seen.has(k)) {
-      seen.add(k);
-      keys.push(k);
-    }
+    if (!cid || !addr) return;
+    const k = positionKeyForChainAddress(cid, addr);
+    if (!k || seen.has(k)) return;
+    seen.add(k);
+    keys.push(k);
   };
   if (Array.isArray(a.chainAggregation)) {
     for (const c of a.chainAggregation) {
@@ -134,6 +188,7 @@ export function primaryPortfolioContractKeys(primaryAssets: IAssetsResponse): Se
       set.add(k),
     );
   }
+  expandNativeWrappedEquivalentKeys(set);
   return set;
 }
 
@@ -144,7 +199,10 @@ export function tokenContractKeySet(
   if (!contracts?.length) return s;
   for (const c of contracts) {
     const cid = chainIdFromBlockchainSlug(c.blockchain);
-    if (cid && c.address) s.add(contractPositionKey(cid, c.address));
+    if (cid && c.address) {
+      const k = positionKeyForChainAddress(cid, c.address);
+      if (k) s.add(k);
+    }
   }
   return s;
 }
@@ -157,5 +215,7 @@ export function mergedAssetMatchesContractKeys(
   want: Set<string>,
 ): boolean {
   if (want.size === 0) return false;
-  return positionKeysFromMergedShape(asset).some((k) => want.has(k));
+  const expandedWant = new Set(want);
+  expandNativeWrappedEquivalentKeys(expandedWant);
+  return positionKeysFromMergedShape(asset).some((k) => expandedWant.has(k));
 }
