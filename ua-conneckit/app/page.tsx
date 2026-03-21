@@ -2832,6 +2832,8 @@ const PerpsModal = ({
     
     if (isOpen && view === 'markets') {
       fetchAllPrices();
+      const t = setInterval(fetchAllPrices, 1200);
+      return () => clearInterval(t);
     }
   }, [isOpen, view, availableMarkets, pairLeverageLimits]);
 
@@ -3249,9 +3251,22 @@ const PerpsModal = ({
   useEffect(() => {
     if (!isOpen || !ownerEOA) return;
     fetchOpenPositions();
-    const t = setInterval(fetchOpenPositions, 3000);
+    const t = setInterval(fetchOpenPositions, 5000);
     return () => clearInterval(t);
   }, [isOpen, ownerEOA, fetchOpenPositions]);
+
+  useEffect(() => {
+    setDisplayOpenPositions((prev) => prev.map((pos) => {
+      const live = marketPricesRef.current[pos.pairName]?.price;
+      if (!Number.isFinite(live) || (live as number) <= 0) return pos;
+      const markPrice = Number(live);
+      const pnlUsd = pos.isLong
+        ? ((markPrice - pos.entryPrice) / Math.max(pos.entryPrice, 1e-9)) * pos.sizeUsd
+        : ((pos.entryPrice - markPrice) / Math.max(pos.entryPrice, 1e-9)) * pos.sizeUsd;
+      const pnlPercent = pos.collateralUsd > 0 ? (pnlUsd / pos.collateralUsd) * 100 : 0;
+      return { ...pos, markPrice, pnlUsd, pnlPercent };
+    }));
+  }, [marketPrices]);
 
   const handleDepositToEOA = async () => {
     if (!universalAccount || !primaryWallet || !ownerEOA) {
