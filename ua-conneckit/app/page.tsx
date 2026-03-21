@@ -4032,8 +4032,15 @@ const PerpsModal = ({
             <div className="px-4 mb-5">
               <div className="rounded-2xl border border-gray-700 bg-[#171717] px-3 py-3 flex items-center justify-between">
                 <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-full bg-[#1f1f1f] border border-gray-600 flex items-center justify-center overflow-hidden shrink-0">
+                    <img
+                      src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png"
+                      alt="USDC"
+                      className="w-6 h-6 rounded-full"
+                    />
+                  </div>
                   <div>
-                    <div className="text-[11px] uppercase tracking-wide text-gray-300 font-semibold">Unified balance (UA)</div>
+                    <div className="text-[11px] uppercase tracking-wide text-gray-300 font-semibold">Available balance</div>
                     <div className="text-2xl font-bold text-white">
                       $
                       {Number(perpsUnifiedBalance).toLocaleString(undefined, {
