@@ -4067,25 +4067,6 @@ const PerpsModal = ({
               </div>
             </div>
 
-            {/* Perps Debug Monitor (Markets) */}
-            <div className="px-4 mb-3">
-              <div className="rounded-xl border border-[#2f2f2f] bg-[#121212] p-3 text-xs text-gray-300 space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-400">Perps Debug</span>
-                  <span className="text-green-400">live</span>
-                </div>
-                <div>smartAccount: <span className="text-white font-mono break-all">{smartAccountAddress || 'n/a'}</span></div>
-                <div>execution wallet: <span className="text-white font-mono break-all">{ownerEOA || 'n/a'}</span></div>
-                <div>UA Base USDC: <span className="text-white">{uaBaseUsdcAvailable.toFixed(4)}</span></div>
-                <div>UA Total USDC: <span className="text-white">{uaTotalUsdcAvailable.toFixed(4)}</span></div>
-                <div>RPC USDC (execution): <span className="text-white">{eoaUsdcBalance.toFixed(4)}</span></div>
-                <div>Effective Perps USDC: <span className="text-white">{perpsUsdcBalance.toFixed(4)}</span></div>
-                <div>Unified UA USD: <span className="text-white">{unifiedUaBalance.toFixed(4)}</span></div>
-                <div>Effective Perps Balance: <span className="text-white">{perpsUnifiedBalance.toFixed(4)}</span></div>
-                <div>Last tx: <span className="text-white">{txResult ? `${txResult.action}/${txResult.status}` : 'none'}</span></div>
-              </div>
-            </div>
-
             {/* Open Positions */}
             <div className="px-4 mb-5">
               <div className="text-gray-500 font-semibold mb-1">Open Positions</div>
