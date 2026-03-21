@@ -2713,7 +2713,8 @@ const PerpsModal = ({
     return Number.isFinite(totalAmount) ? totalAmount : 0;
   }, [assets]);
   // Perps trades execute from 7702 UA execution wallet; collateral checks/MAX use that wallet USDC.
-  const usdcBalance = eoaUsdcBalance;
+  const perpsUsdcBalance = Math.max(eoaUsdcBalance, uaBaseUsdcAvailable);
+  const usdcBalance = perpsUsdcBalance;
 
   // Calculate position details
   const positionSize = useMemo(() => {
@@ -3799,7 +3800,7 @@ const PerpsModal = ({
                   </div>
                   <div>
                     <div className="text-[11px] uppercase tracking-wide text-gray-300 font-semibold">Available Balance</div>
-                    <div className="text-2xl font-bold text-white">${eoaUsdcBalance.toFixed(2)}</div>
+                    <div className="text-2xl font-bold text-white">${perpsUsdcBalance.toFixed(2)}</div>
                   </div>
                 </div>
                 <div className="flex gap-2">
@@ -3816,6 +3817,21 @@ const PerpsModal = ({
                     Withdraw
                   </button>
                 </div>
+              </div>
+            </div>
+
+            {/* Perps Debug Monitor (Markets) */}
+            <div className="px-4 mb-3">
+              <div className="rounded-xl border border-[#2f2f2f] bg-[#121212] p-3 text-xs text-gray-300 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400">Perps Debug</span>
+                  <span className="text-green-400">live</span>
+                </div>
+                <div>smartAccount: <span className="text-white font-mono break-all">{smartAccountAddress || 'n/a'}</span></div>
+                <div>execution wallet: <span className="text-white font-mono break-all">{ownerEOA || 'n/a'}</span></div>
+                <div>UA Base USDC: <span className="text-white">{uaBaseUsdcAvailable.toFixed(4)}</span></div>
+                <div>RPC USDC (execution): <span className="text-white">{eoaUsdcBalance.toFixed(4)}</span></div>
+                <div>Effective Perps USDC: <span className="text-white">{perpsUsdcBalance.toFixed(4)}</span></div>
               </div>
             </div>
 
@@ -4152,7 +4168,7 @@ const PerpsModal = ({
                 <div className="text-gray-400 text-xs uppercase tracking-wide mb-2">Execution wallet (7702 UA)</div>
                 <div className="text-white text-sm font-mono break-all">{ownerEOA || 'Not connected'}</div>
                 <div className="text-[11px] text-gray-500 mt-2">
-                  Current balances: ${eoaUsdcBalance.toFixed(2)} USDC • {eoaEthBalance.toFixed(5)} ETH
+                  Current balances: ${perpsUsdcBalance.toFixed(2)} USDC • {eoaEthBalance.toFixed(5)} ETH
                 </div>
               </div>
             </div>
@@ -4215,7 +4231,7 @@ const PerpsModal = ({
                 <input type="number" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} placeholder="0.00" min="0" step="0.01" className="flex-1 bg-gray-800 rounded-lg px-3 py-2 text-white outline-none" />
                 <span className="text-sm text-gray-300">USDC</span>
               </div>
-              <div className="text-[11px] text-gray-500 mt-2">Perps Wallet Balance: ${eoaUsdcBalance.toFixed(2)} USDC on Base</div>
+              <div className="text-[11px] text-gray-500 mt-2">Perps Wallet Balance: ${perpsUsdcBalance.toFixed(2)} USDC on Base</div>
               <button type="button" onClick={() => setWithdrawAmount(eoaUsdcBalance.toString())} className="text-accent-dynamic text-xs mt-1">Max</button>
             </div>
             <div className="bg-[#252525] rounded-xl px-3 py-3 mb-5">
@@ -4302,7 +4318,7 @@ const PerpsModal = ({
                   <span className="text-white text-sm">Collateral</span>
                   <div className="flex items-center gap-2 text-xs">
                     <svg className="w-4 h-4 text-white/70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
-                    <span className="text-white">{eoaUsdcBalance.toFixed(0)}</span>
+                    <span className="text-white">{perpsUsdcBalance.toFixed(0)}</span>
                     <button type="button" onClick={() => setView('deposit')} className="text-[#60a5fa] hover:underline">Add Funds</button>
                   </div>
                 </div>
@@ -4313,7 +4329,7 @@ const PerpsModal = ({
                 </div>
                 <div className="flex gap-2">
                   {[10, 25, 50, 75, 100].map((p) => (
-                    <button key={p} type="button" onClick={() => setCollateral((eoaUsdcBalance * p / 100).toFixed(2))} className="flex-1 py-2 rounded-lg bg-[#1a1a1a] border border-[#333] text-white text-xs font-medium hover:bg-[#252525]">{p}%</button>
+                    <button key={p} type="button" onClick={() => setCollateral((perpsUsdcBalance * p / 100).toFixed(2))} className="flex-1 py-2 rounded-lg bg-[#1a1a1a] border border-[#333] text-white text-xs font-medium hover:bg-[#252525]">{p}%</button>
                   ))}
                 </div>
               </div>
