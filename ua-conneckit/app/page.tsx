@@ -4194,8 +4194,8 @@ const PerpsModal = ({
               </div>
             </div>
 
-            {/* Markets List */}
-            <div className="space-y-2 px-4">
+            {/* Markets List — flat rows + hairline dividers (no cards) */}
+            <div className="mx-4 border-t border-[#252525]">
               {marketsListForUi.map((market) => {
                 const priceData = marketPrices[market.pairName];
                 const price = priceData?.price || 0;
@@ -4213,19 +4213,19 @@ const PerpsModal = ({
                   : fallbackVolume > 0
                     ? formatCompactUsd(fallbackVolume)
                     : '--';
-                
+                const pairCompact = pairName.replace(/\//g, '').toUpperCase();
+
                 return (
                   <button
                     key={`${market.pairName}-${market.index}`}
                     type="button"
                     onClick={() => handleSelectMarket(market)}
-                    className="w-full flex items-center justify-between rounded-xl border border-[#333] bg-[#1a1a1a] px-3 py-3 text-left transition-colors hover:bg-[#222] hover:border-accent-dynamic/30"
+                    className="w-full flex items-center justify-between gap-3 py-3.5 pl-1 pr-1 text-left border-b border-[#252525] last:border-b-0 transition-colors hover:bg-white/[0.03] active:bg-white/[0.05]"
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      {/* Token Logo */}
-                      <div 
-                        className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden shrink-0 border border-[#2a2a2a]"
-                        style={{ backgroundColor: `${market.color}20` }}
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div
+                        className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden shrink-0"
+                        style={{ backgroundColor: `${market.color}18` }}
                       >
                         <img
                           src={market.logo}
@@ -4247,25 +4247,36 @@ const PerpsModal = ({
                           {market.symbol.slice(0, 4)}
                         </span>
                       </div>
-                      {/* Token Info */}
-                      <div className="text-left min-w-0">
-                        <div className="text-white font-medium truncate">{market.pairName}</div>
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] mt-0.5">
-                          <span className="text-gray-500 uppercase tracking-wide">Up to</span>
-                          <span className="text-accent-dynamic font-semibold tabular-nums">{Math.floor(displayLev)}x</span>
-                          <span className="text-accent-dynamic/40" aria-hidden>•</span>
-                          <span className="text-gray-500 uppercase tracking-wide">Vol</span>
+                      <div className="text-left min-w-0 flex-1">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-white font-semibold text-[15px] tracking-tight truncate">{pairCompact}</span>
+                          <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-[#2a2a2a] text-gray-400 text-[10px] font-semibold tabular-nums">
+                            {Math.floor(displayLev)}x
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] mt-1 text-gray-500">
+                          <span className="uppercase tracking-wide">Vol</span>
                           <span className="text-accent-dynamic-light font-medium tabular-nums">${volumeDisplay}</span>
                         </div>
                       </div>
                     </div>
-                    {/* Price & Change */}
-                    <div className="text-right shrink-0 pl-2">
-                      <div className="text-white font-medium">
+                    <div className="text-right shrink-0">
+                      <div className="text-white font-medium text-[15px] tabular-nums">
                         {price > 0 ? formatPrice(price) : '--'}
                       </div>
-                      <div className={`text-sm ${Number.isFinite(change) ? (change >= 0 ? 'text-green-400' : 'text-red-400') : 'text-gray-500'}`}>
-                        {Number.isFinite(change) ? `${change >= 0 ? '+' : ''}${change.toFixed(2)}%` : '—'}
+                      <div
+                        className={`text-xs font-medium tabular-nums inline-flex items-center justify-end gap-0.5 mt-0.5 ${
+                          Number.isFinite(change) ? (change >= 0 ? 'text-green-400' : 'text-red-400') : 'text-gray-500'
+                        }`}
+                      >
+                        {Number.isFinite(change) ? (
+                          <>
+                            <span aria-hidden>{change >= 0 ? '▲' : '▼'}</span>
+                            <span>{change >= 0 ? '+' : ''}{change.toFixed(2)}%</span>
+                          </>
+                        ) : (
+                          '—'
+                        )}
                       </div>
                     </div>
                   </button>
