@@ -181,6 +181,125 @@ export function positionKeysFromMergedShape(a: {
   return keys;
 }
 
+/** UA `getPrimaryAssets()` staples — hide external rows that mirror these when chains overlap. */
+export const PRIMARY_UA_STAPLE_TOKEN_TYPES = new Set(["ETH", "BNB", "USDC", "SOL", "USDT"]);
+
+const AGGREGATED_STAPLE_PLACEHOLDER = -2;
+
+const STAPLE_SYMBOL_TO_TYPE: Record<string, string> = {
+  ETH: "ETH",
+  WETH: "ETH",
+  BNB: "BNB",
+  WBNB: "BNB",
+  USDC: "USDC",
+  USDBC: "USDC",
+  SOL: "SOL",
+  WSOL: "SOL",
+  USDT: "USDT",
+};
+
+/** Dotless Mobula variants e.g. USDT.E → USDTE */
+const STAPLE_COMPACT_TO_TYPE: Record<string, string> = {
+  USDTE: "USDT",
+  USDCE: "USDC",
+};
+
+export function mobulaSymbolToPrimaryStapleType(symbol: string): string | null {
+  const s = symbol.trim().toUpperCase().replace(/\s+/g, "");
+  const compact = s.replace(/\./g, "");
+  const st = STAPLE_SYMBOL_TO_TYPE[s] || STAPLE_SYMBOL_TO_TYPE[compact] || STAPLE_COMPACT_TO_TYPE[compact];
+  if (st && PRIMARY_UA_STAPLE_TOKEN_TYPES.has(st)) return st;
+  return null;
+}
+
+function chainIdsFromPrimaryAssetRecord(a: unknown): Set<number> {
+  const MIN = 1e-12;
+  const out = new Set<number>();
+  const rec = a as {
+    chainAggregation?: Array<{ amount?: number | string; token?: { chainId?: number | string } }>;
+  };
+  if (Array.isArray(rec.chainAggregation)) {
+    for (const c of rec.chainAggregation) {
+      const amt = Number(c.amount || 0);
+      if (amt < MIN) continue;
+      const raw = c.token?.chainId;
+      const cid = typeof raw === "number" ? raw : parseInt(String(raw || "").replace(/^evm:/i, ""), 10);
+      if (Number.isFinite(cid)) out.add(cid);
+    }
+  }
+  for (const k of positionKeysFromMergedShape(rec as Parameters<typeof positionKeysFromMergedShape>[0])) {
+    const i = k.indexOf(":");
+    if (i > 0) {
+      const n = Number(k.slice(0, i));
+      if (Number.isFinite(n)) out.add(n);
+    }
+  }
+  return out;
+}
+
+/**
+ * For each UA staple tokenType, chain IDs where primary shows a balance.
+ * If there is balance but no per-chain data, uses a placeholder so external staples are suppressed.
+ */
+export function primaryStapleChainCoverage(primaryAssets: IAssetsResponse): Map<string, Set<number>> {
+  const map = new Map<string, Set<number>>();
+  for (const a of primaryAssets.assets || []) {
+    const tt = String((a as { tokenType?: string }).tokenType || "")
+      .toUpperCase()
+      .trim();
+    if (!PRIMARY_UA_STAPLE_TOKEN_TYPES.has(tt)) continue;
+    if (!map.has(tt)) map.set(tt, new Set());
+    const set = map.get(tt)!;
+    const chainIds = chainIdsFromPrimaryAssetRecord(a);
+    chainIds.forEach((id) => set.add(id));
+    const amt = Number((a as { amount?: number | string }).amount || 0);
+    if (chainIds.size === 0 && Number.isFinite(amt) && amt > 1e-12) {
+      set.add(AGGREGATED_STAPLE_PLACEHOLDER);
+    }
+  }
+  return map;
+}
+
+/** Contract overlap with UA primary, or same staple (ETH/WETH, …) on a chain UA already holds. */
+export function isPositionKeysDuplicateOfUaPrimaryStaple(
+  symbol: string,
+  positionKeys: string[],
+  primaryAssets: IAssetsResponse,
+  primaryContractKeys: Set<string>,
+): boolean {
+  if (positionKeys.length === 0) return true;
+  if (positionKeys.some((k) => primaryContractKeys.has(k))) return true;
+
+  const staple = mobulaSymbolToPrimaryStapleType(symbol);
+  if (!staple) return false;
+
+  const coverage = primaryStapleChainCoverage(primaryAssets);
+  const primaryChains = coverage.get(staple);
+  if (!primaryChains || primaryChains.size === 0) return false;
+  if (primaryChains.has(AGGREGATED_STAPLE_PLACEHOLDER)) return true;
+
+  for (const k of positionKeys) {
+    const i = k.indexOf(":");
+    if (i <= 0) continue;
+    const n = Number(k.slice(0, i));
+    if (Number.isFinite(n) && primaryChains.has(n)) return true;
+  }
+  return false;
+}
+
+export function isMobulaDuplicateOfUaPrimaryStaple(
+  ma: MobulaPortfolioAsset,
+  primaryAssets: IAssetsResponse,
+  primaryContractKeys: Set<string>,
+): boolean {
+  return isPositionKeysDuplicateOfUaPrimaryStaple(
+    ma.asset.symbol,
+    mobulaAssetPositionKeys(ma),
+    primaryAssets,
+    primaryContractKeys,
+  );
+}
+
 export function primaryPortfolioContractKeys(primaryAssets: IAssetsResponse): Set<string> {
   const set = new Set<string>();
   for (const a of primaryAssets.assets || []) {

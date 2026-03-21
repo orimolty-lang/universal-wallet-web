@@ -46,6 +46,8 @@ import {
   primaryPortfolioContractKeys,
   tokenContractKeySet,
   mergedAssetMatchesContractKeys,
+  isMobulaDuplicateOfUaPrimaryStaple,
+  isPositionKeysDuplicateOfUaPrimaryStaple,
 } from "./lib/mobulaAssetIdentity";
 
 // Mobula: proxied via Cloudflare worker (no frontend API key)
@@ -7309,10 +7311,8 @@ const App = () => {
 
     const fromMobula = mobulaAssets
       .filter((ma) => {
-        const posKeys = mobulaAssetPositionKeys(ma);
-        if (posKeys.length === 0) return false;
         if (ma.token_balance <= 0) return false;
-        if (posKeys.some((k) => primaryContractKeys.has(k))) return false;
+        if (isMobulaDuplicateOfUaPrimaryStaple(ma, primaryAssets, primaryContractKeys)) return false;
         return true;
       })
       .map((ma) => {
@@ -7390,6 +7390,7 @@ const App = () => {
         const pk = positionKeysFromMergedShape(pa);
         if (pk.length === 0) return false;
         if (pk.some((k) => mobulaContractKeys.has(k))) return false;
+        if (isPositionKeysDuplicateOfUaPrimaryStaple(pa.symbol, pk, primaryAssets, primaryContractKeys)) return false;
         return true;
       })
       .map((pa) => ({
