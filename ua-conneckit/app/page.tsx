@@ -31,7 +31,7 @@ import {
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu";
 import { HermesClient } from "@pythnetwork/hermes-client";
-import { decodeFunctionResult, encodeFunctionData } from "viem";
+import { decodeFunctionResult, encodeFunctionData, formatEther, parseEther } from "viem";
 import { toBeHex, formatUnits } from "ethers";
 import { useUniversalAccountWS } from "./hooks/useUniversalAccountWS";
 import { getEIP7702Deployments, build7702Authorizations } from "../lib/eip7702";
@@ -3135,6 +3135,12 @@ const PerpsModal = ({
     return (raw * BigInt(120)) / BigInt(100); // Avantis/Pyth fee +20% safety margin
   }, [baseRpcCall]);
 
+  /** UA expectTokens ETH must cover msg.value to Avantis + 7702/bundler gas; Number(wei) loses precision. */
+  const perpsUaEthExpectAmount = useCallback((executionFeeWei: bigint) => {
+    const bufferWei = parseEther('0.00035');
+    return formatEther(executionFeeWei + bufferWei);
+  }, []);
+
   const fetchPythUpdateData = useCallback(async (pairName: string) => {
     const feedId = pairLeverageLimits[pairName]?.feedId;
     if (!feedId) throw new Error(`Missing Avantis feedId for ${pairName}`);
@@ -3632,7 +3638,7 @@ const PerpsModal = ({
         chainId: CHAIN_ID.BASE_MAINNET,
         expectTokens: [
           { type: SUPPORTED_TOKEN_TYPE.USDC, amount: collateralAmount.toString() },
-          { type: SUPPORTED_TOKEN_TYPE.ETH, amount: (Number(executionFee) / 1e18).toString() },
+          { type: SUPPORTED_TOKEN_TYPE.ETH, amount: perpsUaEthExpectAmount(executionFee) },
         ],
         transactions: [
           ...approveSpenders.map((spender) => ({
@@ -3700,7 +3706,7 @@ const PerpsModal = ({
 
       const tx = await universalAccount.createUniversalTransaction({
         chainId: CHAIN_ID.BASE_MAINNET,
-        expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: (Number(executionFee) / 1e18).toString() }],
+        expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: perpsUaEthExpectAmount(executionFee) }],
         transactions: [{ to: AVANTIS_TRADING_ADDRESS as `0x${string}`, data: closeCalldata, value: `0x${executionFee.toString(16)}` }],
       });
       const walletClient = primaryWallet.getWalletClient() as unknown as WalletClientLike;
@@ -3710,7 +3716,7 @@ const PerpsModal = ({
       if (!rootHash) throw new Error('Perps close missing rootHash');
       const signature = await signUniversalRootHash({ walletClient, rootHash, signerAddress, blindSigningEnabled, addDebug });
       const auths = await build7702Authorizations(tx, sign7702, signerAddress);
-      addDebug('Submitting TP/SL transaction via UA...');
+      addDebug('Submitting close position via UA...');
       const res = await universalAccount.sendTransaction(tx, signature as string, auths);
       const txHash = res?.transactionId || 'pending';
       addDebug(`TP/SL send result tx=${txHash}`);
@@ -3778,7 +3784,7 @@ const PerpsModal = ({
 
       const tx = await universalAccount.createUniversalTransaction({
         chainId: CHAIN_ID.BASE_MAINNET,
-        expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: (Number(executionFee) / 1e18).toString() }],
+        expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: perpsUaEthExpectAmount(executionFee) }],
         transactions: [{ to: AVANTIS_TRADING_ADDRESS as `0x${string}`, data: updateCalldata, value: `0x${executionFee.toString(16)}` }],
       });
       const walletClient = primaryWallet.getWalletClient() as unknown as WalletClientLike;
