@@ -2892,8 +2892,8 @@ const PerpsModal = ({
         if (!cancelled && Object.keys(limitsMap).length > 0) {
           setPairLeverageLimits(limitsMap);
         }
-      } catch {
-        // Keep static fallback limits if API fails.
+      } catch (e) {
+        addDebug(`Avantis Socket pair limits fetch failed: ${e instanceof Error ? e.message : String(e)}`);
       }
     };
 
@@ -3044,32 +3044,26 @@ const PerpsModal = ({
   }, []);
 
   const fetchExecutionFeeWei = useCallback(async (updateCount = 1) => {
-    try {
-      const pythCalldata = encodeFunctionData({
-        abi: PYTH_ABI,
-        functionName: 'getUpdateFee',
-        args: [BigInt(Math.max(1, updateCount))],
-      });
-      const feeHex = await baseRpcCall('eth_call', [{ to: PYTH_CONTRACT_ADDRESS, data: pythCalldata }, 'latest']);
-      if (!feeHex) return BigInt(5e14);
-      const raw = BigInt(feeHex);
-      return (raw * BigInt(120)) / BigInt(100); // +20% buffer
-    } catch {
-      return BigInt(5e14);
-    }
+    const pythCalldata = encodeFunctionData({
+      abi: PYTH_ABI,
+      functionName: 'getUpdateFee',
+      args: [BigInt(Math.max(1, updateCount))],
+    });
+    const feeHex = await baseRpcCall('eth_call', [{ to: PYTH_CONTRACT_ADDRESS, data: pythCalldata }, 'latest']);
+    if (!feeHex) throw new Error('Avantis/Pyth execution fee unavailable');
+    const raw = BigInt(feeHex);
+    return (raw * BigInt(120)) / BigInt(100); // Avantis/Pyth fee +20% safety margin
   }, [baseRpcCall]);
 
   const fetchPythUpdateData = useCallback(async (pairName: string) => {
     const feedId = pairLeverageLimits[pairName]?.feedId;
-    if (!feedId) return [] as string[];
-    try {
-      const response = await fetch(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${feedId}`);
-      const json = await response.json();
-      const updates = Array.isArray(json?.binary?.data) ? json.binary.data : [];
-      return updates.filter((x: unknown) => typeof x === 'string') as string[];
-    } catch {
-      return [] as string[];
-    }
+    if (!feedId) throw new Error(`Missing Avantis feedId for ${pairName}`);
+    const response = await fetch(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${feedId}`);
+    const json = await response.json();
+    const updates = Array.isArray(json?.binary?.data) ? json.binary.data : [];
+    const normalized = updates.filter((x: unknown) => typeof x === 'string') as string[];
+    if (normalized.length === 0) throw new Error(`No Pyth update data for ${pairName}`);
+    return normalized;
   }, [pairLeverageLimits]);
 
   const fetchOpenPositions = useCallback(async () => {
@@ -3167,7 +3161,8 @@ const PerpsModal = ({
           // Avantis storage raw position field can vary by mode; derive notional from collateral * leverage for stable UI/PnL.
           const sizeUsd = collateralUsd * Math.max(leverageNum, 0);
           const entryPrice = Number(trade.openPrice) / 1e10;
-          const markPrice = marketPricesRef.current[pairName]?.price || entryPrice;
+          const markPrice = marketPricesRef.current[pairName]?.price;
+          if (!Number.isFinite(markPrice) || (markPrice as number) <= 0) continue;
           const pnlUsd = trade.buy
             ? ((markPrice - entryPrice) / Math.max(entryPrice, 1e-9)) * sizeUsd
             : ((entryPrice - markPrice) / Math.max(entryPrice, 1e-9)) * sizeUsd;
@@ -3243,7 +3238,7 @@ const PerpsModal = ({
   useEffect(() => {
     if (!isOpen || !ownerEOA) return;
     fetchOpenPositions();
-    const t = setInterval(fetchOpenPositions, 20000);
+    const t = setInterval(fetchOpenPositions, 3000);
     return () => clearInterval(t);
   }, [isOpen, ownerEOA, fetchOpenPositions]);
 
