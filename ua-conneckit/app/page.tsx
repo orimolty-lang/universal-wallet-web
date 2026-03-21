@@ -3459,10 +3459,20 @@ const PerpsModal = ({
           throw new Error(`${failureLabel}: Universal transaction failed`);
         }
         if (details.status === 'completed') {
+          // UA FINISHED is authoritative; Base `eth_getTransactionReceipt` often lags or flakes on public RPC.
           if (details.txHash && isLikelyEvmTxHash(details.txHash)) {
-            const receipt = (await waitForBaseReceipt(details.txHash)) as unknown as { status?: string };
-            if (receipt?.status !== '0x1') {
-              throw new Error(`${failureLabel} on-chain status=${receipt?.status || 'unknown'}`);
+            try {
+              const receipt = (await waitForBaseReceipt(details.txHash)) as unknown as { status?: string };
+              if (receipt?.status !== '0x1') {
+                throw new Error(`${failureLabel} on-chain status=${receipt?.status || 'unknown'}`);
+              }
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              if (/confirmation timeout|timeout/i.test(msg)) {
+                console.warn('[Perps] Receipt wait timed out after UA FINISHED; trusting UA and refreshing positions.', msg);
+              } else {
+                throw e;
+              }
             }
           }
           await fetchOpenPositions();
@@ -3471,8 +3481,18 @@ const PerpsModal = ({
       }
 
       if (isLikelyEvmTxHash(tid)) {
-        const receipt = (await waitForBaseReceipt(tid)) as unknown as { status?: string };
-        if (receipt?.status !== '0x1') throw new Error(`${failureLabel} status=${receipt?.status || 'unknown'}`);
+        try {
+          const receipt = (await waitForBaseReceipt(tid)) as unknown as { status?: string };
+          if (receipt?.status !== '0x1') throw new Error(`${failureLabel} status=${receipt?.status || 'unknown'}`);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          if (/confirmation timeout|timeout/i.test(msg)) {
+            console.warn('[Perps] Receipt poll timeout; refreshing positions (close may still have succeeded).', msg);
+            await refreshPositionsFallback();
+            return;
+          }
+          throw e;
+        }
         await fetchOpenPositions();
         return;
       }
