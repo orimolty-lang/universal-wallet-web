@@ -3617,8 +3617,10 @@ const PerpsModal = ({
       if (!rootHash) throw new Error('Perps close missing rootHash');
       const signature = await signUniversalRootHash({ walletClient, rootHash, signerAddress, blindSigningEnabled, addDebug });
       const auths = await build7702Authorizations(tx, sign7702, signerAddress);
+      addDebug('Submitting TP/SL transaction via UA...');
       const res = await universalAccount.sendTransaction(tx, signature as string, auths);
       const txHash = res?.transactionId || 'pending';
+      addDebug(`TP/SL send result tx=${txHash}`);
 
       upsertPerpsActivity({ id: `close-${txHash}`, action: 'Close', pairName: position.pairName, txHash, status: 'pending', timestamp: Date.now() });
       setTxResult({ txId: txHash, status: 'pending', action: 'close' });
@@ -3649,16 +3651,25 @@ const PerpsModal = ({
     const edits = positionEdits[position.id] || { tp: '', sl: '' };
     const tpNum = edits.tp.trim() ? Number(edits.tp) : 0;
     const slNum = edits.sl.trim() ? Number(edits.sl) : 0;
+    addDebug(`TP/SL click -> ${position.pairName} idx=${position.positionIndex} tp=${tpNum || 0} sl=${slNum || 0}`);
     if ((edits.tp.trim() && (!Number.isFinite(tpNum) || tpNum <= 0)) || (edits.sl.trim() && (!Number.isFinite(slNum) || slNum <= 0))) {
       setError('Enter valid TP/SL price values');
+      addDebug('TP/SL validation failed: invalid numbers');
+      return;
+    }
+    if (!edits.tp.trim() && !edits.sl.trim()) {
+      setError('Enter TP and/or SL before updating');
+      addDebug('TP/SL validation failed: both fields empty');
       return;
     }
 
     setIsLoading(true);
     setError(null);
     setLoadingStatus('Updating TP/SL...');
+    addDebug('TP/SL update flow started');
     try {
       const updateData = await fetchPythUpdateData(position.pairName);
+      addDebug(`Pyth update data count: ${updateData.length}`);
       const executionFee = await fetchExecutionFeeWei(updateData.length || 1);
       const updateCalldata = encodeFunctionData({
         abi: AVANTIS_TRADING_ABI,
@@ -3684,8 +3695,10 @@ const PerpsModal = ({
       if (!rootHash) throw new Error('Perps TP/SL update missing rootHash');
       const signature = await signUniversalRootHash({ walletClient, rootHash, signerAddress, blindSigningEnabled, addDebug });
       const auths = await build7702Authorizations(tx, sign7702, signerAddress);
+      addDebug('Submitting TP/SL transaction via UA...');
       const res = await universalAccount.sendTransaction(tx, signature as string, auths);
       const txHash = res?.transactionId || 'pending';
+      addDebug(`TP/SL send result tx=${txHash}`);
 
       upsertPerpsActivity({ id: `update-${txHash}`, action: 'Update TP/SL', pairName: position.pairName, txHash, status: 'pending', timestamp: Date.now() });
       setTxResult({ txId: txHash, status: 'pending', action: 'update' });
@@ -3845,7 +3858,7 @@ const PerpsModal = ({
                 <div>RPC USDC (execution): <span className="text-white">{eoaUsdcBalance.toFixed(4)}</span></div>
                 <div>Effective Perps USDC: <span className="text-white">{perpsUsdcBalance.toFixed(4)}</span></div>
                 <div>Unified UA USD: <span className="text-white">{unifiedUaBalance.toFixed(4)}</span></div>
-                <div>Effective Perps Balance: <span className="text-white">{perpsUnifiedBalance.toFixed(4)}</span></div>
+                <div>Effective Perps Balance: <span className="text-white">{perpsUnifiedBalance.toFixed(4)}</span></div>\n                <div>Last tx: <span className="text-white">{txResult ? `${txResult.action}/${txResult.status}` : 'none'}</span></div>
               </div>
             </div>
 
@@ -3917,7 +3930,7 @@ const PerpsModal = ({
                           disabled={isLoading}
                           className="flex-1 bg-gray-800 text-gray-200 rounded-lg py-2 text-xs font-semibold disabled:opacity-50"
                         >
-                          Update TP/SL
+                          {isLoading && txResult?.action === 'update' ? (loadingStatus || 'Updating...') : 'Update TP/SL'}
                         </button>
                         <button
                           onClick={() => handleClosePosition(p)}
