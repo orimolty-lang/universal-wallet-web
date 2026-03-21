@@ -2211,19 +2211,6 @@ const ERC20_APPROVE_ABI = [
   },
 ] as const;
 
-const ERC20_ALLOWANCE_ABI = [
-  {
-    name: 'allowance',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [
-      { name: 'owner', type: 'address' },
-      { name: 'spender', type: 'address' },
-    ],
-    outputs: [{ name: 'amount', type: 'uint256' }],
-  },
-] as const;
-
 // Avantis Trading contract on Base mainnet (verified on Basescan)
 const AVANTIS_TRADING_ADDRESS = '0x44914408af82bC9983bbb330e3578E1105e11d4e';
 const AVANTIS_TRADING_STORAGE_ADDRESS = '0x8a311D7048c35985aa31C131B9A13e03a5f7422d';
@@ -2725,7 +2712,7 @@ const PerpsModal = ({
         : Number(usdcAsset.amount || 0);
     return Number.isFinite(totalAmount) ? totalAmount : 0;
   }, [assets]);
-  // Perps trades execute from owner EOA; collateral checks/MAX should use EOA USDC.
+  // Perps trades execute from 7702 UA execution wallet; collateral checks/MAX use that wallet USDC.
   const usdcBalance = eoaUsdcBalance;
 
   // Calculate position details
@@ -2973,41 +2960,21 @@ const PerpsModal = ({
     }
   }, [ownerEOA, fetchOwnerBalances]);
 
-  // Resolve owner EOA and balances (execution wallet)
+  // Resolve Perps execution wallet (7702 UA smart account) and balances
   useEffect(() => {
-    const loadOwner = async () => {
+    const loadExecutionWallet = async () => {
       if (!isOpen) return;
       try {
-        let eoa = '';
-        let walletAccount = '';
-        let ownerFromUa = '';
-
-        if (primaryWallet) {
-          const walletClient = primaryWallet.getWalletClient();
-          walletAccount = walletClient?.account?.address || '';
-        }
-
-        if (universalAccount) {
-          const opts = await universalAccount.getSmartAccountOptions();
-          ownerFromUa = (opts?.ownerAddress as string) || '';
-        }
-
-        // Prefer the underlying owner EOA when available, since Perps executes from EOA.
-        eoa = ownerFromUa || walletAccount;
-        if (ownerFromUa && walletAccount && ownerFromUa.toLowerCase() !== walletAccount.toLowerCase()) {
-          addDebug(`Owner address override: wallet=${walletAccount.slice(0, 8)}... -> ownerEOA=${ownerFromUa.slice(0, 8)}...`);
-        }
-
-        setOwnerEOA(eoa);
-        if (!eoa) return;
-
-        await refreshOwnerBalances(eoa);
+        const execution = (smartAccountAddress || '').trim();
+        setOwnerEOA(execution);
+        if (!execution) return;
+        await refreshOwnerBalances(execution);
       } catch {
         // ignore
       }
     };
-    loadOwner();
-  }, [isOpen, primaryWallet, universalAccount, refreshOwnerBalances]);
+    loadExecutionWallet();
+  }, [isOpen, smartAccountAddress, refreshOwnerBalances]);
   useEffect(() => {
     if (!isOpen || !ownerEOA) return;
     const t = setInterval(() => {
@@ -3279,8 +3246,8 @@ const PerpsModal = ({
 
     setIsLoading(true);
     setError(null);
-    setLoadingStatus('Depositing to owner EOA...');
-    addDebug(`Deposit start -> owner EOA ${ownerEOA}`);
+    setLoadingStatus('Funding 7702 execution wallet...');
+    addDebug(`Deposit start -> 7702 execution wallet ${ownerEOA}`);
 
     try {
       const amount = parseFloat(depositAmount.trim());
@@ -3396,7 +3363,7 @@ const PerpsModal = ({
             amount: amount.toString(),
             receiver: ownerEOA,
           }),
-          'Transfer USDC to owner EOA',
+          'Transfer USDC to 7702 execution wallet',
         );
       } else {
         addDebug('USDC deposit amount not set. Skipping USDC funding step');
@@ -3426,7 +3393,7 @@ const PerpsModal = ({
             expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: ethTarget.toString() }],
             transactions: [{ to: ownerEOA as `0x${string}`, data: '0x', value: toBeHex(BigInt(Math.floor(ethTarget * 1e18))) }],
           }),
-          'Transfer ETH to owner EOA',
+          'Transfer ETH to 7702 execution wallet',
         );
       } else {
         addDebug('ETH gas top-up amount not set. Skipping ETH funding step');
@@ -3506,9 +3473,12 @@ const PerpsModal = ({
       setError('Please enter collateral amount');
       return;
     }
-
     if (!primaryWallet) {
       setError('Please connect wallet first');
+      return;
+    }
+    if (!ownerEOA) {
+      setError('Perps execution wallet not ready yet');
       return;
     }
 
@@ -3516,501 +3486,94 @@ const PerpsModal = ({
     setError(null);
     setLoadingStatus('Preparing position...');
     setTxResult(null);
-    setDebugLog([]); // Clear previous logs
+    setDebugLog([]);
 
     try {
       const collateralAmount = parseFloat(collateral);
       const tpPrice = takeProfit ? parseFloat(takeProfit) : 0;
       const slPrice = stopLoss ? parseFloat(stopLoss) : 0;
-      if (isZeroFeeMode && !zfpAvailable) {
-        setError(`Zero Fee Perps is not available for ${selectedPair.name} right now.`);
-        setIsLoading(false);
-        return;
-      }
-      if (leverage < leverageMin || leverage > leverageMax) {
-        setError(`Leverage for ${selectedPair.name} must be between ${leverageMin}x and ${leverageMax}x${isZeroFeeMode ? ' in Zero Fee mode' : ''}.`);
-        setIsLoading(false);
-        return;
-      }
-      
-      // Minimum position size validation ($100 for most pairs)
-      const positionValue = collateralAmount * leverage;
-      if (positionValue < 100) {
-        setError(`Position too small. Minimum is $100. You have $${positionValue.toFixed(0)} ($${collateralAmount} × ${leverage}x). Increase collateral or leverage.`);
-        setIsLoading(false);
-        return;
-      }
-      
-      addDebug(`Collateral: $${collateralAmount}, Leverage: ${leverage}x, Position: $${positionValue}`);
-      addDebug(`Pair: ${selectedPair.name}, Direction: ${isLong ? 'LONG' : 'SHORT'}`);
-      addDebug(`Mode: ${isZeroFeeMode ? 'Zero Fee Perps (MARKET_ZERO_FEE)' : 'Standard Perps (MARKET)'}`);
-      if (executionPairIndex !== selectedPair.index) {
-        addDebug(`Pair index remap: UI ${selectedPair.index} -> Socket ${executionPairIndex}`);
-      }
-      
-      console.log('[Perps] Opening position:', {
-        pair: selectedPair.name,
-        pairIndex: executionPairIndex,
-        isLong,
-        leverage,
-        collateral: collateralAmount,
-        takeProfit: tpPrice,
-        stopLoss: slPrice,
-        currentPrice,
-      });
+      if (isZeroFeeMode && !zfpAvailable) throw new Error(`Zero Fee Perps is not available for ${selectedPair.name} right now.`);
+      if (leverage < leverageMin || leverage > leverageMax) throw new Error(`Leverage for ${selectedPair.name} must be between ${leverageMin}x and ${leverageMax}x${isZeroFeeMode ? ' in Zero Fee mode' : ''}.`);
 
-      // Convert values using Avantis decimal conventions:
-      // USDC: 6 decimals, Prices/Leverage/Slippage: 10 decimals, ETH: 18 decimals
+      const positionValue = collateralAmount * leverage;
+      if (positionValue < 100) throw new Error(`Position too small. Minimum is $100. You have $${positionValue.toFixed(0)} ($${collateralAmount} × ${leverage}x).`);
+
       const openPriceScaled = BigInt(Math.floor((currentPrice || 0) * 1e10));
       const leverageScaled = BigInt(Math.floor(leverage * 1e10));
-      // positionSizeUSDC = collateral in 6 decimals (NOT position size - SDK naming is misleading)
-      // The contract uses leverage separately to calculate actual position size
       const positionSizeUSDC = BigInt(Math.floor(collateralAmount * 1e6));
       const tpScaled = tpPrice > 0 ? BigInt(Math.floor(tpPrice * 1e10)) : BigInt(0);
       const slScaled = slPrice > 0 ? BigInt(Math.floor(slPrice * 1e10)) : BigInt(0);
-      const slippageP = BigInt(1e8); // 1% slippage (1e8 / 1e10 = 0.01 = 1%)
-      
-      // Query Pyth for dynamic execution fee
-      let executionFee: bigint;
-      try {
-        addDebug('Querying Pyth for execution fee...');
-        const pythCalldata = encodeFunctionData({
-          abi: PYTH_ABI,
-          functionName: 'getUpdateFee',
-          args: [BigInt(1)], // 1 price feed update
-        });
-        const pythResponse = await fetch('https://mainnet.base.org', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'eth_call',
-            params: [{ to: PYTH_CONTRACT_ADDRESS, data: pythCalldata }, 'latest'],
-            id: 1,
-          }),
-        });
-        const pythResult = await pythResponse.json();
-        if (pythResult.result) {
-          executionFee = BigInt(pythResult.result);
-          // Add 20% buffer for safety
-          executionFee = (executionFee * BigInt(120)) / BigInt(100);
-          addDebug(`Pyth fee: ${(Number(executionFee) / 1e18).toFixed(6)} ETH`);
-        } else {
-          throw new Error('Pyth returned no result');
-        }
-      } catch (pythErr) {
-        console.warn('[Perps] Failed to query Pyth fee, using fallback:', pythErr);
-        executionFee = BigInt(5e14); // Fallback: 0.0005 ETH
-        addDebug(`Using fallback fee: 0.0005 ETH`);
-      }
+      const slippageP = BigInt(1e8);
+      const executionFee = await fetchExecutionFeeWei(1);
 
-      console.log('[Perps] Scaled values:', {
-        openPriceScaled: openPriceScaled.toString(),
-        leverageScaled: leverageScaled.toString(),
-        positionSizeUSDC: positionSizeUSDC.toString(),
-        tpScaled: tpScaled.toString(),
-        slScaled: slScaled.toString(),
-      });
-
-      // Use owner EOA as Avantis trader/signer (not UA smart account)
-      const walletClient = primaryWallet.getWalletClient();
-      const traderAddress = ownerEOA || walletClient?.account?.address || '';
-      if (!traderAddress) {
-        throw new Error('Could not determine owner EOA address. Please reconnect wallet.');
-      }
-      const walletProvider = walletClient as unknown as { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
-      const parseChainId = (hexChainId: unknown) => {
-        if (typeof hexChainId !== 'string') return NaN;
-        try {
-          return Number(BigInt(hexChainId));
-        } catch {
-          return NaN;
-        }
-      };
-      const ensureWalletOnBase = async () => {
-        const currentChainRaw = await walletProvider.request({ method: 'eth_chainId' });
-        let currentChain = parseChainId(currentChainRaw);
-        if (currentChain === 8453) {
-          addDebug('Wallet chain verified: Base (8453)');
-          return;
-        }
-
-        addDebug(`Wallet chain ${Number.isFinite(currentChain) ? currentChain : 'unknown'} detected. Requesting switch to Base...`);
-        try {
-          await walletProvider.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: '0x2105' }],
-          });
-        } catch (switchErr) {
-          const err = switchErr as { code?: number; message?: string };
-          const msg = (err?.message || '').toLowerCase();
-          const unknownChain = err?.code === 4902 || msg.includes('unrecognized chain') || msg.includes('unknown chain');
-          if (!unknownChain) throw switchErr;
-
-          addDebug('Base chain not found in wallet. Attempting wallet_addEthereumChain...');
-          await walletProvider.request({
-            method: 'wallet_addEthereumChain',
-            params: [{
-              chainId: '0x2105',
-              chainName: 'Base',
-              nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-              rpcUrls: ['https://mainnet.base.org'],
-              blockExplorerUrls: ['https://basescan.org'],
-            }],
-          });
-          await walletProvider.request({
-            method: 'wallet_switchEthereumChain',
-            params: [{ chainId: '0x2105' }],
-          });
-        }
-
-        currentChain = parseChainId(await walletProvider.request({ method: 'eth_chainId' }));
-        if (currentChain !== 8453) {
-          throw new Error(`Wallet must be on Base for Perps. Current chain: ${Number.isFinite(currentChain) ? currentChain : 'unknown'}`);
-        }
-        addDebug('Wallet switched to Base (8453)');
-      };
-      addDebug(`Owner EOA trader: ${traderAddress.slice(0, 10)}...${traderAddress.slice(-8)}`);
-
-      const approvalSpenders = [
-        { label: 'trading', address: AVANTIS_TRADING_ADDRESS as `0x${string}` },
-        { label: 'trading storage', address: AVANTIS_TRADING_STORAGE_ADDRESS as `0x${string}` },
-      ];
-      const buildApproveCalldata = (spender: `0x${string}`, amount: bigint) => encodeFunctionData({
-        abi: ERC20_APPROVE_ABI,
-        functionName: 'approve',
-        args: [spender, amount],
-      });
-      // Default approve payload used for gas estimation only.
-      const approveCalldata = buildApproveCalldata(approvalSpenders[0].address, AVANTIS_APPROVAL_CAP_USDC);
-      
-      console.log('[Perps] USDC approval calldata:', approveCalldata);
-
-      // Step 2: Encode the openTrade call (inner calldata)
-      const timestamp = BigInt(0); // SDK-compatible for new orders
-      const orderTypeValue = isZeroFeeMode ? 3 : 0; // 0=MARKET, 3=MARKET_ZERO_FEE
-      const innerOpenTradeCalldata = encodeFunctionData({
+      const orderTypeValue = isZeroFeeMode ? 3 : 0;
+      const openTradeCalldata = encodeFunctionData({
         abi: AVANTIS_TRADING_ABI,
         functionName: 'openTrade',
-        args: [
-          {
-            trader: traderAddress as `0x${string}`,
-            pairIndex: BigInt(executionPairIndex),
-            index: BigInt(0), // Contract finds first empty index
-            initialPosToken: BigInt(0), // Not used for USDC collateral
-            positionSizeUSDC: positionSizeUSDC,
-            openPrice: openPriceScaled,
-            buy: isLong,
-            leverage: leverageScaled,
-            tp: tpScaled,
-            sl: slScaled,
-            timestamp: timestamp,
-          },
-          orderTypeValue,
-          slippageP,
+        args: [{
+          trader: ownerEOA as `0x${string}`,
+          pairIndex: BigInt(executionPairIndex),
+          index: BigInt(0),
+          initialPosToken: BigInt(0),
+          positionSizeUSDC,
+          openPrice: openPriceScaled,
+          buy: isLong,
+          leverage: leverageScaled,
+          tp: tpScaled,
+          sl: slScaled,
+          timestamp: BigInt(0),
+        }, orderTypeValue, slippageP],
+      });
+
+      const approveSpenders = [AVANTIS_TRADING_ADDRESS as `0x${string}`, AVANTIS_TRADING_STORAGE_ADDRESS as `0x${string}`];
+      const uaTx = await universalAccount.createUniversalTransaction({
+        chainId: CHAIN_ID.BASE_MAINNET,
+        expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: (Number(executionFee) / 1e18).toString() }],
+        transactions: [
+          ...approveSpenders.map((spender) => ({
+            to: BASE_USDC_ADDRESS as `0x${string}`,
+            data: encodeFunctionData({ abi: ERC20_APPROVE_ABI, functionName: 'approve', args: [spender, AVANTIS_APPROVAL_CAP_USDC] }),
+            value: '0x0',
+          })),
+          { to: AVANTIS_TRADING_ADDRESS as `0x${string}`, data: openTradeCalldata, value: `0x${executionFee.toString(16)}` },
         ],
       });
 
-      // Use direct openTrade call (not delegatedAction)
-      // Particle's simulation should set msg.sender = smart account
-      const openTradeCalldata = innerOpenTradeCalldata;
+      const walletClient = primaryWallet.getWalletClient() as unknown as WalletClientLike;
+      const signerAddress = walletClient?.account?.address as `0x${string}` | undefined;
+      if (!signerAddress) throw new Error('Wallet signer unavailable');
+      const rootHash = (uaTx as { rootHash?: `0x${string}` }).rootHash;
+      if (!rootHash) throw new Error('Perps transaction missing rootHash');
+      const signature = await signUniversalRootHash({ walletClient, rootHash, signerAddress, blindSigningEnabled, addDebug });
+      if (!sign7702) throw new Error('7702 signing not available');
+      const authorizations = await build7702Authorizations(uaTx, sign7702, signerAddress);
+      setLoadingStatus('Opening position...');
+      const sendRes = await universalAccount.sendTransaction(uaTx, signature as string, authorizations);
+      const txHash = sendRes?.transactionId || 'pending';
 
-      addDebug(`OpenTrade calldata length: ${openTradeCalldata.length}`);
-      addDebug(`Position USDC: ${positionSizeUSDC.toString()}, Price: ${openPriceScaled.toString()}`);
-      setLoadingStatus('Creating transaction...');
-
-      // Create universal transaction via UA with BOTH transactions:
-      // 1. Approve USDC to Avantis
-      // 2. Open the trade
-      console.log('[Perps] Creating UA transaction with params:', {
-        chainId: 8453,
-        collateralAmount: collateralAmount.toString(),
-        executionFee: executionFee.toString(),
-        executionFeeHex: '0x' + executionFee.toString(16),
-        traderAddress,
-        pairIndex: executionPairIndex,
-        leverage,
-        isLong,
-        orderTypeValue,
-        positionSizeUSDC: positionSizeUSDC.toString(),
-        openPrice: openPriceScaled.toString(),
-        approveCapUSDC: AVANTIS_APPROVAL_CAP_USDC.toString(),
-      });
-      
-      // EOA execution path (same model as PerpsTrader): approve + openTrade directly from owner EOA
-      addDebug(`Trader(EOA): ${traderAddress}`);
-      addDebug(`Leverage: ${leverage}x`);
-      addDebug(`OrderType: ${isZeroFeeMode ? 'MARKET_ZERO_FEE (3)' : 'MARKET (0)'}`);
-
-      const waitReceipt = async (txHash: string) => {
-        for (let i = 0; i < 30; i++) {
-          const resp = await fetch('https://mainnet.base.org', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_getTransactionReceipt', params: [txHash], id: 1 }),
-          }).then(r => r.json());
-          if (resp?.result) return resp.result;
-          await new Promise(r => setTimeout(r, 2000));
-        }
-        throw new Error('Transaction confirmation timeout');
-      };
-
-      const valueHex = `0x${executionFee.toString(16)}`;
-      const formatEth = (wei: bigint) => (Number(wei) / 1e18).toFixed(6);
-      const formatGwei = (wei: bigint) => (Number(wei) / 1e9).toFixed(3);
-      const asErrMsg = (e: unknown) => e instanceof Error ? e.message : String(e);
-      const approveTxParams = {
-        from: traderAddress,
-        to: BASE_USDC_ADDRESS,
-        data: approveCalldata,
-      };
-      const tradeTxParams = {
-        from: traderAddress,
-        to: AVANTIS_TRADING_ADDRESS,
-        data: openTradeCalldata,
-        value: valueHex,
-      };
-
-      // Preflight check for native ETH needed by:
-      // 1) USDC approve gas, 2) openTrade gas, 3) openTrade execution fee value
-      setLoadingStatus('Checking owner EOA gas...');
-      const rpcCall = async (method: string, params: unknown[]) => {
-        const resp = await fetch('https://mainnet.base.org', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ jsonrpc: '2.0', method, params, id: 1 }),
-        }).then(r => r.json());
-        return resp?.result as string | undefined;
-      };
-      const walletCall = async (method: string, params: unknown[]) => {
-        try {
-          return await walletProvider.request({ method, params });
-        } catch (err) {
-          addDebug(`wallet ${method} failed: ${asErrMsg(err)}`);
-          return undefined;
-        }
-      };
-
-      const [ethBalanceHex, gasPriceHex] = await Promise.all([
-        rpcCall('eth_getBalance', [traderAddress, 'latest']),
-        rpcCall('eth_gasPrice', []),
-      ]);
-      const ownerEthWei = ethBalanceHex ? BigInt(ethBalanceHex) : BigInt(0);
-      const gasPriceWei = gasPriceHex ? BigInt(gasPriceHex) : BigInt(1_500_000_000); // 1.5 gwei fallback
-
-      // Conservative fallbacks if estimateGas fails.
-      let approveGas = BigInt(80_000);
-      let tradeGas = BigInt(450_000);
-      try {
-        const approveGasHex = await rpcCall('eth_estimateGas', [approveTxParams]);
-        if (approveGasHex) approveGas = BigInt(approveGasHex);
-      } catch {
-        addDebug('approve gas estimation failed, using fallback 80k');
+      upsertPerpsActivity({ id: `open-${txHash}`, action: 'Open', pairName: selectedPair.name, txHash, status: 'pending', timestamp: Date.now() });
+      setTxResult({ txId: txHash, status: 'pending', action: 'open' });
+      if (txHash !== 'pending') {
+        const receipt = await waitForBaseReceipt(txHash) as unknown as { status?: string };
+        if (receipt?.status !== '0x1') throw new Error(`OpenTrade failed onchain. status=${receipt?.status || 'unknown'}`);
       }
-      try {
-        const tradeGasHex = await rpcCall('eth_estimateGas', [tradeTxParams]);
-        if (tradeGasHex) tradeGas = BigInt(tradeGasHex);
-      } catch {
-        addDebug('openTrade gas estimation failed, using fallback 450k');
-      }
-
-      const gasCostWei = ((approveGas + tradeGas) * gasPriceWei * BigInt(120)) / BigInt(100); // +20% buffer
-      const minNeededWei = executionFee + gasCostWei;
-      addDebug(`EOA ETH: ${formatEth(ownerEthWei)}, Required ETH: ${formatEth(minNeededWei)} (fee ${formatEth(executionFee)} + gas ${formatEth(gasCostWei)})`);
-
-      if (ownerEthWei < minNeededWei) {
-        const missingWei = minNeededWei - ownerEthWei;
-        throw new Error(
-          `Insufficient ETH for approve + open trade. Need ~${formatEth(minNeededWei)} ETH, have ${formatEth(ownerEthWei)} ETH. Top up at least ~${formatEth(missingWei)} ETH and retry.`
-        );
-      }
-
-      setLoadingStatus('Ensuring Base network...');
-      await ensureWalletOnBase();
-
-      // Extra diagnostics using the same wallet provider that will send the transaction.
-      setLoadingStatus('Collecting wallet send context...');
-      const [walletChainIdHex, walletAccountsRaw, walletBalanceHex, walletGasPriceHex, walletApproveGasHex, walletTradeGasHex] =
-        await Promise.all([
-          walletCall('eth_chainId', []),
-          walletCall('eth_accounts', []),
-          walletCall('eth_getBalance', [traderAddress, 'latest']),
-          walletCall('eth_gasPrice', []),
-          walletCall('eth_estimateGas', [approveTxParams]),
-          walletCall('eth_estimateGas', [tradeTxParams]),
-        ]);
-
-      const walletChainId = typeof walletChainIdHex === 'string' ? Number(BigInt(walletChainIdHex)) : NaN;
-      const walletAccounts = Array.isArray(walletAccountsRaw) ? walletAccountsRaw.map(a => String(a)) : [];
-      const walletPrimary = walletAccounts[0] || '';
-      const fromMatchesWalletPrimary = !!walletPrimary && walletPrimary.toLowerCase() === traderAddress.toLowerCase();
-      const walletBalanceWei = typeof walletBalanceHex === 'string' ? BigInt(walletBalanceHex) : BigInt(0);
-      const walletGasPriceWei = typeof walletGasPriceHex === 'string' ? BigInt(walletGasPriceHex) : gasPriceWei;
-      const walletApproveGas = typeof walletApproveGasHex === 'string' ? BigInt(walletApproveGasHex) : approveGas;
-      const walletTradeGas = typeof walletTradeGasHex === 'string' ? BigInt(walletTradeGasHex) : tradeGas;
-      const walletGasCostWei = ((walletApproveGas + walletTradeGas) * walletGasPriceWei * BigInt(120)) / BigInt(100);
-      const walletMinNeededWei = executionFee + walletGasCostWei;
-
-      addDebug(`Wallet context: chainId=${Number.isFinite(walletChainId) ? walletChainId : 'unknown'}, trader=${traderAddress}, walletPrimary=${walletPrimary || 'none'}`);
-      addDebug(`Wallet account match: ${fromMatchesWalletPrimary ? 'yes' : 'no'}`);
-      addDebug(`Wallet ETH: ${formatEth(walletBalanceWei)} | Wallet required ETH: ${formatEth(walletMinNeededWei)} (fee ${formatEth(executionFee)} + gas ${formatEth(walletGasCostWei)})`);
-      addDebug(`Wallet gasPrice: ${formatGwei(walletGasPriceWei)} gwei | approveGas: ${walletApproveGas.toString()} | tradeGas: ${walletTradeGas.toString()}`);
-      if (Number.isFinite(walletChainId) && walletChainId !== 8453) {
-        addDebug(`WARNING: wallet chainId ${walletChainId} is not Base (8453).`);
-      }
-
-      const requiredAllowanceWei = positionSizeUSDC;
-      addDebug(`Allowance required (USDC 6d): ${requiredAllowanceWei.toString()}`);
-      if (requiredAllowanceWei > AVANTIS_APPROVAL_CAP_USDC) {
-        throw new Error(
-          `Trade requires allowance ${requiredAllowanceWei.toString()} but approval cap is ${AVANTIS_APPROVAL_CAP_USDC.toString()} (10,000 USDC).`
-        );
-      }
-
-      const sendApproveAndWait = async (approvalData: `0x${string}`, logMessage: string) => {
-        setLoadingStatus('Approving USDC from owner EOA...');
-        addDebug(logMessage);
-        const hash = await walletProvider.request({
-          method: 'eth_sendTransaction',
-          params: [{ ...approveTxParams, data: approvalData }],
-        }) as string;
-        addDebug(`Approve tx hash: ${hash}`);
-        const receipt = await waitReceipt(hash) as { status?: string };
-        addDebug(`Approve receipt status: ${receipt?.status || 'unknown'}`);
-        return receipt?.status === '0x1';
-      };
-      const readAllowanceForSpender = async (spender: `0x${string}`, label: string) => {
-        const allowanceCalldata = encodeFunctionData({
-          abi: ERC20_ALLOWANCE_ABI,
-          functionName: 'allowance',
-          args: [traderAddress as `0x${string}`, spender],
-        });
-        const allowanceHex = await walletCall('eth_call', [{ to: BASE_USDC_ADDRESS, data: allowanceCalldata }, 'latest']);
-        const allowanceWei = typeof allowanceHex === 'string' ? BigInt(allowanceHex) : BigInt(0);
-        addDebug(`Current allowance to ${label}: ${allowanceWei.toString()} (cap ${AVANTIS_APPROVAL_CAP_USDC.toString()})`);
-        return allowanceWei;
-      };
-      const ensureAllowanceForSpender = async (spender: `0x${string}`, label: string) => {
-        let allowanceWei = await readAllowanceForSpender(spender, label);
-        if (allowanceWei >= requiredAllowanceWei) {
-          addDebug(`Sufficient existing USDC allowance for ${label}; skipping approve step.`);
-          return;
-        }
-
-        await sendApproveAndWait(
-          buildApproveCalldata(spender, AVANTIS_APPROVAL_CAP_USDC),
-          `Allowance below required for ${label}, sending 10,000 USDC cap approval...`,
-        );
-        allowanceWei = await readAllowanceForSpender(spender, label);
-
-        // Some wallets/tokens require approve(0) before changing a non-zero allowance.
-        if (allowanceWei < requiredAllowanceWei) {
-          addDebug(`Allowance for ${label} still insufficient; attempting reset-to-zero then re-approve.`);
-          await sendApproveAndWait(buildApproveCalldata(spender, BigInt(0)), `Resetting ${label} allowance to 0...`);
-          addDebug(`Allowance after ${label} reset: ${(await readAllowanceForSpender(spender, label)).toString()}`);
-          await sendApproveAndWait(buildApproveCalldata(spender, AVANTIS_APPROVAL_CAP_USDC), `Re-applying 10,000 USDC cap approval for ${label}...`);
-          allowanceWei = await readAllowanceForSpender(spender, label);
-        }
-
-        if (allowanceWei < requiredAllowanceWei) {
-          throw new Error(
-            `USDC allowance still below required amount for ${label}. required=${requiredAllowanceWei.toString()}, current=${allowanceWei.toString()}`
-          );
-        }
-      };
-
-      for (const spender of approvalSpenders) {
-        await ensureAllowanceForSpender(spender.address, spender.label);
-      }
-
-      setLoadingStatus('Opening position from owner EOA...');
-      addDebug(`Sending openTrade transaction (value ${formatEth(executionFee)} ETH)...`);
-      const tradeHash = await walletProvider.request({
-        method: 'eth_sendTransaction',
-        params: [tradeTxParams],
-      }) as string;
-      addDebug(`OpenTrade tx hash: ${tradeHash}`);
-      upsertPerpsActivity({
-        id: `open-${tradeHash}`,
-        action: 'Open',
-        pairName: selectedPair.name,
-        txHash: tradeHash,
-        status: 'pending',
-        timestamp: Date.now(),
-      });
-
-      setTxResult({ txId: tradeHash, status: 'pending', action: 'open' });
-      setLoadingStatus('Position opening...');
-      const tradeReceipt = await waitReceipt(tradeHash) as { status?: string };
-      addDebug(`OpenTrade receipt status: ${tradeReceipt?.status || 'unknown'}`);
-      if (tradeReceipt?.status !== '0x1') {
-        upsertPerpsActivity({
-          id: `open-${tradeHash}`,
-          action: 'Open',
-          pairName: selectedPair.name,
-          txHash: tradeHash,
-          status: 'failed',
-          timestamp: Date.now(),
-        });
-        throw new Error(`OpenTrade transaction failed onchain. status=${tradeReceipt?.status || 'unknown'}`);
-      }
-      upsertPerpsActivity({
-        id: `open-${tradeHash}`,
-        action: 'Open',
-        pairName: selectedPair.name,
-        txHash: tradeHash,
-        status: 'confirmed',
-        timestamp: Date.now(),
-      });
-      setTxResult({ txId: tradeHash, status: 'complete', action: 'open' });
-      setLoadingStatus('Position opened');
+      upsertPerpsActivity({ id: `open-${txHash}`, action: 'Open', pairName: selectedPair.name, txHash, status: 'confirmed', timestamp: Date.now() });
+      setTxResult({ txId: txHash, status: 'complete', action: 'open' });
       await fetchOpenPositions();
       await refreshOwnerBalances();
-      setTimeout(() => {
-        fetchOpenPositions();
-        refreshOwnerBalances();
-      }, 6000);
-      setTimeout(() => setTxResult(null), 2500);
-
-      // Reset form
       setCollateral('');
       setTakeProfit('');
       setStopLoss('');
+      setTimeout(() => setTxResult(null), 2500);
     } catch (err) {
-      // Extract error details for debug
-      let errorDetails = '';
-      if (err && typeof err === 'object') {
-        const anyErr = err as Record<string, unknown>;
-        if (anyErr.data) errorDetails += ` Data: ${JSON.stringify(anyErr.data)}`;
-        if (anyErr.reason) errorDetails += ` Reason: ${anyErr.reason}`;
-        if (anyErr.code) errorDetails += ` Code: ${anyErr.code}`;
+      const msg = err instanceof Error ? err.message : String(err);
+      const lower = msg.toLowerCase();
+      if (lower.includes('insufficient') || lower.includes('eth') || lower.includes('gas')) {
+        setError('Perps tx needs Base ETH for execution fee/gas in your 7702 execution wallet. Top up gas and retry.');
+      } else {
+        setError(msg || 'Failed to open position');
       }
-      addDebug(`FINAL ERROR: ${err instanceof Error ? err.message : String(err)}${errorDetails}`);
-      
-      // Parse common error messages for better UX
-      let errorMessage = 'Failed to open position';
-      if (err instanceof Error) {
-        const msg = err.message.toLowerCase();
-        const fullMsg = err.message; // Keep original for display
-        
-        if (msg.includes('leverage_incorrect')) {
-          errorMessage = `Invalid leverage for ${selectedPair.name}. Use ${leverageMin}x-${leverageMax}x${isZeroFeeMode ? ' in Zero Fee mode' : ''}.`;
-        } else if (msg.includes('simulation') || msg.includes('revert')) {
-          // Show full error for debugging + trader address for verification
-          errorMessage = `Simulation failed: ${fullMsg.slice(0, 100)}${errorDetails ? ' ' + errorDetails : ''}`;
-        } else if (msg.includes('insufficient') || msg.includes('balance')) {
-          errorMessage = 'Insufficient balance for this trade.';
-        } else if (msg.includes('allowance')) {
-          errorMessage = 'USDC approval failed. Please try again.';
-        } else if (msg.includes('rejected') || msg.includes('denied')) {
-          errorMessage = 'Transaction was rejected.';
-        } else if (msg.includes('trader')) {
-          errorMessage = 'Could not determine trader address. Please reconnect your wallet.';
-        } else {
-          errorMessage = err.message;
-        }
-      }
-      setError(errorMessage);
+      addDebug(`FINAL ERROR: ${msg}`);
     } finally {
       setIsLoading(false);
       setLoadingStatus('');
@@ -4018,7 +3581,7 @@ const PerpsModal = ({
   };
 
   const handleClosePosition = async (position: OpenPerpsPosition) => {
-    if (!primaryWallet || !ownerEOA) {
+    if (!primaryWallet || !universalAccount || !ownerEOA) {
       setError('Connect wallet first');
       return;
     }
@@ -4026,83 +3589,35 @@ const PerpsModal = ({
     setError(null);
     setLoadingStatus('Preparing close...');
     try {
-      const walletClient = primaryWallet.getWalletClient();
-      const walletProvider = walletClient as unknown as { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
-      const parseChainId = (hexChainId: unknown) => {
-        if (typeof hexChainId !== 'string') return NaN;
-        try {
-          return Number(BigInt(hexChainId));
-        } catch {
-          return NaN;
-        }
-      };
-      const ensureWalletOnBase = async () => {
-        const currentChain = parseChainId(await walletProvider.request({ method: 'eth_chainId' }));
-        if (currentChain === 8453) return;
-        await walletProvider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x2105' }] });
-      };
-      await ensureWalletOnBase();
-
       const executionFee = await fetchExecutionFeeWei(1);
       const collateralToClose = BigInt(Math.max(1, Math.floor(position.collateralUsd * 1e6)));
-      addDebug(`Close args -> pair=${position.pairIndex}, index=${position.positionIndex}, collateralToClose=${collateralToClose.toString()}`);
-      const closeCalldata = encodeFunctionData({
-        abi: AVANTIS_TRADING_ABI,
-        functionName: 'closeTradeMarket',
-        args: [
-          BigInt(position.pairIndex),
-          BigInt(position.positionIndex),
-          collateralToClose,
-        ],
+      const closeCalldata = encodeFunctionData({ abi: AVANTIS_TRADING_ABI, functionName: 'closeTradeMarket', args: [BigInt(position.pairIndex), BigInt(position.positionIndex), collateralToClose] });
+
+      const tx = await universalAccount.createUniversalTransaction({
+        chainId: CHAIN_ID.BASE_MAINNET,
+        expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: (Number(executionFee) / 1e18).toString() }],
+        transactions: [{ to: AVANTIS_TRADING_ADDRESS as `0x${string}`, data: closeCalldata, value: `0x${executionFee.toString(16)}` }],
       });
-      const txHash = await walletProvider.request({
-        method: 'eth_sendTransaction',
-        params: [{
-          from: ownerEOA,
-          to: AVANTIS_TRADING_ADDRESS,
-          data: closeCalldata,
-          value: `0x${executionFee.toString(16)}`,
-        }],
-      }) as string;
-      addDebug(`Close position tx: ${txHash}`);
-      upsertPerpsActivity({
-        id: `close-${txHash}`,
-        action: 'Close',
-        pairName: position.pairName,
-        txHash,
-        status: 'pending',
-        timestamp: Date.now(),
-      });
+      const walletClient = primaryWallet.getWalletClient() as unknown as WalletClientLike;
+      const signerAddress = walletClient?.account?.address as `0x${string}` | undefined;
+      if (!signerAddress || !sign7702) throw new Error('Wallet signing not available');
+      const rootHash = (tx as { rootHash?: `0x${string}` }).rootHash;
+      if (!rootHash) throw new Error('Perps close missing rootHash');
+      const signature = await signUniversalRootHash({ walletClient, rootHash, signerAddress, blindSigningEnabled, addDebug });
+      const auths = await build7702Authorizations(tx, sign7702, signerAddress);
+      const res = await universalAccount.sendTransaction(tx, signature as string, auths);
+      const txHash = res?.transactionId || 'pending';
+
+      upsertPerpsActivity({ id: `close-${txHash}`, action: 'Close', pairName: position.pairName, txHash, status: 'pending', timestamp: Date.now() });
       setTxResult({ txId: txHash, status: 'pending', action: 'close' });
-      setLoadingStatus('Closing position...');
-      const closeReceipt = await waitForBaseReceipt(txHash) as unknown as { status?: string };
-      addDebug(`Close receipt status: ${closeReceipt?.status || 'unknown'}`);
-      if (closeReceipt?.status !== '0x1') {
-        upsertPerpsActivity({
-          id: `close-${txHash}`,
-          action: 'Close',
-          pairName: position.pairName,
-          txHash,
-          status: 'failed',
-          timestamp: Date.now(),
-        });
-        throw new Error(`Close transaction failed onchain. status=${closeReceipt?.status || 'unknown'}`);
+      if (txHash !== 'pending') {
+        const receipt = await waitForBaseReceipt(txHash) as unknown as { status?: string };
+        if (receipt?.status !== '0x1') throw new Error(`Close transaction failed onchain. status=${receipt?.status || 'unknown'}`);
       }
-      upsertPerpsActivity({
-        id: `close-${txHash}`,
-        action: 'Close',
-        pairName: position.pairName,
-        txHash,
-        status: 'confirmed',
-        timestamp: Date.now(),
-      });
+      upsertPerpsActivity({ id: `close-${txHash}`, action: 'Close', pairName: position.pairName, txHash, status: 'confirmed', timestamp: Date.now() });
       setTxResult({ txId: txHash, status: 'complete', action: 'close' });
       await fetchOpenPositions();
       await refreshOwnerBalances();
-      setTimeout(() => {
-        fetchOpenPositions();
-        refreshOwnerBalances();
-      }, 8000);
       setTimeout(() => setTxResult(null), 2500);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -4115,7 +3630,7 @@ const PerpsModal = ({
   };
 
   const handleUpdatePositionTpSl = async (position: OpenPerpsPosition) => {
-    if (!primaryWallet || !ownerEOA) {
+    if (!primaryWallet || !universalAccount || !ownerEOA) {
       setError('Connect wallet first');
       return;
     }
@@ -4131,20 +3646,6 @@ const PerpsModal = ({
     setError(null);
     setLoadingStatus('Updating TP/SL...');
     try {
-      const walletClient = primaryWallet.getWalletClient();
-      const walletProvider = walletClient as unknown as { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
-      const parseChainId = (hexChainId: unknown) => {
-        if (typeof hexChainId !== 'string') return NaN;
-        try {
-          return Number(BigInt(hexChainId));
-        } catch {
-          return NaN;
-        }
-      };
-      const currentChain = parseChainId(await walletProvider.request({ method: 'eth_chainId' }));
-      if (currentChain !== 8453) {
-        await walletProvider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x2105' }] });
-      }
       const updateData = await fetchPythUpdateData(position.pairName);
       const executionFee = await fetchExecutionFeeWei(updateData.length || 1);
       const updateCalldata = encodeFunctionData({
@@ -4159,46 +3660,28 @@ const PerpsModal = ({
         ],
       });
 
-      const txHash = await walletProvider.request({
-        method: 'eth_sendTransaction',
-        params: [{
-          from: ownerEOA,
-          to: AVANTIS_TRADING_ADDRESS,
-          data: updateCalldata,
-          value: `0x${executionFee.toString(16)}`,
-        }],
-      }) as string;
-      addDebug(`Update TP/SL tx: ${txHash}`);
-      upsertPerpsActivity({
-        id: `update-${txHash}`,
-        action: 'Update TP/SL',
-        pairName: position.pairName,
-        txHash,
-        status: 'pending',
-        timestamp: Date.now(),
+      const tx = await universalAccount.createUniversalTransaction({
+        chainId: CHAIN_ID.BASE_MAINNET,
+        expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: (Number(executionFee) / 1e18).toString() }],
+        transactions: [{ to: AVANTIS_TRADING_ADDRESS as `0x${string}`, data: updateCalldata, value: `0x${executionFee.toString(16)}` }],
       });
+      const walletClient = primaryWallet.getWalletClient() as unknown as WalletClientLike;
+      const signerAddress = walletClient?.account?.address as `0x${string}` | undefined;
+      if (!signerAddress || !sign7702) throw new Error('Wallet signing not available');
+      const rootHash = (tx as { rootHash?: `0x${string}` }).rootHash;
+      if (!rootHash) throw new Error('Perps TP/SL update missing rootHash');
+      const signature = await signUniversalRootHash({ walletClient, rootHash, signerAddress, blindSigningEnabled, addDebug });
+      const auths = await build7702Authorizations(tx, sign7702, signerAddress);
+      const res = await universalAccount.sendTransaction(tx, signature as string, auths);
+      const txHash = res?.transactionId || 'pending';
+
+      upsertPerpsActivity({ id: `update-${txHash}`, action: 'Update TP/SL', pairName: position.pairName, txHash, status: 'pending', timestamp: Date.now() });
       setTxResult({ txId: txHash, status: 'pending', action: 'update' });
-      const updateReceipt = await waitForBaseReceipt(txHash) as unknown as { status?: string };
-      addDebug(`Update TP/SL receipt status: ${updateReceipt?.status || 'unknown'}`);
-      if (updateReceipt?.status !== '0x1') {
-        upsertPerpsActivity({
-          id: `update-${txHash}`,
-          action: 'Update TP/SL',
-          pairName: position.pairName,
-          txHash,
-          status: 'failed',
-          timestamp: Date.now(),
-        });
-        throw new Error(`Update TP/SL transaction failed onchain. status=${updateReceipt?.status || 'unknown'}`);
+      if (txHash !== 'pending') {
+        const updateReceipt = await waitForBaseReceipt(txHash) as unknown as { status?: string };
+        if (updateReceipt?.status !== '0x1') throw new Error(`Update TP/SL transaction failed onchain. status=${updateReceipt?.status || 'unknown'}`);
       }
-      upsertPerpsActivity({
-        id: `update-${txHash}`,
-        action: 'Update TP/SL',
-        pairName: position.pairName,
-        txHash,
-        status: 'confirmed',
-        timestamp: Date.now(),
-      });
+      upsertPerpsActivity({ id: `update-${txHash}`, action: 'Update TP/SL', pairName: position.pairName, txHash, status: 'confirmed', timestamp: Date.now() });
       setTxResult({ txId: txHash, status: 'complete', action: 'update' });
       await fetchOpenPositions();
       await refreshOwnerBalances();
@@ -4581,7 +4064,7 @@ const PerpsModal = ({
             </div>
 
             <p className="text-gray-400 text-sm mb-5">
-              Move funds from your Universal Account to the owner EOA used for Perps execution on Base.
+              Move funds from your Universal Account to the 7702 execution wallet used for Perps execution on Base.
             </p>
 
             {error && (
@@ -4637,7 +4120,7 @@ const PerpsModal = ({
                   <span className="text-sm text-gray-300">USDC</span>
                 </div>
                 <div className="text-[11px] text-gray-500 mt-2">
-                  Sent to owner EOA on Base before opening positions.
+                  Sent to 7702 execution wallet on Base before opening positions.
                 </div>
                 <div className="text-[11px] text-gray-500 mt-1">
                   Unified UA Balance: ${unifiedUaBalance.toFixed(2)} • UA Base USDC Available: {uaBaseUsdcAvailable.toFixed(4)}
@@ -4666,7 +4149,7 @@ const PerpsModal = ({
               </div>
 
               <div className="bg-[#252525] rounded-xl px-3 py-3">
-                <div className="text-gray-400 text-xs uppercase tracking-wide mb-2">Execution wallet (owner EOA)</div>
+                <div className="text-gray-400 text-xs uppercase tracking-wide mb-2">Execution wallet (7702 UA)</div>
                 <div className="text-white text-sm font-mono break-all">{ownerEOA || 'Not connected'}</div>
                 <div className="text-[11px] text-gray-500 mt-2">
                   Current balances: ${eoaUsdcBalance.toFixed(2)} USDC • {eoaEthBalance.toFixed(5)} ETH
@@ -4682,9 +4165,9 @@ const PerpsModal = ({
                 ) : (
                   <li>Skip USDC convert (already available in UA)</li>
                 ))}
-                {depositMode !== 'gas_only' && <li>Transfer Base USDC to owner EOA</li>}
+                {depositMode !== 'gas_only' && <li>Transfer Base USDC to 7702 execution wallet</li>}
                 {depositMode !== 'usdc_only' && <li>Convert UA balance to Base ETH</li>}
-                {depositMode !== 'usdc_only' && <li>Transfer Base ETH to owner EOA</li>}
+                {depositMode !== 'usdc_only' && <li>Transfer Base ETH to 7702 execution wallet</li>}
                 {!canDeposit && <li>Enter the required amount(s) for selected mode</li>}
               </ol>
             </div>
