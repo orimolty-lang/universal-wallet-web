@@ -683,7 +683,7 @@ const CHAIN_LOGOS: Record<string, string> = {
   "Polygon": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png",
   "Base": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/base/info/logo.png",
   "Arbitrum": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png",
-  "Avalanche": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/avalanchec/info/logo.png",
+  "Avalanche": "https://assets.coincap.io/assets/icons/avax@2x.png",
   "Solana": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png",
 };
 
@@ -703,7 +703,7 @@ const CHAIN_ICONS: Record<string, string> = {
 const TOKEN_LOGOS: Record<string, string> = {
   "ETH": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png",
   "USDC": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png",
-  "USDT": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xdAC17F958D2ee523a2206206994597C13D831ec7/logo.png",
+  "USDT": "https://assets.coingecko.com/coins/images/325/large/Tether.png",
   "SOL": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png",
   "BTC": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/bitcoin/info/logo.png",
   "WBTC": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599/logo.png",
@@ -2317,7 +2317,7 @@ const BASE_PERPS_MARKETS: Omit<PerpsMarket, 'pairName'>[] = [
   { index: 0, symbol: 'BTC', name: 'Bitcoin', maxLeverage: 100, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/bitcoin/info/logo.png', color: '#F7931A', group: 'crypto' },
   { index: 1, symbol: 'ETH', name: 'Ethereum', maxLeverage: 100, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png', color: '#627EEA', group: 'crypto' },
   { index: 2, symbol: 'SOL', name: 'Solana', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png', color: '#9945FF', group: 'crypto' },
-  { index: 3, symbol: 'LINK', name: 'Chainlink', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x514910771AF9Ca656af840dff83E8264EcF986CA/logo.png', color: '#375BD2', group: 'crypto' },
+  { index: 3, symbol: 'LINK', name: 'Chainlink', maxLeverage: 50, logo: 'https://assets.coingecko.com/coins/images/877/large/chainlink-new-logo.png', color: '#375BD2', group: 'crypto' },
   { index: 4, symbol: 'DOGE', name: 'Dogecoin', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/doge/info/logo.png', color: '#C2A633', group: 'crypto' },
   { index: 5, symbol: 'XRP', name: 'Ripple', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/xrp/info/logo.png', color: '#23292F', group: 'crypto' },
   { index: 6, symbol: 'BNB', name: 'BNB', maxLeverage: 50, logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/binance/info/logo.png', color: '#F3BA2F', group: 'crypto' },
@@ -2372,6 +2372,9 @@ const LEVERAGE_OVERRIDES: Record<string, { standardMax: number; zfpMax: number }
   'AVNT/USD': { standardMax: 10, zfpMax: 0 },
 };
 
+/** Hide illiquid pairs from the markets list (Socket `pairOI` ≈ USD open interest). Always keep pairs with an open position. */
+const MIN_PERPS_MARKET_VOLUME_USD = 10_000;
+
 const parsePairNameFromSocketSymbol = (symbol: string): string => {
   // Socket symbols are usually "Crypto.ETH/USD", "FX.EUR/USD", etc.
   const dotIndex = symbol.indexOf('.');
@@ -2403,18 +2406,18 @@ const MARKET_NAME_ALIASES: Record<string, string> = {
   AVNT: 'Avantis',
 };
 const MARKET_LOGO_OVERRIDES: Record<string, string> = {
-  AVNT: 'https://coin-images.coingecko.com/coins/images/68972/large/avnt-token.png',
-  SPY: 'https://coin-images.coingecko.com/coins/images/68655/large/spyon_160x160.png',
-  QQQ: 'https://coin-images.coingecko.com/coins/images/68654/large/qqqon_160x160.png',
-  COIN: 'https://coin-images.coingecko.com/coins/images/68612/large/coinon_160x160.png',
-  NVDA: 'https://coin-images.coingecko.com/coins/images/68623/large/nvdaon_160x160.png',
-  AAPL: 'https://coin-images.coingecko.com/coins/images/68616/large/aaplon_160x160.png',
-  AMZN: 'https://coin-images.coingecko.com/coins/images/68604/large/amznon_160x160.png',
-  MSFT: 'https://coin-images.coingecko.com/coins/images/68625/large/msfton_160x160.png',
-  META: 'https://coin-images.coingecko.com/coins/images/68645/large/metaon_160x160.png',
-  TSLA: 'https://coin-images.coingecko.com/coins/images/68628/large/tslaon_160x160.png',
-  GOOG: 'https://coin-images.coingecko.com/coins/images/68606/large/googlon_160x160.png',
-  HOOD: 'https://coin-images.coingecko.com/coins/images/68581/large/hoodon_160x160.png',
+  AVNT: 'https://coin-images.coingecko.com/coins/images/68972/standard/avnt-token.png',
+  SPY: 'https://coin-images.coingecko.com/coins/images/68655/standard/spyon_160x160.png',
+  QQQ: 'https://coin-images.coingecko.com/coins/images/68654/standard/qqqon_160x160.png',
+  COIN: 'https://coin-images.coingecko.com/coins/images/68612/standard/coinon_160x160.png',
+  NVDA: 'https://coin-images.coingecko.com/coins/images/68623/standard/nvdaon_160x160.png',
+  AAPL: 'https://coin-images.coingecko.com/coins/images/68616/standard/aaplon_160x160.png',
+  AMZN: 'https://coin-images.coingecko.com/coins/images/68604/standard/amznon_160x160.png',
+  MSFT: 'https://coin-images.coingecko.com/coins/images/68625/standard/msfton_160x160.png',
+  META: 'https://coin-images.coingecko.com/coins/images/68645/standard/metaon_160x160.png',
+  TSLA: 'https://coin-images.coingecko.com/coins/images/68628/standard/tslaon_160x160.png',
+  GOOG: 'https://coin-images.coingecko.com/coins/images/68606/standard/googlon_160x160.png',
+  HOOD: 'https://coin-images.coingecko.com/coins/images/68581/standard/hoodon_160x160.png',
   HYPE: 'https://coin-images.coingecko.com/coins/images/50882/large/hyperliquid.jpg',
   PUMP: 'https://coin-images.coingecko.com/coins/images/67164/large/pump.jpg',
   AERO: 'https://coin-images.coingecko.com/coins/images/31745/large/token.png',
@@ -2483,7 +2486,7 @@ const resolveMarketLogo = ({
     if (cc) return `https://flagcdn.com/w80/${cc}.png`;
   }
   if (group === 'crypto') {
-    return `https://cryptoicons.org/api/icon/${baseSymbol.toLowerCase()}/200`;
+    return `https://assets.coincap.io/assets/icons/${baseSymbol.toLowerCase()}@2x.png`;
   }
   return buildTickerLogoDataUri(baseSymbol);
 };
@@ -3952,7 +3955,10 @@ const PerpsModal = ({
           : 'Deposit + Top up gas';
   const marketsFiltered = useMemo(() => {
     const searchLower = marketSearch.trim().toLowerCase();
+    const openPairNames = new Set(displayOpenPositions.map((p) => p.pairName));
     return availableMarkets.filter((m) => {
+      const oi = pairLeverageLimits[m.pairName]?.pairOI ?? 0;
+      if (oi < MIN_PERPS_MARKET_VOLUME_USD && !openPairNames.has(m.pairName)) return false;
       const groupOk = marketGroupFilter === 'all'
         ? true
         : marketGroupFilter === 'zfp'
@@ -3966,7 +3972,7 @@ const PerpsModal = ({
         m.pairName.toLowerCase().includes(searchLower)
       );
     });
-  }, [marketSearch, marketGroupFilter, availableMarkets, pairLeverageLimits]);
+  }, [marketSearch, marketGroupFilter, availableMarkets, pairLeverageLimits, displayOpenPositions]);
 
   const filteredSortedMarkets = useMemo(() => {
     const filtered = [...marketsFiltered];
