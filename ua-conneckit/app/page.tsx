@@ -3129,111 +3129,6 @@ const PerpsModal = ({
     return formatEther(executionFeeWei + bufferWei);
   }, []);
 
-  /** Same balance read as perps deposit: Base-native amount when available, else unified total. */
-  const getUnifiedBaseTokenAvailable = useCallback(
-    (tokenSymbol: 'USDC' | 'ETH') => {
-      const latestAssets = assets;
-      const assetList = (((latestAssets as unknown) as { assets?: unknown[] })?.assets || []) as Array<{
-        tokenType?: string;
-        symbol?: string;
-        amount?: number | string;
-        chainAggregation?: Array<{ amount?: number | string; token?: { chainId?: number | string } }>;
-      }>;
-      const match = assetList.find((a) => {
-        const tokenType = a.tokenType?.toUpperCase();
-        const symbol = a.symbol?.toUpperCase();
-        return tokenType === tokenSymbol || symbol === tokenSymbol;
-      });
-      if (!match) return 0;
-      const baseEntry = match.chainAggregation?.find((c) => Number(c.token?.chainId) === CHAIN_ID.BASE_MAINNET);
-      if (baseEntry) {
-        const baseAmount =
-          typeof baseEntry.amount === 'string' ? parseFloat(baseEntry.amount) : Number(baseEntry.amount || 0);
-        return Number.isFinite(baseAmount) ? baseAmount : 0;
-      }
-      const totalAmount =
-        typeof match.amount === 'string' ? parseFloat(match.amount) : Number(match.amount || 0);
-      return Number.isFinite(totalAmount) ? totalAmount : 0;
-    },
-    [assets],
-  );
-
-  /** Sign + send UA side txs (convert, etc.) — matches deposit flow (ownerEOA as UA signer). */
-  const submitPerpsUaSideTxWithRetry = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    async (buildTx: () => Promise<any>, label: string) => {
-      if (!universalAccount || !primaryWallet || !ownerEOA || !sign7702) {
-        throw new Error('Wallet not ready for Universal Account transaction');
-      }
-      const walletClient = primaryWallet.getWalletClient();
-      if (!walletClient) throw new Error('No wallet client');
-      let lastErr: unknown;
-      for (let attempt = 1; attempt <= 4; attempt++) {
-        try {
-          setLoadingStatus(`${label} (${attempt}/4)...`);
-          addDebug(`${label} attempt ${attempt}`);
-          const tx = await buildTx();
-          const rootHash = (tx as { rootHash?: `0x${string}` }).rootHash;
-          if (!rootHash) throw new Error(`${label} missing rootHash`);
-          const signature = await signUniversalRootHash({
-            walletClient: walletClient as unknown as WalletClientLike,
-            rootHash,
-            signerAddress: ownerEOA as `0x${string}`,
-            blindSigningEnabled,
-            addDebug,
-          });
-          const authorizations = await build7702Authorizations(tx, sign7702, ownerEOA);
-          const res = await universalAccount.sendTransaction(tx, signature as string, authorizations);
-          addDebug(`${label} sent: ${res?.transactionId || 'txid-missing'}`);
-          return res;
-        } catch (e) {
-          lastErr = e;
-          const msg = e instanceof Error ? e.message : String(e);
-          addDebug(`${label} failed: ${msg}`);
-          const expired = msg.toLowerCase().includes('expired');
-          if (!(expired && attempt < 4)) throw e;
-          await new Promise((r) => setTimeout(r, 400));
-        }
-      }
-      throw lastErr;
-    },
-    [universalAccount, primaryWallet, ownerEOA, sign7702, blindSigningEnabled, addDebug],
-  );
-
-  /**
-   * Close / TP-SL only list ETH in expectTokens. Open also lists USDC, so UA could fund without this step.
-   * With ~$2 unified as USDC, pre-convert shortfall to Base ETH (same pattern as Deposit gas top-up).
-   */
-  const ensureUnifiedBaseEthForPerpsGas = useCallback(
-    async (executionFeeWei: bigint, label: string) => {
-      if (!universalAccount || !primaryWallet || !ownerEOA || !sign7702) return;
-      const bufferWei = parseEther('0.00035');
-      const requiredWei = executionFeeWei + bufferWei;
-      const currentEth = getUnifiedBaseTokenAvailable('ETH');
-      const requiredEthFloat = Number(formatEther(requiredWei));
-      const shortfall = Math.max(0, requiredEthFloat - currentEth);
-      if (shortfall < 1e-10) return;
-      addDebug(`${label}: need ~${requiredEthFloat.toFixed(6)} Base ETH for bundle, have ${currentEth.toFixed(6)}; converting ${shortfall.toFixed(6)}`);
-      await submitPerpsUaSideTxWithRetry(
-        () =>
-          universalAccount.createConvertTransaction({
-            expectToken: { type: SUPPORTED_TOKEN_TYPE.ETH, amount: shortfall.toString() },
-            chainId: CHAIN_ID.BASE_MAINNET,
-          }),
-        `${label} convert to Base ETH`,
-      );
-    },
-    [
-      universalAccount,
-      primaryWallet,
-      ownerEOA,
-      sign7702,
-      getUnifiedBaseTokenAvailable,
-      submitPerpsUaSideTxWithRetry,
-      addDebug,
-    ],
-  );
-
   const fetchPythUpdateData = useCallback(async (pairName: string) => {
     const feedId = pairLeverageLimits[pairName]?.feedId;
     if (!feedId) throw new Error(`Missing Avantis feedId for ${pairName}`);
@@ -3247,7 +3142,7 @@ const PerpsModal = ({
 
   /**
    * Wei for `msg.value` on Avantis trades: Hermes payload → on-chain fee quote (+20% margin).
-   * Same for open / close / TP-SL; close & TP-SL need a separate ETH convert step (see ensureUnifiedBaseEthForPerpsGas).
+   * Same for open / close / TP-SL.
    */
   const resolveAvantisTradeExecutionFeeWei = useCallback(
     async (pairName: string, updateData?: `0x${string}`[]) => {
@@ -3818,13 +3713,16 @@ const PerpsModal = ({
     setLoadingStatus('Preparing close...');
     try {
       const executionFee = await resolveAvantisTradeExecutionFeeWei(position.pairName);
-      await ensureUnifiedBaseEthForPerpsGas(executionFee, 'Close');
       const collateralToClose = BigInt(Math.max(1, Math.floor(position.collateralUsd * 1e6)));
       const closeCalldata = encodeFunctionData({ abi: AVANTIS_TRADING_ABI, functionName: 'closeTradeMarket', args: [BigInt(position.pairIndex), BigInt(position.positionIndex), collateralToClose] });
 
+      // USDC `0` + ETH: same expectTokens shape as open so UA can source the gas leg from unified primary balance (any asset).
       const tx = await universalAccount.createUniversalTransaction({
         chainId: CHAIN_ID.BASE_MAINNET,
-        expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: perpsUaEthExpectAmount(executionFee) }],
+        expectTokens: [
+          { type: SUPPORTED_TOKEN_TYPE.USDC, amount: '0' },
+          { type: SUPPORTED_TOKEN_TYPE.ETH, amount: perpsUaEthExpectAmount(executionFee) },
+        ],
         transactions: [{ to: AVANTIS_TRADING_ADDRESS as `0x${string}`, data: closeCalldata, value: `0x${executionFee.toString(16)}` }],
       });
       const walletClient = primaryWallet.getWalletClient() as unknown as WalletClientLike;
@@ -3855,7 +3753,7 @@ const PerpsModal = ({
       const lower = msg.toLowerCase();
       if (lower.includes('insufficient') && lower.includes('primary')) {
         setError(
-          'Close needs a small amount of Base ETH in your Universal Account (USDC alone is not always auto-used for this bundle). Try Perps → Deposit → gas-only top-up, then close again.',
+          'Universal Account could not cover this close from your unified primary balance. Ensure enough value is available for the trade gas (ETH leg) or use Perps → Deposit to top up the execution wallet.',
         );
       } else {
         setError(`Close failed: ${msg}`);
@@ -3895,7 +3793,6 @@ const PerpsModal = ({
       const updateData = await fetchPythUpdateData(position.pairName);
       addDebug(`Pyth update data count: ${updateData.length}`);
       const executionFee = await resolveAvantisTradeExecutionFeeWei(position.pairName, updateData as `0x${string}`[]);
-      await ensureUnifiedBaseEthForPerpsGas(executionFee, 'TP/SL');
       const updateCalldata = encodeFunctionData({
         abi: AVANTIS_TRADING_ABI,
         functionName: 'updateTpAndSl',
@@ -3908,9 +3805,13 @@ const PerpsModal = ({
         ],
       });
 
+      // Same expectTokens shape as open (see close) for unified primary balance routing.
       const tx = await universalAccount.createUniversalTransaction({
         chainId: CHAIN_ID.BASE_MAINNET,
-        expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: perpsUaEthExpectAmount(executionFee) }],
+        expectTokens: [
+          { type: SUPPORTED_TOKEN_TYPE.USDC, amount: '0' },
+          { type: SUPPORTED_TOKEN_TYPE.ETH, amount: perpsUaEthExpectAmount(executionFee) },
+        ],
         transactions: [{ to: AVANTIS_TRADING_ADDRESS as `0x${string}`, data: updateCalldata, value: `0x${executionFee.toString(16)}` }],
       });
       const walletClient = primaryWallet.getWalletClient() as unknown as WalletClientLike;
