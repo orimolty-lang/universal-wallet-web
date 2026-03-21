@@ -2373,7 +2373,7 @@ const LEVERAGE_OVERRIDES: Record<string, { standardMax: number; zfpMax: number }
 };
 
 /** Hide illiquid pairs from the markets list (Socket `pairOI` ≈ USD open interest). Always keep pairs with an open position. */
-const MIN_PERPS_MARKET_VOLUME_USD = 10_000;
+const MIN_PERPS_MARKET_VOLUME_USD = 1_000;
 
 const parsePairNameFromSocketSymbol = (symbol: string): string => {
   // Socket symbols are usually "Crypto.ETH/USD", "FX.EUR/USD", etc.
