@@ -25,12 +25,6 @@ import PolymarketModal from "./components/PolymarketModal";
 import EarnModal from "./components/EarnModal";
 import WalletActivityToast, { type WalletActivityToastKind, type WalletToastPayload } from "./components/WalletActivityToast";
 import BottomSheet from "../components/BottomSheet";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "../components/ui/dropdown-menu";
 import { HermesClient } from "@pythnetwork/hermes-client";
 import { decodeFunctionResult, encodeFunctionData, formatEther, parseEther } from "viem";
 import { toBeHex, formatUnits } from "ethers";
@@ -202,6 +196,100 @@ const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
 const TRADE_MENU_LOGOS = {
   perps: "https://1312337203-files.gitbook.io/~/files/v0/b/gitbook-x-prod.appspot.com/o/spaces%2F76vAZHPcNKY10NzuKsC4%2Fuploads%2FfM44ZIUWnrYhajk68ioy%2FAvantis%20White%20Logo%20-%20Iconmark.png?alt=media",
   polymarket: "https://polymarket.com/favicon.ico",
+};
+
+const TradeHubChevron = () => (
+  <svg className="w-5 h-5 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+  </svg>
+);
+
+/** Full-screen menu from bottom Trade control — horizontal rows (not dropdown). */
+const TradeHubOverlay = ({
+  open,
+  onClose,
+  onOpenPerps,
+  onOpenPredictions,
+  onOpenEarn,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onOpenPerps: () => void;
+  onOpenPredictions: () => void;
+  onOpenEarn: () => void;
+}) => {
+  if (!open) return null;
+  const run = (fn: () => void) => {
+    onClose();
+    window.setTimeout(fn, 0);
+  };
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex flex-col bg-[#0a0a0a]"
+      style={{ maxHeight: "100dvh", paddingTop: "max(env(safe-area-inset-top), 0px)" }}
+    >
+      <header className="flex items-center justify-between px-2 py-3 border-b border-gray-800/60 shrink-0">
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-3 text-gray-400 hover:text-white rounded-xl transition-colors"
+          aria-label="Close"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <span className="text-white font-semibold text-lg">Trade</span>
+        <div className="w-12" aria-hidden />
+      </header>
+      <div className="flex-1 overflow-auto px-4 pt-6 pb-40 space-y-4">
+        <button
+          type="button"
+          onClick={() => run(onOpenPerps)}
+          className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl border text-left transition active:opacity-90 bg-[#0d0d0d] border-emerald-500/30 shadow-[0_0_28px_rgba(16,185,129,0.12)]"
+        >
+          <div className="shrink-0 w-14 h-14 rounded-full flex items-center justify-center bg-black/70 border border-emerald-500/25 shadow-[0_0_20px_rgba(16,185,129,0.2)]">
+            <img src={TRADE_MENU_LOGOS.perps} alt="" className="w-8 h-8 object-contain" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-white font-bold text-lg tracking-tight">Perps</div>
+            <p className="text-sm text-gray-500 mt-0.5">High risk, high reward trading</p>
+          </div>
+          <TradeHubChevron />
+        </button>
+        <button
+          type="button"
+          onClick={() => run(onOpenPredictions)}
+          className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl border text-left transition active:opacity-90 bg-[#0d0d0d] border-purple-500/30 shadow-[0_0_28px_rgba(168,85,247,0.12)]"
+        >
+          <div className="shrink-0 w-14 h-14 rounded-full flex items-center justify-center bg-black/70 border border-purple-500/25 shadow-[0_0_20px_rgba(168,85,247,0.2)]">
+            <img src={TRADE_MENU_LOGOS.polymarket} alt="" className="w-8 h-8 object-contain rounded-full" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-white font-bold text-lg tracking-tight">Predictions</div>
+            <p className="text-sm text-gray-500 mt-0.5">Bet on real-world events</p>
+          </div>
+          <TradeHubChevron />
+        </button>
+        <button
+          type="button"
+          onClick={() => run(onOpenEarn)}
+          className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl border text-left transition active:opacity-90 bg-[#0d0d0d] border-amber-500/30 shadow-[0_0_28px_rgba(245,158,11,0.1)]"
+        >
+          <div className="shrink-0 w-14 h-14 rounded-full flex items-center justify-center bg-black/70 border border-amber-500/25 shadow-[0_0_20px_rgba(245,158,11,0.18)]">
+            <svg className="w-7 h-7 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-white font-bold text-lg tracking-tight">Earn</div>
+            <p className="text-sm text-gray-500 mt-0.5">Vault yields on Morpho & Aave</p>
+          </div>
+          <TradeHubChevron />
+        </button>
+      </div>
+    </div>
+  );
 };
 
 // Types
@@ -6941,12 +7029,12 @@ const BottomNav = ({
   active, 
   onChange,
   onAgentPress,
-  onTradePress,
+  onTradeMenuOpen,
 }: { 
   active: TabType; 
   onChange: (t: TabType) => void;
   onAgentPress: () => void;
-  onTradePress: (option: "perps" | "polymarket") => void;
+  onTradeMenuOpen: () => void;
 }) => {
   const tabs = [
     { id: "home" as TabType, icon: (active: boolean) => (
@@ -6987,36 +7075,15 @@ const BottomNav = ({
           const isActive = active === tab.id || (tab.isAgent && false) || (tab.isTrade && false);
           if (tab.isTrade) {
             return (
-              <DropdownMenu key={tab.id}>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    className={`relative flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 text-gray-400 hover:text-gray-300 focus:outline-none`}
-                  >
-                    {tab.icon()}
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  side="top"
-                  align="center"
-                  sideOffset={8}
-                  className="bg-gray-900 border-gray-800 min-w-[140px] p-1"
-                >
-                  <DropdownMenuItem
-                    onSelect={() => onTradePress("perps")}
-                    className="flex items-center gap-2 text-white focus:bg-gray-800 focus:text-white cursor-pointer py-2"
-                  >
-                    <img src={TRADE_MENU_LOGOS.perps} alt="" className="w-5 h-5 rounded object-contain" />
-                    Perps
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={() => onTradePress("polymarket")}
-                    className="flex items-center gap-2 text-white focus:bg-gray-800 focus:text-white cursor-pointer py-2"
-                  >
-                    <img src={TRADE_MENU_LOGOS.polymarket} alt="" className="w-5 h-5 rounded object-contain" />
-                    Predictions
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <button
+                key={tab.id}
+                type="button"
+                onClick={onTradeMenuOpen}
+                className="relative flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 text-gray-400 hover:text-gray-300 focus:outline-none"
+                aria-label="Open trade menu"
+              >
+                {tab.icon()}
+              </button>
             );
           }
           return (
@@ -7061,6 +7128,7 @@ const App = () => {
   const [showPerpsModal, setShowPerpsModal] = useState(false);
   const [showPolymarketModal, setShowPolymarketModal] = useState(false);
   const [showEarnModal, setShowEarnModal] = useState(false);
+  const [showTradeHub, setShowTradeHub] = useState(false);
   const walletToastKeyRef = useRef(0);
   const [walletToastPayload, setWalletToastPayload] = useState<WalletToastPayload>(null);
   const showWalletActivityToast = useCallback((kind: WalletActivityToastKind, detail?: string) => {
@@ -7496,10 +7564,15 @@ const App = () => {
         active={activeTab} 
         onChange={setActiveTab} 
         onAgentPress={() => setShowAgentModal(true)}
-        onTradePress={(option) => {
-          if (option === "perps") setShowPerpsModal(true);
-          else if (option === "polymarket") setShowPolymarketModal(true);
-        }}
+        onTradeMenuOpen={() => setShowTradeHub(true)}
+      />
+
+      <TradeHubOverlay
+        open={showTradeHub}
+        onClose={() => setShowTradeHub(false)}
+        onOpenPerps={() => setShowPerpsModal(true)}
+        onOpenPredictions={() => setShowPolymarketModal(true)}
+        onOpenEarn={() => setShowEarnModal(true)}
       />
 
       {/* All Modals */}
