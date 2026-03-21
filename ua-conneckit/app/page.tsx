@@ -253,7 +253,9 @@ const TradeHubOverlay = ({
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-white font-bold text-lg tracking-tight">Perps</div>
-            <p className="text-sm text-gray-500 mt-0.5">High risk, high reward trading</p>
+            <p className="text-sm text-gray-500 mt-0.5 leading-snug">
+              High risk reward trading. Powered by Hyperliquid & Avantis
+            </p>
           </div>
           <TradeHubChevron />
         </button>
@@ -263,11 +265,15 @@ const TradeHubOverlay = ({
           className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl border text-left transition active:opacity-90 bg-[#0d0d0d] border-purple-500/30 shadow-[0_0_28px_rgba(168,85,247,0.12)]"
         >
           <div className="shrink-0 w-14 h-14 rounded-full flex items-center justify-center bg-black/70 border border-purple-500/25 shadow-[0_0_20px_rgba(168,85,247,0.2)]">
-            <img src={TRADE_MENU_LOGOS.polymarket} alt="" className="w-8 h-8 object-contain rounded-full" />
+            <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center p-1.5 shadow-inner">
+              <img src={TRADE_MENU_LOGOS.polymarket} alt="" className="w-6 h-6 object-contain" />
+            </div>
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-white font-bold text-lg tracking-tight">Predictions</div>
-            <p className="text-sm text-gray-500 mt-0.5">Bet on real-world events</p>
+            <p className="text-sm text-gray-500 mt-0.5 leading-snug">
+              Bet on real-world events. Powered by Polymarket.
+            </p>
           </div>
           <TradeHubChevron />
         </button>
@@ -283,7 +289,9 @@ const TradeHubOverlay = ({
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-white font-bold text-lg tracking-tight">Earn</div>
-            <p className="text-sm text-gray-500 mt-0.5">Vault yields on Morpho & Aave</p>
+            <p className="text-sm text-gray-500 mt-0.5 leading-snug">
+              Yield vaults for passive income. Powered by Aave & Morpho.
+            </p>
           </div>
           <TradeHubChevron />
         </button>
