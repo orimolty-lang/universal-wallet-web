@@ -3085,6 +3085,7 @@ const PerpsModal = ({
 
       const positions: OpenPerpsPosition[] = [];
       let queriedAnyCountSuccessfully = false;
+      const cyclePythPrices: Record<string, number> = {};
       for (const market of availableMarkets) {
         const pairName = market.pairName;
         const pairIndex = pairLeverageLimits[pairName]?.pairIndex;
@@ -3161,11 +3162,35 @@ const PerpsModal = ({
           // Avantis storage raw position field can vary by mode; derive notional from collateral * leverage for stable UI/PnL.
           const sizeUsd = collateralUsd * Math.max(leverageNum, 0);
           const entryPrice = Number(trade.openPrice) / 1e10;
-          const markPrice = marketPricesRef.current[pairName]?.price;
-          if (!Number.isFinite(markPrice) || (markPrice as number) <= 0) continue;
+          let markPrice = marketPricesRef.current[pairName]?.price;
+          if (!Number.isFinite(markPrice) || (markPrice as number) <= 0) {
+            if (Number.isFinite(cyclePythPrices[pairName]) && cyclePythPrices[pairName] > 0) {
+              markPrice = cyclePythPrices[pairName];
+            } else {
+              const feedId = pairLeverageLimits[pairName]?.feedId;
+              if (feedId) {
+                try {
+                  const response = await fetch(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${feedId}`);
+                  const json = await response.json();
+                  const parsed = json?.parsed?.[0]?.price;
+                  if (parsed?.price && Number.isFinite(Number(parsed.price)) && Number.isFinite(Number(parsed.expo))) {
+                    const p = Number(parsed.price) * Math.pow(10, Number(parsed.expo));
+                    if (Number.isFinite(p) && p > 0) {
+                      markPrice = p;
+                      cyclePythPrices[pairName] = p;
+                    }
+                  }
+                } catch {}
+              }
+            }
+          }
+          if (!Number.isFinite(markPrice) || (markPrice as number) <= 0) {
+            addDebug(`Skipping ${pairName} position ${positionIndex}: no Avantis/Pyth mark price available`);
+            continue;
+          }
           const pnlUsd = trade.buy
-            ? ((markPrice - entryPrice) / Math.max(entryPrice, 1e-9)) * sizeUsd
-            : ((entryPrice - markPrice) / Math.max(entryPrice, 1e-9)) * sizeUsd;
+            ? (((markPrice as number) - entryPrice) / Math.max(entryPrice, 1e-9)) * sizeUsd
+            : ((entryPrice - (markPrice as number)) / Math.max(entryPrice, 1e-9)) * sizeUsd;
           const pnlPercent = collateralUsd > 0 ? (pnlUsd / collateralUsd) * 100 : 0;
           const liqDistance = (entryPrice / Math.max(leverageNum, 1e-9)) * 0.9;
           const liquidationPrice = trade.buy ? entryPrice - liqDistance : entryPrice + liqDistance;
@@ -3199,20 +3224,6 @@ const PerpsModal = ({
       }
 
       const currentIds = new Set(positions.map((p) => p.id));
-      for (const oldId of Array.from(previousPositionIdsRef.current)) {
-        if (!currentIds.has(oldId)) {
-          const [oldPairIndex] = oldId.split('-');
-          const oldPair = Object.entries(pairLeverageLimits).find(([, v]) => String(v.pairIndex) === oldPairIndex)?.[0] || 'Unknown';
-          upsertPerpsActivity({
-            id: `removed-${oldId}-${Date.now()}`,
-            action: 'Position removed (closed/liquidated)',
-            pairName: oldPair,
-            txHash: '-',
-            status: 'confirmed',
-            timestamp: Date.now(),
-          });
-        }
-      }
       previousPositionIdsRef.current = currentIds;
 
       setDisplayOpenPositions(positions);
