@@ -254,6 +254,8 @@ interface PairLeverageLimits {
   pairOI?: number;
   pairMaxOI?: number;
   feedId?: string;
+  /** When true, use `pro.priceUpdateData` + PriceSourcing.PRO on-chain (matches Avantis SDK). */
+  lazerProEnabled?: boolean;
   socketSymbol?: string;
   group?: PerpsMarketGroup;
   fromSymbol?: string;
@@ -2116,6 +2118,7 @@ const AVANTIS_TRADING_ABI = [
       { name: '_newSl', type: 'uint256' },
       { name: '_newTP', type: 'uint256' },
       { name: 'priceUpdateData', type: 'bytes[]' },
+      { name: '_priceSourcing', type: 'uint8' },
     ],
     outputs: [],
   },
@@ -2351,6 +2354,16 @@ const PERPS_MARKET_SYMBOL_META: Record<string, PerpsMarket> = PERPS_MARKETS.redu
 const DEFAULT_PERPS_MARKET_LOGO = '';
 
 const AVANTIS_SOCKET_API_URL = 'https://socket-api-pub.avantisfi.com/socket-api/v1/data';
+/** Same endpoint the official Avantis Trader SDK uses for `priceUpdateData` bytes (core Hermes vs pro Lazer). */
+const AVANTIS_FEED_V3_URL = 'https://feed-v3.avantisfi.com';
+
+/** Pyth `getUpdateFee` / ABI encoding expects `0x`-prefixed bytes; Hermes `binary.data` often omits it and the call reverts. */
+function normalizeOracleUpdateHex(hex: string): `0x${string}` {
+  const t = hex.trim();
+  if (t.startsWith('0x') || t.startsWith('0X')) return t as `0x${string}`;
+  if (!/^[0-9a-fA-F]+$/.test(t)) throw new Error('Invalid oracle update hex string');
+  return `0x${t}` as `0x${string}`;
+}
 // Leverage/ZFP data source: Avantis Socket API (pairInfos[].leverages).
 // Override map for pairs where API returns incorrect values (e.g. AVNT: 10x non-ZFP only per Avantis).
 const LEVERAGE_OVERRIDES: Record<string, { standardMax: number; zfpMax: number }> = {
@@ -2966,6 +2979,7 @@ const PerpsModal = ({
             pairMaxOI?: number;
             from?: string;
             to?: string;
+            lazerFeed?: { state?: string };
           };
           const symbol = info.feed?.attributes?.symbol;
           const leverages = info.leverages;
@@ -2993,6 +3007,7 @@ const PerpsModal = ({
             pairOI: Number.isFinite(Number(info.pairOI)) ? Number(info.pairOI) : 0,
             pairMaxOI: Number.isFinite(Number(info.pairMaxOI)) ? Number(info.pairMaxOI) : 0,
             feedId: typeof info.feed?.feedId === 'string' ? info.feed.feedId : undefined,
+            lazerProEnabled: info.lazerFeed?.state === 'stable',
             socketSymbol: symbol,
             group: inferPerpsGroupFromSocketSymbol(symbol),
             fromSymbol: (info.from || '').toUpperCase() || undefined,
@@ -3153,27 +3168,42 @@ const PerpsModal = ({
     return formatEther(executionFeeWei + bufferWei);
   }, []);
 
-  const fetchPythUpdateData = useCallback(async (pairName: string) => {
-    const feedId = pairLeverageLimits[pairName]?.feedId;
-    if (!feedId) throw new Error(`Missing Avantis feedId for ${pairName}`);
-    const response = await fetch(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${feedId}`);
-    const json = await response.json();
-    const updates = Array.isArray(json?.binary?.data) ? json.binary.data : [];
-    const normalized = updates.filter((x: unknown) => typeof x === 'string') as string[];
-    if (normalized.length === 0) throw new Error(`No Pyth update data for ${pairName}`);
-    return normalized;
-  }, [pairLeverageLimits]);
+  /**
+   * Price update bytes for on-chain calls — same source as the official Avantis Trader SDK (`feed-v3` API).
+   * `priceSourcing`: 0 = Hermes (core), 1 = Pyth Pro / Lazer when the pair has stable Lazer in Socket API.
+   */
+  const fetchAvantisPriceUpdatePayload = useCallback(
+    async (pairName: string) => {
+      const pairIndex = pairLeverageLimits[pairName]?.pairIndex;
+      if (!Number.isFinite(pairIndex)) throw new Error(`Missing Avantis pair index for ${pairName}`);
+      const res = await fetch(`${AVANTIS_FEED_V3_URL}/v2/pairs/${pairIndex}/price-update-data`);
+      if (!res.ok) throw new Error(`Avantis price-update-data request failed (${res.status})`);
+      const json = (await res.json()) as {
+        core?: { priceUpdateData?: string };
+        pro?: { priceUpdateData?: string } | null;
+      };
+      const usePro = pairLeverageLimits[pairName]?.lazerProEnabled === true && typeof json.pro?.priceUpdateData === 'string';
+      const raw = usePro ? json.pro!.priceUpdateData! : json.core?.priceUpdateData;
+      if (!raw || typeof raw !== 'string') throw new Error(`No price update payload from Avantis for ${pairName}`);
+      const priceSourcing = usePro ? 1 : 0;
+      return {
+        updateData: [normalizeOracleUpdateHex(raw)] as `0x${string}`[],
+        priceSourcing: priceSourcing as 0 | 1,
+      };
+    },
+    [pairLeverageLimits],
+  );
 
   /**
-   * Wei for `msg.value` on Avantis trades: Hermes payload → on-chain fee quote (+20% margin).
-   * Same for open / close / TP-SL.
+   * Wei for `msg.value` on Avantis trades: oracle payload → Pyth `getUpdateFee` on Base (+20% margin).
+   * Same for open / close / TP-SL. Bytes should come from Avantis feed-v3 (SDK-aligned) or be normalized hex.
    */
   const resolveAvantisTradeExecutionFeeWei = useCallback(
     async (pairName: string, updateData?: `0x${string}`[]) => {
       const bytes =
         updateData && updateData.length > 0
-          ? updateData
-          : ((await fetchPythUpdateData(pairName)) as `0x${string}`[]);
+          ? updateData.map((b) => normalizeOracleUpdateHex(b))
+          : (await fetchAvantisPriceUpdatePayload(pairName)).updateData;
       if (!bytes.length) throw new Error('Missing price update payload; cannot compute trade execution fee.');
       const calldata = encodeFunctionData({
         abi: AVANTIS_TRADE_FEE_ABI,
@@ -3192,7 +3222,7 @@ const PerpsModal = ({
       const raw = BigInt(feeHex);
       return (raw * BigInt(120)) / BigInt(100);
     },
-    [fetchPythUpdateData],
+    [fetchAvantisPriceUpdatePayload],
   );
 
   const fetchOpenPositions = useCallback(async () => {
@@ -3817,9 +3847,9 @@ const PerpsModal = ({
     setLoadingStatus('Updating TP/SL...');
     addDebug('TP/SL update flow started');
     try {
-      const updateData = await fetchPythUpdateData(position.pairName);
-      addDebug(`Pyth update data count: ${updateData.length}`);
-      const executionFee = await resolveAvantisTradeExecutionFeeWei(position.pairName, updateData as `0x${string}`[]);
+      const { updateData, priceSourcing } = await fetchAvantisPriceUpdatePayload(position.pairName);
+      addDebug(`Avantis price update payload (feed-v3), sourcing=${priceSourcing}, chunks=${updateData.length}`);
+      const executionFee = await resolveAvantisTradeExecutionFeeWei(position.pairName, updateData);
       const updateCalldata = encodeFunctionData({
         abi: AVANTIS_TRADING_ABI,
         functionName: 'updateTpAndSl',
@@ -3828,7 +3858,8 @@ const PerpsModal = ({
           BigInt(position.positionIndex),
           BigInt(Math.floor(Math.max(0, slNum) * 1e10)),
           BigInt(Math.floor(Math.max(0, tpNum) * 1e10)),
-          updateData as `0x${string}`[],
+          updateData,
+          priceSourcing,
         ],
       });
 
