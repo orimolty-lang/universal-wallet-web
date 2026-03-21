@@ -2751,17 +2751,20 @@ const PerpsModal = ({
     }
   }, [marketPrices, selectedPair.name]);
 
-  // Fallback: only if selected pair is missing from shared feed.
+  // One-shot Pyth read if the shared batch has not filled this pair yet (e.g. open modal / pick market).
   useEffect(() => {
-    const fetchPythPrice = async () => {
-      const live = marketPrices[selectedPair.name]?.price;
-      if (Number.isFinite(live) && (live as number) > 0) return;
-      const feedId = pairLeverageLimits[selectedPair.name]?.feedId;
-      if (!feedId) return;
+    if (!isOpen) return;
+    const live = marketPricesRef.current[selectedPair.name]?.price;
+    if (Number.isFinite(live) && (live as number) > 0) return;
+    const feedId = pairLeverageLimits[selectedPair.name]?.feedId;
+    if (!feedId) return;
+    let cancelled = false;
+    (async () => {
       try {
         const response = await fetch(`https://hermes.pyth.network/v2/updates/price/latest?ids[]=${feedId}`);
         const data = await response.json();
         const priceData = data?.parsed?.[0]?.price;
+        if (cancelled) return;
         if (priceData?.price && Number.isFinite(Number(priceData.price)) && Number.isFinite(Number(priceData.expo))) {
           const price = Number(priceData.price) * Math.pow(10, Number(priceData.expo));
           if (Number.isFinite(price) && price > 0) setCurrentPrice(price);
@@ -2769,14 +2772,13 @@ const PerpsModal = ({
       } catch {
         // ignore
       }
+    })();
+    return () => {
+      cancelled = true;
     };
-    if (!isOpen) return;
-    fetchPythPrice();
-    const interval = setInterval(fetchPythPrice, 1200);
-    return () => clearInterval(interval);
-  }, [isOpen, selectedPair.name, pairLeverageLimits, marketPrices]);
+  }, [isOpen, selectedPair.name, pairLeverageLimits]);
 
-  // Fetch all market prices for the markets list
+  // Single Hermes poll for all markets while modal is open — drives list, trade price, and position marks.
   useEffect(() => {
     const fetchAllPrices = async () => {
       const prices: Record<string, { price: number; change24h: number }> = {};
@@ -2825,13 +2827,12 @@ const PerpsModal = ({
       // Merge so a partial Hermes failure does not wipe prices that were valid on the last tick.
       setMarketPrices((prev) => (Object.keys(prices).length > 0 ? { ...prev, ...prices } : prev));
     };
-    
-    if (isOpen && view === 'markets') {
-      fetchAllPrices();
-      const t = setInterval(fetchAllPrices, 1200);
-      return () => clearInterval(t);
-    }
-  }, [isOpen, view, availableMarkets, pairLeverageLimits]);
+
+    if (!isOpen) return;
+    fetchAllPrices();
+    const t = setInterval(fetchAllPrices, 1000);
+    return () => clearInterval(t);
+  }, [isOpen, availableMarkets, pairLeverageLimits]);
 
   // Fetch live leverage limits (including Zero Fee Perps ranges) from Avantis Socket API.
   useEffect(() => {
