@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { IAssetsResponse, UniversalAccount } from "@particle-network/universal-account-sdk";
 import { executeSwap, executeSell, getChainIdFromBlockchain, pollTransactionDetails, getChainName } from "../lib/swapService";
+import { mergedAssetMatchesContractKeys, tokenContractKeySet } from "../lib/mobulaAssetIdentity";
 import { useWallets, useSign7702AuthorizationCompat } from "@/app/lib/connectkit-compat";
 import { getUserOpsFromTx, handleEIP7702Authorizations } from "@/lib/eip7702";
 
@@ -168,32 +169,12 @@ export const SwapModal = ({
     }
   }, [isOpen]);
 
-  // Get user's token balance (for sell mode) — prefer contract match so Base tokens map to Mobula `combinedAssets` rows
+  // Sell balance: contract + chain only (symbol can collide across scam tokens)
   const getTokenBalance = useCallback(() => {
     if (!targetToken || !primaryAssets?.assets) return 0;
-    const targetAddrs = new Set(
-      (targetToken.contracts || [])
-        .map((c) => c.address?.toLowerCase())
-        .filter((x): x is string => !!x)
-    );
-    if (targetAddrs.size > 0) {
-      const byContract = primaryAssets.assets.find((a) => {
-        const rec = a as { contracts?: { address?: string }[]; amount?: number | string };
-        const list = rec.contracts;
-        return (
-          Array.isArray(list) &&
-          list.some((x) => targetAddrs.has((x.address || "").toLowerCase()))
-        );
-      });
-      if (byContract) {
-        const amt = (byContract as { amount?: number | string }).amount;
-        return typeof amt === "string" ? parseFloat(amt) : (amt || 0);
-      }
-    }
-    const asset = primaryAssets.assets.find((a) => {
-      const sym = (a as { symbol?: string }).symbol?.toUpperCase();
-      return sym === targetToken.symbol?.toUpperCase();
-    });
+    const want = tokenContractKeySet(targetToken.contracts);
+    if (want.size === 0) return 0;
+    const asset = primaryAssets.assets.find((a) => mergedAssetMatchesContractKeys(a as never, want));
     if (!asset) return 0;
     const amt = (asset as { amount?: number | string }).amount;
     return typeof amt === "string" ? parseFloat(amt) : (amt || 0);
@@ -330,24 +311,23 @@ export const SwapModal = ({
       };
     }
     
-    // Fallback: try to find from primaryAssets if we have access
-    // This helps when external tokens have chainAggregation but no contracts
-    if (primaryAssets?.assets) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const matchingAsset = primaryAssets.assets.find((a: any) => 
-        a.symbol?.toUpperCase() === targetToken.symbol?.toUpperCase()
-      );
-      if (matchingAsset?.chainAggregation) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const chainData = matchingAsset.chainAggregation.find((c: any) => 
-          c.token?.address && c.token?.chainId
+    if (primaryAssets?.assets && targetToken.contracts?.length) {
+      const want = tokenContractKeySet(targetToken.contracts);
+      if (want.size > 0) {
+        const matchingAsset = primaryAssets.assets.find((a) =>
+          mergedAssetMatchesContractKeys(a as never, want),
         );
-        if (chainData?.token?.address) {
-          console.log("[SwapModal] Using chainAggregation address:", chainData.token.address);
-          return { 
-            address: chainData.token.address, 
-            chainId: chainData.token.chainId || 8453 
-          };
+        if (matchingAsset && (matchingAsset as { chainAggregation?: unknown[] }).chainAggregation) {
+          const agg = (matchingAsset as { chainAggregation: Array<{ token?: { address?: string; chainId?: number } }> })
+            .chainAggregation;
+          const chainData = agg.find((c) => c.token?.address && c.token?.chainId);
+          if (chainData?.token?.address) {
+            console.log("[SwapModal] Using chainAggregation address:", chainData.token.address);
+            return {
+              address: chainData.token.address,
+              chainId: chainData.token.chainId || 8453,
+            };
+          }
         }
       }
     }

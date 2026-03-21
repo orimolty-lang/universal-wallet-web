@@ -38,30 +38,20 @@ import { useUniversalAccountWS } from "./hooks/useUniversalAccountWS";
 import { getEIP7702Deployments, build7702Authorizations } from "../lib/eip7702";
 import { fetchParticleExternalAssets } from "../lib/particle-balances";
 import { pollTransactionDetails } from "./lib/swapService";
+import type { MobulaPortfolioAsset } from "./lib/mobulaAssetIdentity";
+import {
+  mobulaAssetPositionKeys,
+  parseChainIdMobula,
+  positionKeysFromMergedShape,
+  primaryPortfolioContractKeys,
+  tokenContractKeySet,
+  mergedAssetMatchesContractKeys,
+} from "./lib/mobulaAssetIdentity";
 
 // Mobula: proxied via Cloudflare worker (no frontend API key)
 const MOBULA_PROXY_BASE = process.env.NEXT_PUBLIC_LIFI_PROXY_URL || "https://lifi-proxy.orimolty.workers.dev";
 
-// Mobula wallet balance response type
-interface MobulaAsset {
-  asset: {
-    name: string;
-    symbol: string;
-    logo?: string;
-    contracts?: string[];
-    blockchains?: string[];
-  };
-  token_balance: number;
-  price: number;
-  price_change_24h?: number;
-  estimated_balance: number;
-  cross_chain_balances?: Record<string, { 
-    address: string; 
-    balance: number; 
-    balanceRaw: string;
-    chainId: number;
-  }>;
-}
+type MobulaAsset = MobulaPortfolioAsset;
 
 // Fetch wallet balances from Mobula API
 async function fetchMobulaWalletBalances(address: string): Promise<MobulaAsset[]> {
@@ -4998,13 +4988,13 @@ const HomeTab = ({
     touchStartY.current = 0;
   };
   
-  const toggleExpanded = (symbol: string) => {
-    setExpandedTokens(prev => {
+  const toggleExpanded = (assetKey: string) => {
+    setExpandedTokens((prev) => {
       const next = new Set(prev);
-      if (next.has(symbol)) {
-        next.delete(symbol);
+      if (next.has(assetKey)) {
+        next.delete(assetKey);
       } else {
-        next.add(symbol);
+        next.add(assetKey);
       }
       return next;
     });
@@ -5032,7 +5022,10 @@ const HomeTab = ({
         }));
     }
     
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ak = (asset as any).assetKey as string | undefined;
     return {
+      assetKey: ak || `p:${(asset.tokenType || asset.symbol || "x").toUpperCase()}`,
       symbol: asset.symbol || asset.tokenType?.toUpperCase() || "???",
       name: asset.name || asset.symbol || asset.tokenType || "Token",
       balance: typeof asset.amount === 'string' ? parseFloat(asset.amount) : (asset.amount || 0),
@@ -5052,7 +5045,13 @@ const HomeTab = ({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       })).filter((c: any) => c.amount > 0.0001) || [],
     };
-  }).filter((t: { balance: number }) => t.balance > 0.0001) || [];
+  }).filter(
+    (t: { balance: number; isExternal?: boolean; assetKey?: string; contracts?: unknown[] }) => {
+      if (t.balance <= 0.0001) return false;
+      if (t.isExternal && (!t.assetKey || !Array.isArray(t.contracts) || t.contracts.length === 0)) return false;
+      return true;
+    },
+  ) || [];
   
   // Filter based on hide small balances toggle
   const tokens = hideSmallBalances 
@@ -5162,6 +5161,7 @@ const HomeTab = ({
         {tokens.length > 0 ? (
           <div>
             {tokens.map((token: { 
+              assetKey: string;
               symbol: string; 
               name: string; 
               balance: number; 
@@ -5171,12 +5171,12 @@ const HomeTab = ({
               isExternal?: boolean;
               contracts?: Array<{ address: string; blockchain: string }>;
               chainBreakdown: Array<{ chainId: number; chainName: string; amount: number; amountInUSD: number; address: string }>;
-            }, i: number) => {
+            }) => {
               // For external tokens, get chain from first chain breakdown or contracts
               const externalChainId = token.isExternal && token.chainBreakdown[0]?.chainId;
               
               return (
-              <div key={i} className="border-b border-gray-800/30">
+              <div key={token.assetKey} className="border-b border-gray-800/30">
                 {/* Main Token Row - click opens swap modal */}
                 <button 
                   className="w-full flex items-center justify-between py-4"
@@ -5202,7 +5202,7 @@ const HomeTab = ({
                       console.log("[HomeTab] External token selected:", token.symbol, "contracts:", contracts);
                       
                       onTokenSelect?.({
-                        id: token.symbol.toLowerCase(),
+                        id: token.assetKey,
                         symbol: token.symbol,
                         name: token.name,
                         logo: token.logo,
@@ -5211,7 +5211,7 @@ const HomeTab = ({
                       });
                     } else {
                       // Primary UA tokens: toggle chain breakdown expansion
-                      toggleExpanded(token.symbol);
+                      toggleExpanded(token.assetKey);
                     }
                   }}
                 >
@@ -5253,7 +5253,7 @@ const HomeTab = ({
                     </div>
                     {/* Show expand arrow for primary tokens with chain breakdown */}
                     {!token.isExternal && token.chainBreakdown.length > 0 && (
-                      <span className={`text-gray-500 text-sm transition-transform ${expandedTokens.has(token.symbol) ? 'rotate-180' : ''}`}>
+                      <span className={`text-gray-500 text-sm transition-transform ${expandedTokens.has(token.assetKey) ? 'rotate-180' : ''}`}>
                         ▼
                       </span>
                     )}
@@ -5261,7 +5261,7 @@ const HomeTab = ({
                 </button>
                 
                 {/* Chain Breakdown (Expanded) - only for primary UA tokens */}
-                {!token.isExternal && expandedTokens.has(token.symbol) && (
+                {!token.isExternal && expandedTokens.has(token.assetKey) && (
                   <div className="pl-14 pb-4">
                     {token.chainBreakdown.length > 0 && (
                       <div className="space-y-2 mb-3">
@@ -5322,13 +5322,12 @@ const SearchTab = ({
   // Calculate user balance for selected token
   const getUserBalance = useCallback((token: TokenResult | null) => {
     if (!token || !primaryAssets?.assets) return null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const userAsset = primaryAssets.assets.find((a: any) => 
-      a.symbol?.toUpperCase() === token.symbol.toUpperCase()
-    );
+    const want = tokenContractKeySet(token.contracts);
+    if (want.size === 0) return null;
+    const userAsset = primaryAssets.assets.find((a) => mergedAssetMatchesContractKeys(a as never, want));
     if (!userAsset) return null;
     return {
-      amount: typeof userAsset.amount === 'string' ? parseFloat(userAsset.amount) : (userAsset.amount || 0),
+      amount: typeof userAsset.amount === "string" ? parseFloat(userAsset.amount) : (userAsset.amount || 0),
       amountInUSD: userAsset.amountInUSD || 0,
     };
   }, [primaryAssets]);
@@ -7086,13 +7085,15 @@ const App = () => {
         console.log("[Mobula] Solana assets:", solanaAssets.length, solanaAssets.map(a => a.asset?.symbol).slice(0, 10));
       }
       
-      // Merge and dedupe by symbol (prefer higher balance)
+      // Dedupe by contract position, not symbol (same symbol can be different scam CAs)
       const assetMap = new Map<string, MobulaAsset>();
-      [...evmAssets, ...solanaAssets].forEach(asset => {
-        const key = asset.asset.symbol?.toUpperCase();
-        const existing = assetMap.get(key);
+      [...evmAssets, ...solanaAssets].forEach((asset) => {
+        const keys = mobulaAssetPositionKeys(asset);
+        if (keys.length === 0) return;
+        const mapKey = keys[0];
+        const existing = assetMap.get(mapKey);
         if (!existing || asset.estimated_balance > existing.estimated_balance) {
-          assetMap.set(key, asset);
+          assetMap.set(mapKey, asset);
         }
       });
       
@@ -7166,48 +7167,18 @@ const App = () => {
     console.log("[CombinedAssets] mobulaAssets:", mobulaAssets?.length || 0, "particleAssets:", particleAssets?.length || 0);
     if (!primaryAssets) return null;
     
-    // Get tokenTypes from UA primary assets for dedup (UA uses tokenType, not symbol)
-    const primarySymbols = new Set(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (primaryAssets.assets?.map((a: any) => a.tokenType?.toUpperCase()?.trim()) || [])
-        .filter((s: string | undefined) => s)
-    );
-    
-    // Filter Mobula assets - exclude primary dupes
+    const primaryContractKeys = primaryPortfolioContractKeys(primaryAssets);
+
     const fromMobula = mobulaAssets
-      .filter(ma => {
-        const symbolUpper = ma.asset.symbol?.toUpperCase()?.trim();
-        if (!symbolUpper) return false;
-        
-        // Debug: Log PUNCH specifically
-        if (symbolUpper === 'PUNCH') {
-          console.log("[CombinedAssets] PUNCH debug:", {
-            symbol: ma.asset.symbol,
-            token_balance: ma.token_balance,
-            estimated_balance: ma.estimated_balance,
-            inPrimary: primarySymbols.has(symbolUpper),
-            contracts: ma.asset.contracts,
-            blockchains: ma.asset.blockchains,
-          });
-        }
-        
-        // Skip if already in primary assets (case-insensitive)
-        // This is the ONLY dedup - no more commonTokens blocking
-        if (primarySymbols.has(symbolUpper)) {
-          console.log("[CombinedAssets] Skipping dupe (in primary):", ma.asset.symbol);
-          return false;
-        }
-        
+      .filter((ma) => {
+        const posKeys = mobulaAssetPositionKeys(ma);
+        if (posKeys.length === 0) return false;
+        if (ma.token_balance <= 0) return false;
+        if (posKeys.some((k) => primaryContractKeys.has(k))) return false;
         return true;
       })
-      .filter(ma => {
-        // Debug: log if PUNCH gets filtered by balance
-        if (ma.asset.symbol?.toUpperCase() === 'PUNCH' && ma.token_balance <= 0) {
-          console.log("[CombinedAssets] PUNCH filtered - zero balance:", ma.token_balance);
-        }
-        return ma.token_balance > 0;
-      }) // Show any token with balance
-      .map(ma => {
+      .map((ma) => {
+        const positionKeys = mobulaAssetPositionKeys(ma);
         // Build contracts array from Mobula asset data or cross_chain_balances
         const contracts: Array<{ address: string; blockchain: string }> = [];
         
@@ -7227,16 +7198,8 @@ const App = () => {
             1: "ethereum", 8453: "base", 42161: "arbitrum",
             10: "optimism", 137: "polygon", 56: "bsc", 101: "solana",
           };
-          const parseMobulaChainId = (raw: unknown): number | undefined => {
-            if (typeof raw === "number" && Number.isFinite(raw)) return raw;
-            if (typeof raw === "string") {
-              const n = parseInt(raw.replace(/^evm:/i, ""), 10);
-              return Number.isFinite(n) ? n : undefined;
-            }
-            return undefined;
-          };
           Object.values(ma.cross_chain_balances).forEach((data) => {
-            const cid = parseMobulaChainId(data.chainId);
+            const cid = parseChainIdMobula(data.chainId);
             if (data.address && cid) {
               contracts.push({
                 address: data.address,
@@ -7257,6 +7220,7 @@ const App = () => {
           logo: ma.asset.logo,
           isExternal: true, // Flag to identify external assets
           contracts, // Now properly populated
+          assetKey: positionKeys[0],
           // Build chain aggregation from cross_chain_balances
           chainAggregation: ma.cross_chain_balances
             ? Object.values(ma.cross_chain_balances).map((data) => {
@@ -7277,14 +7241,31 @@ const App = () => {
         };
       });
     
-    // Add Particle assets (WETH, WBNB) - skip symbols already from Mobula
-    const mobulaSymbols = new Set(fromMobula.map((a: { symbol: string }) => a.symbol?.toUpperCase()));
-    const fromParticle = particleAssets.filter(
-      (pa) => !mobulaSymbols.has(pa.symbol?.toUpperCase()) && pa.amount > 0
-    );
+    const mobulaContractKeys = new Set<string>();
+    fromMobula.forEach((row) => {
+      positionKeysFromMergedShape(row).forEach((k) => mobulaContractKeys.add(k));
+    });
+
+    const fromParticle = particleAssets
+      .filter((pa) => {
+        if (pa.amount <= 0) return false;
+        const pk = positionKeysFromMergedShape(pa);
+        if (pk.length === 0) return false;
+        if (pk.some((k) => mobulaContractKeys.has(k))) return false;
+        return true;
+      })
+      .map((pa) => ({
+        ...pa,
+        assetKey: positionKeysFromMergedShape(pa)[0],
+      }));
     
     const externalAssets = [...fromMobula, ...fromParticle];
-    const mergedAssets = [...(primaryAssets.assets || []), ...externalAssets];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const primaryWithKeys = (primaryAssets.assets || []).map((a: any) => ({
+      ...a,
+      assetKey: `p:${String(a.tokenType || a.symbol || "x").toUpperCase()}`,
+    }));
+    const mergedAssets = [...primaryWithKeys, ...externalAssets];
     
     console.log("[CombinedAssets] Final:", mergedAssets.length, "assets (", externalAssets.length, "external, Mobula:", fromMobula.length, "Particle:", fromParticle.length, ")");
     
@@ -7513,12 +7494,20 @@ const App = () => {
       {/* Token Detail Modal for Home Tab external tokens */}
       <TokenDetailModal 
         token={homeSelectedToken} 
-        userBalance={homeSelectedToken ? {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          amount: combinedAssets?.assets?.find((a: any) => a.symbol?.toUpperCase() === homeSelectedToken.symbol?.toUpperCase())?.amount || 0,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          amountInUSD: combinedAssets?.assets?.find((a: any) => a.symbol?.toUpperCase() === homeSelectedToken.symbol?.toUpperCase())?.amountInUSD || 0,
-        } : undefined}
+        userBalance={homeSelectedToken ? (() => {
+          const want = tokenContractKeySet(homeSelectedToken.contracts);
+          const row = combinedAssets?.assets?.find((a) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const ak = (a as any).assetKey as string | undefined;
+            if (homeSelectedToken.id && ak) return ak === homeSelectedToken.id;
+            if (want.size > 0) return mergedAssetMatchesContractKeys(a as never, want);
+            return false;
+          });
+          return {
+            amount: row ? (typeof row.amount === "string" ? parseFloat(row.amount) : (row.amount || 0)) : 0,
+            amountInUSD: row?.amountInUSD || 0,
+          };
+        })() : undefined}
         onClose={() => setHomeSelectedToken(null)} 
         onSwap={() => {
           setShowHomeSwapModal(true);
