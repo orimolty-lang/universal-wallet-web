@@ -37,6 +37,7 @@ import { toBeHex, formatUnits } from "ethers";
 import { useUniversalAccountWS } from "./hooks/useUniversalAccountWS";
 import { getEIP7702Deployments, build7702Authorizations } from "../lib/eip7702";
 import { fetchParticleExternalAssets } from "../lib/particle-balances";
+import { pollTransactionDetails } from "./lib/swapService";
 
 // Mobula: proxied via Cloudflare worker (no frontend API key)
 const MOBULA_PROXY_BASE = process.env.NEXT_PUBLIC_LIFI_PROXY_URL || "https://lifi-proxy.orimolty.workers.dev";
@@ -3435,21 +3436,50 @@ const PerpsModal = ({
     }
   }, [ownerEOA, pairLeverageLimits, baseRpcCall, availableMarkets]);
 
-  const confirmOrSkipBaseTx = useCallback(
-    async (txHash: string, failureLabel: string) => {
-      if (isLikelyEvmTxHash(txHash)) {
-        const receipt = (await waitForBaseReceipt(txHash)) as unknown as { status?: string };
-        if (receipt?.status !== '0x1') throw new Error(`${failureLabel} status=${receipt?.status || 'unknown'}`);
+  /** Same completion path as SwapModal: `ua.getTransaction` until FINISHED, then optional Base receipt check. */
+  const waitForPerpsUniversalActivity = useCallback(
+    async (transactionId: string, failureLabel: string) => {
+      const tid = (transactionId || '').trim();
+
+      const refreshPositionsFallback = async () => {
+        for (let i = 0; i < 4; i++) {
+          await new Promise((r) => setTimeout(r, i === 0 ? 1000 : 1600));
+          await fetchOpenPositions();
+        }
+      };
+
+      if (!tid) {
+        await refreshPositionsFallback();
         return;
       }
-      addDebug(`Perps: skip receipt poll (not a 0x tx hash): ${(txHash || '').slice(0, 48)}`);
-      for (let i = 0; i < 4; i++) {
-        await new Promise((r) => setTimeout(r, i === 0 ? 1000 : 1600));
-        await fetchOpenPositions();
+
+      if (universalAccount) {
+        const details = await pollTransactionDetails(universalAccount, tid, 8453, 25, 2000);
+        if (details.status === 'failed') {
+          throw new Error(`${failureLabel}: Universal transaction failed`);
+        }
+        if (details.status === 'completed') {
+          if (details.txHash && isLikelyEvmTxHash(details.txHash)) {
+            const receipt = (await waitForBaseReceipt(details.txHash)) as unknown as { status?: string };
+            if (receipt?.status !== '0x1') {
+              throw new Error(`${failureLabel} on-chain status=${receipt?.status || 'unknown'}`);
+            }
+          }
+          await fetchOpenPositions();
+          return;
+        }
       }
+
+      if (isLikelyEvmTxHash(tid)) {
+        const receipt = (await waitForBaseReceipt(tid)) as unknown as { status?: string };
+        if (receipt?.status !== '0x1') throw new Error(`${failureLabel} status=${receipt?.status || 'unknown'}`);
+        await fetchOpenPositions();
+        return;
+      }
+
+      await refreshPositionsFallback();
     },
-    // addDebug omitted from deps (recreated each render); only used for log line
-    [waitForBaseReceipt, fetchOpenPositions],
+    [universalAccount, waitForBaseReceipt, fetchOpenPositions],
   );
 
   useEffect(() => {
@@ -3790,7 +3820,7 @@ const PerpsModal = ({
       onWalletActivity?.(isLong ? 'perps_long_submit' : 'perps_short_submit', sym);
 
       upsertPerpsActivity({ id: `open-${txHash || 'na'}`, action: 'Open', pairName: selectedPair.name, txHash: txHash || '-', status: 'pending', timestamp: Date.now() });
-      await confirmOrSkipBaseTx(txHash, 'OpenTrade failed onchain.');
+      await waitForPerpsUniversalActivity(txHash, 'Open trade');
       upsertPerpsActivity({ id: `open-${txHash || 'na'}`, action: 'Open', pairName: selectedPair.name, txHash: txHash || '-', status: 'confirmed', timestamp: Date.now() });
       onWalletActivity?.(isLong ? 'perps_long_confirmed' : 'perps_short_confirmed', sym);
       await fetchOpenPositions();
@@ -3848,7 +3878,7 @@ const PerpsModal = ({
       onWalletActivity?.('perps_close_submit', sym);
 
       upsertPerpsActivity({ id: `close-${txHash || 'na'}`, action: 'Close', pairName: position.pairName, txHash: txHash || '-', status: 'pending', timestamp: Date.now() });
-      await confirmOrSkipBaseTx(txHash, 'Close transaction failed onchain.');
+      await waitForPerpsUniversalActivity(txHash, 'Close position');
       upsertPerpsActivity({ id: `close-${txHash || 'na'}`, action: 'Close', pairName: position.pairName, txHash: txHash || '-', status: 'confirmed', timestamp: Date.now() });
       onWalletActivity?.('perps_close_confirmed', sym);
       await fetchOpenPositions();
@@ -3933,7 +3963,7 @@ const PerpsModal = ({
       onWalletActivity?.('perps_tpsl_submit', sym);
 
       upsertPerpsActivity({ id: `update-${txHash || 'na'}`, action: 'Update TP/SL', pairName: position.pairName, txHash: txHash || '-', status: 'pending', timestamp: Date.now() });
-      await confirmOrSkipBaseTx(txHash, 'Update TP/SL transaction failed onchain.');
+      await waitForPerpsUniversalActivity(txHash, 'Update TP/SL');
       upsertPerpsActivity({ id: `update-${txHash || 'na'}`, action: 'Update TP/SL', pairName: position.pairName, txHash: txHash || '-', status: 'confirmed', timestamp: Date.now() });
       onWalletActivity?.('perps_tpsl_confirmed', sym);
       setPositionEdits((prev) => ({
