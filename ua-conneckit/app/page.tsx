@@ -3716,13 +3716,9 @@ const PerpsModal = ({
       const collateralToClose = BigInt(Math.max(1, Math.floor(position.collateralUsd * 1e6)));
       const closeCalldata = encodeFunctionData({ abi: AVANTIS_TRADING_ABI, functionName: 'closeTradeMarket', args: [BigInt(position.pairIndex), BigInt(position.positionIndex), collateralToClose] });
 
-      // USDC `0` + ETH: same expectTokens shape as open so UA can source the gas leg from unified primary balance (any asset).
       const tx = await universalAccount.createUniversalTransaction({
         chainId: CHAIN_ID.BASE_MAINNET,
-        expectTokens: [
-          { type: SUPPORTED_TOKEN_TYPE.USDC, amount: '0' },
-          { type: SUPPORTED_TOKEN_TYPE.ETH, amount: perpsUaEthExpectAmount(executionFee) },
-        ],
+        expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: perpsUaEthExpectAmount(executionFee) }],
         transactions: [{ to: AVANTIS_TRADING_ADDRESS as `0x${string}`, data: closeCalldata, value: `0x${executionFee.toString(16)}` }],
       });
       const walletClient = primaryWallet.getWalletClient() as unknown as WalletClientLike;
@@ -3805,13 +3801,9 @@ const PerpsModal = ({
         ],
       });
 
-      // Same expectTokens shape as open (see close) for unified primary balance routing.
       const tx = await universalAccount.createUniversalTransaction({
         chainId: CHAIN_ID.BASE_MAINNET,
-        expectTokens: [
-          { type: SUPPORTED_TOKEN_TYPE.USDC, amount: '0' },
-          { type: SUPPORTED_TOKEN_TYPE.ETH, amount: perpsUaEthExpectAmount(executionFee) },
-        ],
+        expectTokens: [{ type: SUPPORTED_TOKEN_TYPE.ETH, amount: perpsUaEthExpectAmount(executionFee) }],
         transactions: [{ to: AVANTIS_TRADING_ADDRESS as `0x${string}`, data: updateCalldata, value: `0x${executionFee.toString(16)}` }],
       });
       const walletClient = primaryWallet.getWalletClient() as unknown as WalletClientLike;
