@@ -4002,13 +4002,13 @@ const PerpsModal = ({
   const totalOpenPnlUsd = displayOpenPositions.reduce((sum, p) => sum + p.pnlUsd, 0);
 
   return (
-    <BottomSheet isOpen={isOpen} onClose={() => { setView('markets'); onClose(); }} dark={view === 'trade'}>
+    <BottomSheet isOpen={isOpen} onClose={() => { setView('markets'); onClose(); }} dark>
       <div className="pb-8 max-h-[85vh] overflow-y-auto">
         {view === 'markets' ? (
-          /* ========== MARKETS VIEW (Rainbow-style) ========== */
+          /* ========== MARKETS VIEW (black sheet, matches trade page) ========== */
           <>
             {/* Header */}
-            <div className="flex items-center justify-between px-4 mb-3">
+            <div className="flex items-center justify-between px-4 mb-3 pb-3 border-b border-[#252525]">
               <div className="w-10 h-10" />
               <h2 className="text-white text-2xl font-bold flex items-center gap-2.5">
                 <img
@@ -4020,7 +4020,7 @@ const PerpsModal = ({
               </h2>
               <button
                 onClick={() => setShowPerpsHistoryModal(true)}
-                className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center"
+                className="w-10 h-10 rounded-full bg-[#1a1a1a] border border-[#333] flex items-center justify-center hover:border-accent-dynamic/40 transition-colors"
               >
                 <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
@@ -4030,9 +4030,9 @@ const PerpsModal = ({
 
             {/* Available Balance Card */}
             <div className="px-4 mb-5">
-              <div className="rounded-2xl border border-gray-700 bg-[#171717] px-3 py-3 flex items-center justify-between">
+              <div className="rounded-2xl border border-[#333] bg-[#1a1a1a] px-3 py-3 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-full bg-[#1f1f1f] border border-gray-600 flex items-center justify-center overflow-hidden shrink-0">
+                  <div className="w-11 h-11 rounded-full bg-[#141414] border border-[#333] flex items-center justify-center overflow-hidden shrink-0">
                     <img
                       src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png"
                       alt="USDC"
@@ -4069,7 +4069,7 @@ const PerpsModal = ({
 
             {/* Open Positions */}
             <div className="px-4 mb-5">
-              <div className="text-gray-500 font-semibold mb-1">Open Positions</div>
+              <div className="text-gray-400 text-xs font-semibold uppercase tracking-wide mb-2">Open Positions</div>
               <div className="text-gray-300 text-4xl font-bold mb-2">${totalOpenCollateralUsd.toFixed(2)}</div>
               <div className={`text-sm mb-3 ${totalOpenPnlUsd >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                 PnL {totalOpenPnlUsd >= 0 ? '+' : ''}${totalOpenPnlUsd.toFixed(2)}
@@ -4095,7 +4095,7 @@ const PerpsModal = ({
               ) : (
                 <div className="space-y-2">
                   {displayOpenPositions.map((p) => (
-                    <div key={p.id} className="bg-[#191919] border border-gray-800 rounded-xl p-3">
+                    <div key={p.id} className="bg-[#1a1a1a] border border-[#333] rounded-xl p-3">
                       <div className="flex items-center justify-between mb-2">
                         <div className="text-white font-semibold">
                           {p.symbol}/USD <span className={p.isLong ? 'text-green-400' : 'text-red-400'}>{p.isLong ? 'LONG' : 'SHORT'}</span>
@@ -4153,14 +4153,14 @@ const PerpsModal = ({
 
             {/* Markets Header */}
             <div className="flex items-center justify-between px-4 mb-3">
-              <button className="text-white text-3xl font-semibold flex items-center gap-1">
-                Markets <span className="text-gray-500">›</span>
+              <button type="button" className="text-white text-2xl font-semibold flex items-center gap-1">
+                Markets <span className="text-accent-dynamic/70">›</span>
               </button>
               <div className="flex items-center gap-2">
                 <select 
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as 'volume' | 'price' | 'change')}
-                  className="bg-gray-900/80 border border-gray-700 rounded-full px-3 py-1 text-gray-300 text-sm outline-none"
+                  className="bg-[#1a1a1a] border border-[#333] rounded-full px-3 py-1.5 text-gray-200 text-sm outline-none focus:border-accent-dynamic/50"
                 >
                   <option value="volume">By Volume</option>
                   <option value="price">By Price</option>
@@ -4174,17 +4174,18 @@ const PerpsModal = ({
                 value={marketSearch}
                 onChange={(e) => setMarketSearch(e.target.value)}
                 placeholder="Search market"
-                className="w-full bg-gray-900/80 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white outline-none"
+                className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-3 py-2.5 text-sm text-white outline-none placeholder:text-gray-500 focus:border-accent-dynamic/50"
               />
               <div className="flex gap-2 mt-2 flex-wrap">
                 {(['all', 'zfp', 'crypto', 'forex', 'commodities', 'equity', 'other'] as const).map((group) => (
                   <button
                     key={group}
+                    type="button"
                     onClick={() => setMarketGroupFilter(group)}
-                    className={`px-3 py-1 rounded-full text-xs capitalize ${
+                    className={`px-3 py-1 rounded-full text-xs capitalize border transition-colors ${
                       marketGroupFilter === group
-                        ? 'bg-accent-dynamic text-black font-semibold'
-                        : 'bg-gray-800 text-gray-400'
+                        ? 'bg-accent-dynamic text-black font-semibold border-accent-dynamic'
+                        : 'bg-[#1a1a1a] text-gray-400 border-[#333] hover:border-accent-dynamic/35'
                     }`}
                   >
                     {group === 'zfp' ? 'ZFP' : group}
@@ -4194,7 +4195,7 @@ const PerpsModal = ({
             </div>
 
             {/* Markets List */}
-            <div className="space-y-1">
+            <div className="space-y-2 px-4">
               {marketsListForUi.map((market) => {
                 const priceData = marketPrices[market.pairName];
                 const price = priceData?.price || 0;
@@ -4216,13 +4217,14 @@ const PerpsModal = ({
                 return (
                   <button
                     key={`${market.pairName}-${market.index}`}
+                    type="button"
                     onClick={() => handleSelectMarket(market)}
-                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-800/50 transition-colors"
+                    className="w-full flex items-center justify-between rounded-xl border border-[#333] bg-[#1a1a1a] px-3 py-3 text-left transition-colors hover:bg-[#222] hover:border-accent-dynamic/30"
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
                       {/* Token Logo */}
                       <div 
-                        className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden"
+                        className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden shrink-0 border border-[#2a2a2a]"
                         style={{ backgroundColor: `${market.color}20` }}
                       >
                         <img
@@ -4246,18 +4248,19 @@ const PerpsModal = ({
                         </span>
                       </div>
                       {/* Token Info */}
-                      <div className="text-left">
-                        <div className="text-white font-medium">{market.pairName}</div>
-                        <div className="flex items-center gap-2 text-xs">
-                          <span className="text-gray-500">UP TO</span>
-                          <span className="text-gray-400">{Math.floor(displayLev)}x</span>
-                          <span className="text-gray-600">•</span>
-                          <span className="text-gray-500">VOL ${volumeDisplay}</span>
+                      <div className="text-left min-w-0">
+                        <div className="text-white font-medium truncate">{market.pairName}</div>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] mt-0.5">
+                          <span className="text-gray-500 uppercase tracking-wide">Up to</span>
+                          <span className="text-accent-dynamic font-semibold tabular-nums">{Math.floor(displayLev)}x</span>
+                          <span className="text-accent-dynamic/40" aria-hidden>•</span>
+                          <span className="text-gray-500 uppercase tracking-wide">Vol</span>
+                          <span className="text-accent-dynamic-light font-medium tabular-nums">${volumeDisplay}</span>
                         </div>
                       </div>
                     </div>
                     {/* Price & Change */}
-                    <div className="text-right">
+                    <div className="text-right shrink-0 pl-2">
                       <div className="text-white font-medium">
                         {price > 0 ? formatPrice(price) : '--'}
                       </div>
