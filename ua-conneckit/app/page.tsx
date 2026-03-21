@@ -2257,14 +2257,21 @@ const MULTICALL3_ABI = [
 
 // Pyth Oracle on Base (used by Avantis for price feeds)
 const PYTH_CONTRACT_ADDRESS = '0x8250f4aF4B972684F7b336503E2D6dFeDeB1487a';
+/** IPyth.getUpdateFee(bytes[] updateData) — fee depends on payload size, not a bare count. */
 const PYTH_ABI = [
   {
     name: 'getUpdateFee',
     type: 'function',
     stateMutability: 'view',
-    inputs: [{ name: 'updateDataSize', type: 'uint256' }],
+    inputs: [{ name: 'updateData', type: 'bytes[]' }],
     outputs: [{ name: 'feeAmount', type: 'uint256' }],
   },
+] as const;
+
+const BASE_JSON_RPC_URLS = [
+  'https://mainnet.base.org',
+  'https://base.llamarpc.com',
+  'https://1rpc.io/base',
 ] as const;
 
 // Decimal conventions from Avantis SDK docs:
@@ -3123,17 +3130,48 @@ const PerpsModal = ({
     });
   }, []);
 
-  const fetchExecutionFeeWei = useCallback(async (updateCount = 1) => {
-    const pythCalldata = encodeFunctionData({
-      abi: PYTH_ABI,
-      functionName: 'getUpdateFee',
-      args: [BigInt(Math.max(1, updateCount))],
-    });
-    const feeHex = await baseRpcCall('eth_call', [{ to: PYTH_CONTRACT_ADDRESS, data: pythCalldata }, 'latest']);
-    if (!feeHex) throw new Error('Avantis/Pyth execution fee unavailable');
-    const raw = BigInt(feeHex);
-    return (raw * BigInt(120)) / BigInt(100); // Avantis/Pyth fee +20% safety margin
-  }, [baseRpcCall]);
+  /** On-chain Pyth fee for the same Hermes payloads Avantis uses (aligns with SDK build_trade_close_tx fee logic). */
+  const fetchPythExecutionFeeWei = useCallback(
+    async (updateData: `0x${string}`[], context: string) => {
+      if (!updateData.length) {
+        throw new Error('Missing Pyth update data; cannot compute execution fee.');
+      }
+      const pythCalldata = encodeFunctionData({
+        abi: PYTH_ABI,
+        functionName: 'getUpdateFee',
+        args: [updateData],
+      });
+      let feeHex: string | undefined;
+      for (const rpcUrl of BASE_JSON_RPC_URLS) {
+        try {
+          const resp = await fetch(rpcUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'eth_call',
+              params: [{ to: PYTH_CONTRACT_ADDRESS, data: pythCalldata }, 'latest'],
+              id: 1,
+            }),
+          }).then((r) => r.json());
+          if (typeof resp?.result === 'string' && resp.result.startsWith('0x')) {
+            feeHex = resp.result;
+            break;
+          }
+        } catch {
+          // try next RPC
+        }
+      }
+      if (!feeHex) {
+        const fallback = (parseEther('0.001') * BigInt(120)) / BigInt(100);
+        console.warn(`[Perps] ${context}: getUpdateFee eth_call failed on all Base RPCs; using fallback fee`, formatEther(fallback), 'ETH');
+        return fallback;
+      }
+      const raw = BigInt(feeHex);
+      return (raw * BigInt(120)) / BigInt(100);
+    },
+    [],
+  );
 
   /** UA expectTokens ETH must cover msg.value to Avantis + 7702/bundler gas; Number(wei) loses precision. */
   const perpsUaEthExpectAmount = useCallback((executionFeeWei: bigint) => {
@@ -3612,7 +3650,8 @@ const PerpsModal = ({
       const tpScaled = tpPrice > 0 ? BigInt(Math.floor(tpPrice * 1e10)) : BigInt(0);
       const slScaled = slPrice > 0 ? BigInt(Math.floor(slPrice * 1e10)) : BigInt(0);
       const slippageP = BigInt(1e8);
-      const executionFee = await fetchExecutionFeeWei(1);
+      const pythUpdateBytes = await fetchPythUpdateData(selectedPair.name);
+      const executionFee = await fetchPythExecutionFeeWei(pythUpdateBytes as `0x${string}`[], 'openTrade');
 
       const orderTypeValue = isZeroFeeMode ? 3 : 0;
       const openTradeCalldata = encodeFunctionData({
@@ -3700,7 +3739,8 @@ const PerpsModal = ({
     setError(null);
     setLoadingStatus('Preparing close...');
     try {
-      const executionFee = await fetchExecutionFeeWei(1);
+      const pythUpdateBytes = await fetchPythUpdateData(position.pairName);
+      const executionFee = await fetchPythExecutionFeeWei(pythUpdateBytes as `0x${string}`[], 'closeTrade');
       const collateralToClose = BigInt(Math.max(1, Math.floor(position.collateralUsd * 1e6)));
       const closeCalldata = encodeFunctionData({ abi: AVANTIS_TRADING_ABI, functionName: 'closeTradeMarket', args: [BigInt(position.pairIndex), BigInt(position.positionIndex), collateralToClose] });
 
@@ -3719,7 +3759,7 @@ const PerpsModal = ({
       addDebug('Submitting close position via UA...');
       const res = await universalAccount.sendTransaction(tx, signature as string, auths);
       const txHash = res?.transactionId || 'pending';
-      addDebug(`TP/SL send result tx=${txHash}`);
+      addDebug(`Close send result tx=${txHash}`);
 
       upsertPerpsActivity({ id: `close-${txHash}`, action: 'Close', pairName: position.pairName, txHash, status: 'pending', timestamp: Date.now() });
       setTxResult({ txId: txHash, status: 'pending', action: 'close' });
@@ -3769,7 +3809,7 @@ const PerpsModal = ({
     try {
       const updateData = await fetchPythUpdateData(position.pairName);
       addDebug(`Pyth update data count: ${updateData.length}`);
-      const executionFee = await fetchExecutionFeeWei(updateData.length || 1);
+      const executionFee = await fetchPythExecutionFeeWei(updateData as `0x${string}`[], 'updateTpAndSl');
       const updateCalldata = encodeFunctionData({
         abi: AVANTIS_TRADING_ABI,
         functionName: 'updateTpAndSl',
