@@ -330,9 +330,9 @@ export default function EarnModal({
   }, []);
 
   return (
-    <BottomSheet isOpen={isOpen} onClose={onClose}>
+    <BottomSheet isOpen={isOpen} onClose={onClose} dark>
       <div className="px-5 pb-8 min-h-[400px]" style={{ paddingTop: "env(safe-area-inset-top)" }}>
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#252525]">
           <h2 className="text-white text-xl font-bold flex items-center gap-2">
             <TrendingUp className="w-6 h-6 text-accent-dynamic" />
             Earn
@@ -343,8 +343,8 @@ export default function EarnModal({
           Deposit into yield vaults to earn interest on your assets.
         </p>
 
-        <div className="bg-zinc-900 rounded-xl px-4 py-3 border border-zinc-800 mb-4">
-          <div className="text-gray-400 text-xs mb-0.5">Balance</div>
+        <div className="bg-[#1a1a1a] rounded-2xl px-4 py-3 border border-[#333] mb-4">
+          <div className="text-gray-400 text-xs uppercase tracking-wide mb-0.5">Balance</div>
           <div className="text-white font-semibold text-lg">${uaBalanceUsd.toFixed(2)}</div>
         </div>
 
@@ -377,12 +377,12 @@ export default function EarnModal({
               ← Back to markets
             </button>
 
-            <div className="bg-zinc-900 rounded-xl p-4 border border-zinc-800">
+            <div className="bg-[#1a1a1a] rounded-xl p-4 border border-[#333]">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-white font-medium">{selectedMarket.name}</span>
                 <div className="flex items-center gap-1.5 text-gray-400 text-xs capitalize">
-                  <img src={getChainLogo(selectedMarket.chainId)} alt="" className="w-4 h-4 rounded-full" title={selectedMarket.chainName} />
-                  <img src={protocolMeta[selectedMarket.protocol]?.logo} alt="" className="w-4 h-4 rounded" title={protocolMeta[selectedMarket.protocol]?.name} />
+                  <img src={getChainLogo(selectedMarket.chainId)} alt="" className="w-4 h-4 object-contain" title={selectedMarket.chainName} />
+                  <img src={protocolMeta[selectedMarket.protocol]?.logo} alt="" className="w-4 h-4 object-contain" title={protocolMeta[selectedMarket.protocol]?.name} />
                 </div>
               </div>
               {(selectedMarket.description ?? "").trim().length > 0 && (
@@ -424,7 +424,7 @@ export default function EarnModal({
                 <div>
                   <div className="text-gray-500 text-xs">Asset</div>
                   <div className="flex items-center gap-1.5 text-gray-300 text-sm">
-                    <img src={getAssetLogo(selectedMarket.assetSymbol)} alt="" className="w-4 h-4 rounded-full" />
+                    <img src={getAssetLogo(selectedMarket.assetSymbol)} alt="" className="w-4 h-4 object-contain" />
                     {selectedMarket.assetSymbol}
                   </div>
                 </div>
@@ -434,11 +434,11 @@ export default function EarnModal({
             {(() => {
               const existingPos = positions.find((p) => p.market.id === selectedMarket.id);
               return existingPos ? (
-                <div className="bg-zinc-900 rounded-xl p-3 border border-zinc-800 flex items-center justify-between">
+                <div className="bg-[#1a1a1a] rounded-xl p-3 border border-[#333] flex items-center justify-between">
                   <div>
                     <div className="text-gray-400 text-xs uppercase tracking-wide mb-0.5">Your position</div>
                     <div className="flex items-center gap-1.5 text-white font-medium">
-                      <img src={getAssetLogo(selectedMarket.assetSymbol)} alt="" className="w-4 h-4 rounded-full" />
+                      <img src={getAssetLogo(selectedMarket.assetSymbol)} alt="" className="w-4 h-4 object-contain" />
                       ~{existingPos.assetsApprox.toFixed(2)} {selectedMarket.assetSymbol}
                     </div>
                   </div>
@@ -459,14 +459,14 @@ export default function EarnModal({
               </div>
             )}
 
-            <div className="bg-zinc-900 rounded-xl p-3 border border-zinc-800">
+            <div className="bg-[#1a1a1a] rounded-xl p-3 border border-[#333]">
               <label className="text-gray-400 text-sm mb-2 block">Amount (USDC)</label>
               <input
                 type="number"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="0.00"
-                className="w-full bg-zinc-950 rounded-xl px-3 py-2 text-white outline-none border border-zinc-800"
+                className="w-full bg-[#141414] rounded-xl px-3 py-2 text-white outline-none border border-[#333] focus:border-accent-dynamic/50"
               />
               <div className="flex justify-between mt-1">
                 <span className="text-gray-500 text-xs">Balance: ${uaBalanceUsd.toFixed(2)}</span>
@@ -497,30 +497,31 @@ export default function EarnModal({
                   <button
                     onClick={loadPositions}
                     disabled={isLoadingPositions}
-                    className="w-8 h-8 rounded-lg bg-zinc-800 flex items-center justify-center hover:bg-zinc-700 disabled:opacity-50"
+                    className="w-8 h-8 rounded-lg bg-[#1a1a1a] border border-[#333] flex items-center justify-center hover:border-accent-dynamic/40 disabled:opacity-50"
                     aria-label="Refresh"
                   >
                     <RefreshCw className={`w-4 h-4 text-gray-400 ${isLoadingPositions ? "animate-spin" : ""}`} />
                   </button>
                 </div>
-                <div className="space-y-2">
+                <div className="border-t border-[#252525]">
                   {isLoadingPositions && positions.length === 0 && (
-                    <div className="text-gray-500 text-sm py-2">Loading...</div>
+                    <div className="text-gray-500 text-sm py-3">Loading...</div>
                   )}
                   {positions.map((pos) => (
-                    <div key={pos.market.id} className="bg-zinc-900 rounded-xl p-3 border border-zinc-800 flex items-center justify-between">
-                      <div>
-                        <div className="text-white font-medium text-sm">{pos.market.name}</div>
-                        <div className="flex items-center gap-1.5 text-gray-500 text-xs mt-0.5">
-                          <img src={getChainLogo(pos.market.chainId)} alt="" className="w-3.5 h-3.5 rounded-full" title={pos.market.chainName} />
-                          <img src={getAssetLogo(pos.market.assetSymbol)} alt="" className="w-3.5 h-3.5 rounded-full" />
-                          <span>~{pos.assetsApprox.toFixed(2)} {pos.market.assetSymbol}</span>
+                    <div key={pos.market.id} className="flex items-center justify-between gap-3 py-3 border-b border-[#252525] last:border-b-0 hover:bg-white/[0.03]">
+                      <div className="min-w-0">
+                        <div className="text-white font-medium text-sm truncate">{pos.market.name}</div>
+                        <div className="flex items-center gap-2 text-gray-500 text-xs mt-0.5">
+                          <img src={getChainLogo(pos.market.chainId)} alt="" className="w-4 h-4 object-contain shrink-0" title={pos.market.chainName} />
+                          <img src={getAssetLogo(pos.market.assetSymbol)} alt="" className="w-4 h-4 object-contain shrink-0" />
+                          <span className="text-accent-dynamic-light font-medium">~{pos.assetsApprox.toFixed(2)} {pos.market.assetSymbol}</span>
                         </div>
                       </div>
                       <button
+                        type="button"
                         onClick={() => handleWithdraw(pos)}
                         disabled={!!withdrawingPosition}
-                        className="px-3 py-1.5 rounded-lg bg-zinc-700 text-white text-xs font-medium hover:bg-zinc-600 disabled:opacity-50"
+                        className="px-3 py-1.5 rounded-lg bg-[#1a1a1a] border border-[#333] text-white text-xs font-medium hover:border-accent-dynamic/40 disabled:opacity-50 shrink-0"
                       >
                         {withdrawingPosition?.market.id === pos.market.id ? "..." : "Withdraw"}
                       </button>
@@ -532,34 +533,37 @@ export default function EarnModal({
             <div className="flex gap-2 mb-3">
               <div className="relative flex-1" ref={chainDropdownRef}>
                 <button
+                  type="button"
                   onClick={() => setChainDropdownOpen((o) => !o)}
-                  className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-left"
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-full bg-[#1a1a1a] border border-[#333] text-left hover:border-accent-dynamic/35"
                 >
                   {chainFilter === "all" ? (
                     <span className="text-gray-300 text-sm">All chains</span>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <img src={chainMeta[chainFilter]?.logo} alt="" className="w-5 h-5 rounded-full" />
+                      <img src={chainMeta[chainFilter]?.logo} alt="" className="w-5 h-5 object-contain" />
                       <span className="text-white text-sm">{chainMeta[chainFilter]?.name || `Chain ${chainFilter}`}</span>
                     </div>
                   )}
                   <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${chainDropdownOpen ? "rotate-180" : ""}`} />
                 </button>
                 {chainDropdownOpen && (
-                  <div className="absolute top-full left-0 right-0 mt-1 py-1 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl z-20 max-h-48 overflow-y-auto">
+                  <div className="absolute top-full left-0 right-0 mt-1 py-1 bg-[#1a1a1a] border border-[#333] rounded-xl shadow-xl z-20 max-h-48 overflow-y-auto">
                     <button
+                      type="button"
                       onClick={() => { setChainFilter("all"); setChainDropdownOpen(false); }}
-                      className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-zinc-800 flex items-center gap-2"
+                      className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-[#252525] flex items-center gap-2"
                     >
                       All chains
                     </button>
                     {chainIds.map((cid) => (
                       <button
+                        type="button"
                         key={cid}
                         onClick={() => { setChainFilter(cid); setChainDropdownOpen(false); }}
-                        className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-800 flex items-center gap-2"
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-[#252525] flex items-center gap-2"
                       >
-                        <img src={chainMeta[cid]?.logo} alt="" className="w-5 h-5 rounded-full" />
+                        <img src={chainMeta[cid]?.logo} alt="" className="w-5 h-5 object-contain" />
                         <span className="text-white">{chainMeta[cid]?.name || `Chain ${cid}`}</span>
                       </button>
                     ))}
@@ -568,39 +572,43 @@ export default function EarnModal({
               </div>
               <div className="relative flex-1" ref={protocolDropdownRef}>
                 <button
+                  type="button"
                   onClick={() => setProtocolDropdownOpen((o) => !o)}
-                  className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-left"
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-full bg-[#1a1a1a] border border-[#333] text-left hover:border-accent-dynamic/35"
                 >
                   {protocolFilter === "all" ? (
                     <span className="text-gray-300 text-sm">All protocols</span>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <img src={protocolMeta[protocolFilter]?.logo} alt="" className="w-5 h-5 rounded" />
+                      <img src={protocolMeta[protocolFilter]?.logo} alt="" className="w-5 h-5 object-contain" />
                       <span className="text-white text-sm">{protocolMeta[protocolFilter]?.name}</span>
                     </div>
                   )}
                   <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${protocolDropdownOpen ? "rotate-180" : ""}`} />
                 </button>
                 {protocolDropdownOpen && (
-                  <div className="absolute top-full left-0 right-0 mt-1 py-1 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl z-20">
+                  <div className="absolute top-full left-0 right-0 mt-1 py-1 bg-[#1a1a1a] border border-[#333] rounded-xl shadow-xl z-20">
                     <button
+                      type="button"
                       onClick={() => { setProtocolFilter("all"); setProtocolDropdownOpen(false); }}
-                      className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-zinc-800"
+                      className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-[#252525]"
                     >
                       All protocols
                     </button>
                     <button
+                      type="button"
                       onClick={() => { setProtocolFilter("morpho"); setProtocolDropdownOpen(false); }}
-                      className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-800 flex items-center gap-2"
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-[#252525] flex items-center gap-2"
                     >
-                      <img src={protocolMeta.morpho.logo} alt="" className="w-5 h-5 rounded" />
+                      <img src={protocolMeta.morpho.logo} alt="" className="w-5 h-5 object-contain" />
                       <span className="text-white">Morpho</span>
                     </button>
                     <button
+                      type="button"
                       onClick={() => { setProtocolFilter("aave"); setProtocolDropdownOpen(false); }}
-                      className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-800 flex items-center gap-2"
+                      className="w-full px-3 py-2 text-left text-sm hover:bg-[#252525] flex items-center gap-2"
                     >
-                      <img src={protocolMeta.aave.logo} alt="" className="w-5 h-5 rounded" />
+                      <img src={protocolMeta.aave.logo} alt="" className="w-5 h-5 object-contain" />
                       <span className="text-white">Aave</span>
                     </button>
                   </div>
@@ -615,39 +623,41 @@ export default function EarnModal({
             ) : filteredMarkets.length === 0 ? (
               <p className="text-center text-gray-400 py-8">No markets on this chain</p>
             ) : (
-              <div className="space-y-2">
+              <div className="border-t border-[#252525]">
                 {filteredMarkets.map((m) => (
                   <button
+                    type="button"
                     key={m.id}
                     onClick={() => setSelectedMarket(m)}
-                    className="w-full p-4 bg-zinc-900 hover:bg-zinc-800 rounded-xl text-left border border-zinc-800 hover:border-accent-dynamic/40 transition-colors"
+                    className="w-full flex items-start justify-between gap-3 py-3.5 text-left border-b border-[#252525] last:border-b-0 transition-colors hover:bg-white/[0.03]"
                   >
-                    <div className="flex justify-between items-start">
-                      <div className="flex items-center gap-2">
-                        <div className="flex -space-x-1">
-                          <img src={getChainLogo(m.chainId)} alt="" className="w-6 h-6 rounded-full border-2 border-zinc-900" />
-                          <img src={getAssetLogo(m.assetSymbol)} alt="" className="w-6 h-6 rounded-full border-2 border-zinc-900" />
-                        </div>
-                        <div>
-                        <div className="text-white font-medium">{m.name}</div>
-                        <div className="flex items-center gap-1 text-gray-400 text-xs mt-0.5">
-                          <img src={protocolMeta[m.protocol]?.logo} alt="" className="w-3.5 h-3.5 rounded" title={protocolMeta[m.protocol]?.name} />
-                        </div>
-                        {m.tvl > 0 && (
-                          <div className="text-gray-500 text-xs mt-1">TVL {formatTvl(m.tvl)}</div>
-                        )}
+                    <div className="flex items-start gap-3 min-w-0">
+                      <div className="flex items-center gap-2 shrink-0">
+                        <img src={getChainLogo(m.chainId)} alt="" className="w-7 h-7 object-contain" title={m.chainName} />
+                        <img src={getAssetLogo(m.assetSymbol)} alt="" className="w-7 h-7 object-contain" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-white font-semibold text-[15px] truncate">{m.name}</div>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] mt-1 text-gray-500">
+                          <span className="uppercase tracking-wide">TVL</span>
+                          <span className="text-accent-dynamic-light font-medium">{m.tvl > 0 ? formatTvl(m.tvl) : "—"}</span>
+                          <span className="text-accent-dynamic/40" aria-hidden>
+                            •
+                          </span>
+                          <img src={protocolMeta[m.protocol]?.logo} alt="" className="w-3.5 h-3.5 object-contain inline" title={protocolMeta[m.protocol]?.name} />
                         </div>
                       </div>
-                      <div className="text-right">
-                        {m.apy > 0 ? (
-                          <div className="text-green-400 text-sm font-medium">{m.apy.toFixed(2)}% APY</div>
-                        ) : (
-                          <div className="text-gray-500 text-sm">—</div>
-                        )}
-                        <div className="flex items-center justify-end gap-1 text-gray-500 text-xs mt-0.5">
-                          <img src={getAssetLogo(m.assetSymbol)} alt="" className="w-3.5 h-3.5 rounded-full" />
-                          {m.assetSymbol}
-                        </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      {m.apy > 0 ? (
+                        <div className="text-green-400 text-sm font-semibold tabular-nums">{m.apy.toFixed(2)}%</div>
+                      ) : (
+                        <div className="text-gray-500 text-sm">—</div>
+                      )}
+                      <div className="text-[11px] text-gray-500 mt-0.5">APY</div>
+                      <div className="flex items-center justify-end gap-1 text-gray-400 text-xs mt-1">
+                        <img src={getAssetLogo(m.assetSymbol)} alt="" className="w-3.5 h-3.5 object-contain" />
+                        {m.assetSymbol}
                       </div>
                     </div>
                   </button>

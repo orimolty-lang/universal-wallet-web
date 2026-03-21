@@ -940,38 +940,39 @@ const ReceiveModal = ({
   ];
 
   return (
-    <BottomSheet isOpen={isOpen} onClose={onClose}>
+    <BottomSheet isOpen={isOpen} onClose={onClose} dark>
       <div className="px-5 pb-8 min-h-[400px]">
-        <h2 className="text-white text-xl font-bold mb-2">Receive</h2>
+        <div className="border-b border-[#252525] pb-3 mb-4">
+          <h2 className="text-white text-xl font-bold">Receive</h2>
+        </div>
         
         <p className="text-gray-400 text-sm mb-3">
           Deposit any token on supported networks. You may use the following tokens for trading/gas:
         </p>
         <div className="flex flex-wrap gap-2 mb-4">
           {["USDC", "USDT", "ETH", "SOL", "BNB"].map((sym) => (
-            <div key={sym} className="flex items-center gap-1.5 bg-zinc-800/80 rounded-lg px-2 py-1">
-              <img src={TOKEN_LOGOS[sym] || TOKEN_LOGOS.ETH} alt="" className="w-5 h-5 rounded-full" />
+            <div key={sym} className="flex items-center gap-1.5 bg-[#1a1a1a] border border-[#333] rounded-lg px-2 py-1">
+              <img src={TOKEN_LOGOS[sym] || TOKEN_LOGOS.ETH} alt="" className="w-5 h-5 object-contain" />
               <span className="text-white text-xs font-medium">{sym}</span>
             </div>
           ))}
         </div>
 
-        <p className="text-gray-500 text-xs mb-3 uppercase tracking-wide">Your receive address</p>
+        <p className="text-gray-500 text-xs mb-2 uppercase tracking-wide">Your receive address</p>
 
-        <div className="space-y-3">
+        <div className="border-t border-[#252525]">
           {rows.map((row) => (
-            <div key={row.id} className="bg-[#252525] rounded-xl px-3 py-3">
-              <div className="flex items-start gap-3">
+            <div key={row.id} className="flex items-start gap-3 py-4 border-b border-[#252525] last:border-b-0">
                 {/* Logo area - same width for both; EVM shows all chains, Solana centers its logo */}
                 <div className={`flex-shrink-0 w-[88px] flex items-center min-h-[52px] ${row.centerLogo ? "justify-center" : "justify-start"}`}>
                   {row.logos.length > 1 ? (
-                    <div className="flex flex-wrap gap-1">
+                    <div className="flex flex-wrap gap-1.5">
                       {row.logos.map((c) => (
-                        <img key={c.name} src={c.logo} alt={c.name} className="w-6 h-6 rounded-full border-2 border-[#252525]" title={c.name} />
+                        <img key={c.name} src={c.logo} alt={c.name} className="w-6 h-6 object-contain" title={c.name} />
                       ))}
                     </div>
                   ) : (
-                    <img src={row.logos[0].logo} alt={row.label} className="w-8 h-8 rounded-full" />
+                    <img src={row.logos[0].logo} alt={row.label} className="w-8 h-8 object-contain" />
                   )}
                 </div>
                 {/* Label + address + actions */}
@@ -1007,7 +1008,6 @@ const ReceiveModal = ({
                   </button>
                   </div>
                 </div>
-              </div>
             </div>
           ))}
         </div>
@@ -1015,7 +1015,7 @@ const ReceiveModal = ({
         {/* QR Code Modal */}
         {qrAddress && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60]" onClick={() => setQrAddress(null)}>
-            <div className="bg-[#1a1a1a] rounded-2xl p-6 mx-4 max-w-sm w-full" onClick={e => e.stopPropagation()}>
+            <div className="bg-[#1a1a1a] border border-[#333] rounded-2xl p-6 mx-4 max-w-sm w-full" onClick={e => e.stopPropagation()}>
               <h3 className="text-white text-lg font-bold mb-4 text-center">{qrAddress.chain}</h3>
               <div className="bg-white p-4 rounded-xl mb-4 flex items-center justify-center">
                 <img 
@@ -1198,9 +1198,11 @@ const SendModal = ({
   };
 
   return (
-    <BottomSheet isOpen={isOpen} onClose={onClose}>
+    <BottomSheet isOpen={isOpen} onClose={onClose} dark>
       <div className="px-5 pb-8 min-h-[400px]">
-        <h2 className="text-white text-xl font-bold mb-5">Send</h2>
+        <div className="border-b border-[#252525] pb-3 mb-5">
+          <h2 className="text-white text-xl font-bold">Send</h2>
+        </div>
 
         {txResult ? (
           <div className="space-y-4">
@@ -1233,17 +1235,17 @@ const SendModal = ({
               <div className="relative">
                 <button
                   onClick={() => setSendTokenOpen(!sendTokenOpen)}
-                  className="w-full bg-zinc-950 rounded-lg px-3 py-2.5 text-white text-left flex items-center justify-between border border-zinc-800"
+                  className="w-full bg-[#1a1a1a] rounded-lg px-3 py-2.5 text-white text-left flex items-center justify-between border border-[#333]"
                 >
                   <div className="flex items-center gap-2">
                     {selected ? (
                       <>
                         <div className="relative">
-                          <img src={TOKEN_LOGOS[selected.symbol] || TOKEN_LOGOS.ETH} alt="" className="w-6 h-6 rounded-full" />
+                          <img src={TOKEN_LOGOS[selected.symbol] || TOKEN_LOGOS.ETH} alt="" className="w-6 h-6 object-contain" />
                           <img
                             src={CHAIN_LOGOS[CHAIN_ID_TO_NAME_SEND[selected.chainId]] || CHAIN_LOGOS.Ethereum}
                             alt=""
-                            className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-zinc-950"
+                            className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 object-contain rounded-full border-2 border-[#0d0d0d]"
                           />
                         </div>
                         <span className="text-sm font-medium">{selected.symbol}</span>
@@ -1256,19 +1258,19 @@ const SendModal = ({
                   <span className="text-gray-400 text-xs">▼</span>
                 </button>
                 {sendTokenOpen && (
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden z-20 max-h-48 overflow-y-auto">
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-[#1a1a1a] rounded-xl border border-[#333] overflow-hidden z-20 max-h-48 overflow-y-auto">
                     {transferOptions.map((o) => (
                       <button
                         key={o.key}
                         onClick={() => { setSelectedOption(o.key); setSendTokenOpen(false); }}
-                        className="w-full px-3 py-2.5 flex items-center gap-2 hover:bg-zinc-800 text-left"
+                        className="w-full px-3 py-2.5 flex items-center gap-2 hover:bg-[#252525] text-left"
                       >
                         <div className="relative">
-                          <img src={TOKEN_LOGOS[o.symbol] || TOKEN_LOGOS.ETH} alt="" className="w-6 h-6 rounded-full" />
+                          <img src={TOKEN_LOGOS[o.symbol] || TOKEN_LOGOS.ETH} alt="" className="w-6 h-6 object-contain" />
                           <img
                             src={CHAIN_LOGOS[CHAIN_ID_TO_NAME_SEND[o.chainId]] || CHAIN_LOGOS.Ethereum}
                             alt=""
-                            className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-zinc-900"
+                            className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 object-contain rounded-full border-2 border-[#0d0d0d]"
                           />
                         </div>
                         <div className="flex-1 min-w-0">
@@ -1289,7 +1291,7 @@ const SendModal = ({
                 value={recipient}
                 onChange={(e) => setRecipient(e.target.value)}
                 placeholder=""
-                className="w-full bg-zinc-950 rounded-xl px-3 py-2 text-white outline-none border border-zinc-800"
+                className="w-full bg-[#1a1a1a] rounded-xl px-3 py-2 text-white outline-none border border-[#333]"
               />
             </div>
 
@@ -1300,7 +1302,7 @@ const SendModal = ({
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="0.00"
-                className="w-full bg-zinc-950 rounded-xl px-3 py-2 text-white outline-none border border-zinc-800"
+                className="w-full bg-[#1a1a1a] rounded-xl px-3 py-2 text-white outline-none border border-[#333]"
               />
               {selected && (
                 <button
@@ -1782,9 +1784,9 @@ const ConvertModal = ({
   const canConvert = fromAsset && fromChain && toAsset && toChain && amount && parseFloat(amount) > 0;
 
   return (
-    <BottomSheet isOpen={isOpen} onClose={onClose}>
+    <BottomSheet isOpen={isOpen} onClose={onClose} dark>
       <div className="px-5 pb-8 min-h-[400px]">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#252525]">
           <h2 className="text-white text-xl font-bold">Convert</h2>
           <button
             onClick={() => setDebugOpen(true)}
@@ -1815,12 +1817,12 @@ const ConvertModal = ({
             <div className="flex-1 relative">
               <button
                 onClick={() => { setFromAssetOpen(!fromAssetOpen); setFromChainOpen(false); }}
-                className="w-full bg-zinc-950 rounded-lg px-2 py-1.5 text-white text-left flex items-center justify-between border border-zinc-800"
+                className="w-full bg-[#1a1a1a] rounded-lg px-2 py-1.5 text-white text-left flex items-center justify-between border border-[#333]"
               >
                 <div className="flex items-center gap-2">
                   {fromAsset ? (
                     <>
-                      <img src={TOKEN_LOGOS[fromAsset.toUpperCase()] || TOKEN_LOGOS['ETH']} alt="" className="w-5 h-5 rounded-full" />
+                      <img src={TOKEN_LOGOS[fromAsset.toUpperCase()] || TOKEN_LOGOS['ETH']} alt="" className="w-5 h-5 object-contain" />
                       <span className="text-sm font-medium">{fromAsset.toUpperCase()}</span>
                     </>
                   ) : (
@@ -1830,7 +1832,7 @@ const ConvertModal = ({
                 <span className="text-gray-400 text-xs">▼</span>
               </button>
               {fromAssetOpen && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden z-20 max-h-40 overflow-y-auto">
+                <div className="absolute top-full left-0 right-0 mt-1 bg-[#1a1a1a] rounded-xl border border-[#333] overflow-hidden z-20 max-h-40 overflow-y-auto">
                   {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                   {uaAssets.map((a: any, i: number) => (
                     <button
@@ -1838,7 +1840,7 @@ const ConvertModal = ({
                       onClick={() => { setFromAsset(a.tokenType); setFromAssetOpen(false); }}
                       className="w-full px-3 py-2 flex items-center gap-2 hover:bg-gray-700 text-left"
                     >
-                      <img src={TOKEN_LOGOS[a.tokenType?.toUpperCase()] || TOKEN_LOGOS['ETH']} alt="" className="w-5 h-5 rounded-full" />
+                      <img src={TOKEN_LOGOS[a.tokenType?.toUpperCase()] || TOKEN_LOGOS['ETH']} alt="" className="w-5 h-5 object-contain" />
                       <span className="text-white text-sm">{a.tokenType?.toUpperCase()}</span>
                       <span className="text-gray-400 text-xs ml-auto">${a.amountInUSD?.toFixed(2)}</span>
                     </button>
@@ -1851,13 +1853,13 @@ const ConvertModal = ({
             <div className="w-28 relative">
               <button
                 onClick={() => { if (fromAsset) { setFromChainOpen(!fromChainOpen); setFromAssetOpen(false); }}}
-                className={`w-full bg-zinc-950 rounded-lg px-2 py-1.5 text-left flex items-center justify-between border border-zinc-800 ${!fromAsset ? 'opacity-50' : ''}`}
+                className={`w-full bg-[#1a1a1a] rounded-lg px-2 py-1.5 text-left flex items-center justify-between border border-[#333] ${!fromAsset ? 'opacity-50' : ''}`}
                 disabled={!fromAsset}
               >
                 <div className="flex items-center gap-1">
                   {fromChain ? (
                     <>
-                      <img src={CHAIN_LOGOS[CHAIN_ID_TO_NAME[fromChain]] || CHAIN_LOGOS['Ethereum']} alt="" className="w-4 h-4 rounded-full" />
+                      <img src={CHAIN_LOGOS[CHAIN_ID_TO_NAME[fromChain]] || CHAIN_LOGOS['Ethereum']} alt="" className="w-4 h-4 object-contain" />
                       <span className="text-white text-xs">{CHAIN_ID_TO_NAME[fromChain]}</span>
                     </>
                   ) : (
@@ -1867,14 +1869,14 @@ const ConvertModal = ({
                 <span className="text-gray-400 text-[10px]">▼</span>
               </button>
               {fromChainOpen && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden z-20 max-h-40 overflow-y-auto">
+                <div className="absolute top-full left-0 right-0 mt-1 bg-[#1a1a1a] rounded-xl border border-[#333] overflow-hidden z-20 max-h-40 overflow-y-auto">
                   {fromChains.map((c: { chainId: number; balance: number; balanceUSD: number }) => (
                     <button
                       key={c.chainId}
                       onClick={() => { setFromChain(c.chainId); setFromChainOpen(false); }}
                       className="w-full px-2 py-2 flex items-center gap-2 hover:bg-gray-700 text-left"
                     >
-                      <img src={CHAIN_LOGOS[CHAIN_ID_TO_NAME[c.chainId]] || CHAIN_LOGOS['Ethereum']} alt="" className="w-4 h-4 rounded-full" />
+                      <img src={CHAIN_LOGOS[CHAIN_ID_TO_NAME[c.chainId]] || CHAIN_LOGOS['Ethereum']} alt="" className="w-4 h-4 object-contain" />
                       <div>
                         <div className="text-white text-xs">{CHAIN_ID_TO_NAME[c.chainId]}</div>
                         <div className="text-gray-400 text-[10px]">{c.balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })}</div>
@@ -1892,11 +1894,11 @@ const ConvertModal = ({
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0.00"
-              className="flex-1 bg-zinc-950 rounded-lg px-2 py-1.5 text-white outline-none border border-zinc-800"
+              className="flex-1 bg-[#1a1a1a] rounded-lg px-2 py-1.5 text-white outline-none border border-[#333]"
             />
             <button 
               onClick={handleMax}
-              className="bg-zinc-950 px-2 py-1.5 rounded-lg text-accent-dynamic text-xs hover:bg-zinc-800 border border-zinc-800"
+              className="bg-[#1a1a1a] px-2 py-1.5 rounded-lg text-accent-dynamic text-xs hover:bg-[#252525] border border-[#333]"
             >
               MAX
             </button>
@@ -1908,7 +1910,7 @@ const ConvertModal = ({
 
         {/* Swap Arrow */}
         <div className="flex justify-center -my-1 relative z-10">
-          <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-gray-400">
+          <div className="w-8 h-8 rounded-full bg-[#1a1a1a] border border-[#333] flex items-center justify-center text-gray-400">
             ↓
           </div>
         </div>
@@ -1922,12 +1924,12 @@ const ConvertModal = ({
             <div className="flex-1 relative">
               <button
                 onClick={() => { setToAssetOpen(!toAssetOpen); setToChainOpen(false); }}
-                className="w-full bg-zinc-950 rounded-lg px-2 py-1.5 text-white text-left flex items-center justify-between border border-zinc-800"
+                className="w-full bg-[#1a1a1a] rounded-lg px-2 py-1.5 text-white text-left flex items-center justify-between border border-[#333]"
               >
                 <div className="flex items-center gap-2">
                   {toAsset ? (
                     <>
-                      <img src={TOKEN_LOGOS[toAsset.toUpperCase()] || TOKEN_LOGOS['ETH']} alt="" className="w-5 h-5 rounded-full" />
+                      <img src={TOKEN_LOGOS[toAsset.toUpperCase()] || TOKEN_LOGOS['ETH']} alt="" className="w-5 h-5 object-contain" />
                       <span className="text-sm font-medium">{toAsset.toUpperCase()}</span>
                     </>
                   ) : (
@@ -1937,14 +1939,14 @@ const ConvertModal = ({
                 <span className="text-gray-400 text-xs">▼</span>
               </button>
               {toAssetOpen && (
-                <div className="absolute bottom-full left-0 right-0 mb-1 bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden z-20 max-h-40 overflow-y-auto">
+                <div className="absolute bottom-full left-0 right-0 mb-1 bg-[#1a1a1a] rounded-xl border border-[#333] overflow-hidden z-20 max-h-40 overflow-y-auto">
                   {UA_PRIMARY_ASSETS.map((a) => (
                     <button
                       key={a.symbol}
                       onClick={() => { setToAsset(a.symbol); setToAssetOpen(false); }}
                       className="w-full px-3 py-2 flex items-center gap-2 hover:bg-gray-700 text-left"
                     >
-                      <img src={TOKEN_LOGOS[a.symbol] || TOKEN_LOGOS['ETH']} alt="" className="w-5 h-5 rounded-full" />
+                      <img src={TOKEN_LOGOS[a.symbol] || TOKEN_LOGOS['ETH']} alt="" className="w-5 h-5 object-contain" />
                       <span className="text-white text-sm">{a.symbol}</span>
                     </button>
                   ))}
@@ -1956,13 +1958,13 @@ const ConvertModal = ({
             <div className="w-28 relative">
               <button
                 onClick={() => { if (toAsset) { setToChainOpen(!toChainOpen); setToAssetOpen(false); }}}
-                className={`w-full bg-zinc-950 rounded-lg px-2 py-1.5 text-left flex items-center justify-between border border-zinc-800 ${!toAsset ? 'opacity-50' : ''}`}
+                className={`w-full bg-[#1a1a1a] rounded-lg px-2 py-1.5 text-left flex items-center justify-between border border-[#333] ${!toAsset ? 'opacity-50' : ''}`}
                 disabled={!toAsset}
               >
                 <div className="flex items-center gap-1">
                   {toChain ? (
                     <>
-                      <img src={CHAIN_LOGOS[CHAIN_ID_TO_NAME[toChain]] || CHAIN_LOGOS['Ethereum']} alt="" className="w-4 h-4 rounded-full" />
+                      <img src={CHAIN_LOGOS[CHAIN_ID_TO_NAME[toChain]] || CHAIN_LOGOS['Ethereum']} alt="" className="w-4 h-4 object-contain" />
                       <span className="text-white text-xs">{CHAIN_ID_TO_NAME[toChain]}</span>
                     </>
                   ) : (
@@ -1972,14 +1974,14 @@ const ConvertModal = ({
                 <span className="text-gray-400 text-[10px]">▼</span>
               </button>
               {toChainOpen && (
-                <div className="absolute bottom-full left-0 right-0 mb-1 bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden z-20 max-h-40 overflow-y-auto">
+                <div className="absolute bottom-full left-0 right-0 mb-1 bg-[#1a1a1a] rounded-xl border border-[#333] overflow-hidden z-20 max-h-40 overflow-y-auto">
                   {toChains.map((chainId: number) => (
                     <button
                       key={chainId}
                       onClick={() => { setToChain(chainId); setToChainOpen(false); }}
                       className="w-full px-2 py-2 flex items-center gap-2 hover:bg-gray-700 text-left"
                     >
-                      <img src={CHAIN_LOGOS[CHAIN_ID_TO_NAME[chainId]] || CHAIN_LOGOS['Ethereum']} alt="" className="w-4 h-4 rounded-full" />
+                      <img src={CHAIN_LOGOS[CHAIN_ID_TO_NAME[chainId]] || CHAIN_LOGOS['Ethereum']} alt="" className="w-4 h-4 object-contain" />
                       <span className="text-white text-xs">{CHAIN_ID_TO_NAME[chainId]}</span>
                     </button>
                   ))}
@@ -1990,7 +1992,7 @@ const ConvertModal = ({
           
           {/* Estimated Output Box */}
           {estimatedOutput && (
-            <div className="mt-3 bg-zinc-950 rounded-xl p-3 border border-zinc-800">
+            <div className="mt-3 bg-[#1a1a1a] rounded-xl p-3 border border-[#333]">
               <div className="flex items-center justify-between">
                 <span className="text-gray-400 text-xs">Est. Receive</span>
                 <span className="text-white font-medium">{estimatedOutput}</span>
@@ -2021,13 +2023,13 @@ const ConvertModal = ({
 
         {debugOpen && (
           <div className="fixed inset-0 z-[120] bg-black/70 flex items-end" onClick={() => setDebugOpen(false)}>
-            <div className="w-full max-h-[75vh] rounded-t-2xl bg-zinc-950 border-t border-zinc-800 p-3" onClick={(e) => e.stopPropagation()}>
+            <div className="w-full max-h-[75vh] rounded-t-2xl bg-[#1a1a1a] border-t border-[#333] p-3" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-2">
                 <div className="text-white font-semibold">Convert Debug</div>
                 <button onClick={() => setDebugOpen(false)} className="text-xs px-2 py-1 rounded bg-zinc-800 text-gray-300">Close</button>
               </div>
               <div className="text-[11px] text-gray-400 mb-2">Suggested chain ids: Base 8453, OP 10, Arbitrum 42161, Solana 101 (UI) / Relay 792703809</div>
-              <div className="bg-black/40 border border-zinc-800 rounded p-2 h-[52vh] overflow-auto text-[11px] text-gray-300 space-y-1">
+              <div className="bg-black/40 border border-[#333] rounded p-2 h-[52vh] overflow-auto text-[11px] text-gray-300 space-y-1">
                 {debugLogs.length === 0 ? <div className="text-gray-500">No logs yet.</div> : debugLogs.map((l, i) => <div key={i}>{l}</div>)}
               </div>
             </div>
@@ -4032,13 +4034,11 @@ const PerpsModal = ({
             <div className="px-4 mb-5">
               <div className="rounded-2xl border border-[#333] bg-[#1a1a1a] px-3 py-3 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-full bg-[#141414] border border-[#333] flex items-center justify-center overflow-hidden shrink-0">
-                    <img
-                      src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png"
-                      alt="USDC"
-                      className="w-6 h-6 rounded-full"
-                    />
-                  </div>
+                  <img
+                    src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png"
+                    alt="USDC"
+                    className="h-9 w-9 object-contain shrink-0"
+                  />
                   <div>
                     <div className="text-[11px] uppercase tracking-wide text-gray-300 font-semibold">Available balance</div>
                     <div className="text-2xl font-bold text-white">
@@ -4098,7 +4098,7 @@ const PerpsModal = ({
                     <div key={p.id} className="bg-[#1a1a1a] border border-[#333] rounded-xl p-3">
                       <div className="flex items-center justify-between mb-2">
                         <div className="text-white font-semibold">
-                          {p.symbol}/USD <span className={p.isLong ? 'text-green-400' : 'text-red-400'}>{p.isLong ? 'LONG' : 'SHORT'}</span>
+                          {p.symbol} <span className={p.isLong ? 'text-green-400' : 'text-red-400'}>{p.isLong ? 'LONG' : 'SHORT'}</span>
                         </div>
                         <div className="text-xs text-gray-500">{p.leverage.toFixed(0)}x</div>
                       </div>
@@ -4213,7 +4213,7 @@ const PerpsModal = ({
                   : fallbackVolume > 0
                     ? formatCompactUsd(fallbackVolume)
                     : '--';
-                const pairCompact = pairName.replace(/\//g, '').toUpperCase();
+                const pairLabel = market.symbol.toUpperCase();
 
                 return (
                   <button
@@ -4223,14 +4223,11 @@ const PerpsModal = ({
                     className="w-full flex items-center justify-between gap-3 py-3.5 pl-1 pr-1 text-left border-b border-[#252525] last:border-b-0 transition-colors hover:bg-white/[0.03] active:bg-white/[0.05]"
                   >
                     <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <div
-                        className="w-10 h-10 rounded-full flex items-center justify-center overflow-hidden shrink-0"
-                        style={{ backgroundColor: `${market.color}18` }}
-                      >
+                      <div className="shrink-0 w-9 h-9 flex items-center justify-center">
                         <img
                           src={market.logo}
                           alt={market.symbol}
-                          className="w-7 h-7 object-contain"
+                          className="max-h-9 max-w-9 w-auto h-auto object-contain"
                           onError={(e) => {
                             const img = e.currentTarget as HTMLImageElement;
                             const fallback = buildTickerLogoDataUri(market.symbol, market.color);
@@ -4249,7 +4246,7 @@ const PerpsModal = ({
                       </div>
                       <div className="text-left min-w-0 flex-1">
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-white font-semibold text-[15px] tracking-tight truncate">{pairCompact}</span>
+                          <span className="text-white font-semibold text-[15px] tracking-tight truncate">{pairLabel}</span>
                           <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-[#2a2a2a] text-gray-400 text-[10px] font-semibold tabular-nums">
                             {Math.floor(displayLev)}x
                           </span>
@@ -4509,10 +4506,13 @@ const PerpsModal = ({
                   <span className="text-white text-lg">←</span>
                 </button>
                 <div className="flex items-center gap-2 min-w-0 flex-1 justify-center">
-                  <div className="w-7 h-7 rounded-full flex items-center justify-center overflow-hidden shrink-0" style={{ backgroundColor: `${selectedMarket.color}25` }}>
-                    <img src={selectedMarket.logo} alt="" className="w-5 h-5 object-contain" onError={(e) => { const t = e.currentTarget; t.src = buildTickerLogoDataUri(selectedMarket.symbol, selectedMarket.color); }} />
-                  </div>
-                  <span className="text-white font-medium truncate">{selectedMarket.pairName}</span>
+                  <img
+                    src={selectedMarket.logo}
+                    alt=""
+                    className="h-8 w-8 object-contain shrink-0"
+                    onError={(e) => { const t = e.currentTarget; t.src = buildTickerLogoDataUri(selectedMarket.symbol, selectedMarket.color); }}
+                  />
+                  <span className="text-white font-medium truncate">{selectedMarket.symbol.toUpperCase()}</span>
                 </div>
                 <div className="w-9" />
               </div>
@@ -4635,9 +4635,7 @@ const PerpsModal = ({
                     {positionSize > 0 ? positionSize.toLocaleString(undefined, { maximumFractionDigits: 6, minimumFractionDigits: 0 }) : '0'}
                   </span>
                   <div className="flex items-center gap-1.5 pr-3">
-                    <div className="w-6 h-6 rounded-full overflow-hidden flex items-center justify-center" style={{ backgroundColor: `${selectedMarket.color}30` }}>
-                      <img src={selectedMarket.logo} alt="" className="w-4 h-4 object-contain" />
-                    </div>
+                    <img src={selectedMarket.logo} alt="" className="w-5 h-5 object-contain shrink-0" />
                     <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
                   </div>
                 </div>
@@ -4721,7 +4719,7 @@ const PerpsModal = ({
           </div>
         )}
       </div>
-      <BottomSheet isOpen={showPerpsHistoryModal} onClose={() => setShowPerpsHistoryModal(false)}>
+      <BottomSheet isOpen={showPerpsHistoryModal} onClose={() => setShowPerpsHistoryModal(false)} dark>
         <div className="px-5 pb-6">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-white text-lg font-bold">Perps Activity</h3>
@@ -4760,7 +4758,7 @@ const PerpsModal = ({
       </BottomSheet>
 
       {/* Perps Explainer Modals (3 steps) */}
-      <BottomSheet isOpen={showPerpsExplainerModal} onClose={() => setShowPerpsExplainerModal(false)}>
+      <BottomSheet isOpen={showPerpsExplainerModal} onClose={() => setShowPerpsExplainerModal(false)} dark>
         <div className="px-5 pb-8 max-w-md mx-auto">
           {perpsExplainerStep === 0 && (
             <>
