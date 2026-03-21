@@ -181,23 +181,18 @@ export function positionKeysFromMergedShape(a: {
   return keys;
 }
 
-/** UA `getPrimaryAssets()` staples — hide Mobula rows that use these *symbols* (not WETH/WBNB/WSOL). */
+/** UA `getPrimaryAssets()` staples — only these exact symbols trigger symbol+chain Mobula hiding (with primary). */
 export const PRIMARY_UA_STAPLE_TOKEN_TYPES = new Set(["ETH", "BNB", "USDC", "SOL", "USDT"]);
 
 const AGGREGATED_STAPLE_PLACEHOLDER = -2;
 
 /**
- * Map Mobula symbol → UA staple tokenType only for exact primary names and obvious USDC/USDT bridges.
- * WETH / WBNB / WSOL are intentionally excluded so they stay visible as Mobula “external” wrapped assets.
+ * Mobula symbol matches UA primary staples only when the symbol is exactly ETH, BNB, USDC, SOL, or USDT.
+ * No bridged/variant aliases (e.g. USDT.e, USDBC); those stay visible from Mobula unless contract keys match primary.
  */
 export function mobulaSymbolToPrimaryStapleType(symbol: string): string | null {
   const s = symbol.trim().toUpperCase().replace(/\s+/g, "");
-  const compact = s.replace(/\./g, "");
-  if (PRIMARY_UA_STAPLE_TOKEN_TYPES.has(s)) return s;
-  if (compact === "USDTE" || s === "USDT.E") return "USDT";
-  if (compact === "USDCE" || s === "USDC.E") return "USDC";
-  if (s === "USDBC") return "USDC";
-  return null;
+  return PRIMARY_UA_STAPLE_TOKEN_TYPES.has(s) ? s : null;
 }
 
 function chainIdsFromPrimaryAssetRecord(a: unknown): Set<number> {

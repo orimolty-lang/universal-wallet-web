@@ -1083,11 +1083,21 @@ const ReceiveModal = ({
                   {row.logos.length > 1 ? (
                     <div className="flex flex-wrap gap-1.5">
                       {row.logos.map((c) => (
-                        <img key={c.name} src={c.logo} alt={c.name} className="w-6 h-6 object-contain" title={c.name} />
+                        <img
+                          key={c.name}
+                          src={c.logo}
+                          alt={c.name}
+                          className="w-6 h-6 rounded-full object-contain bg-transparent ring-1 ring-white/10"
+                          title={c.name}
+                        />
                       ))}
                     </div>
                   ) : (
-                    <img src={row.logos[0].logo} alt={row.label} className="w-8 h-8 object-contain" />
+                    <img
+                      src={row.logos[0].logo}
+                      alt={row.label}
+                      className="w-8 h-8 rounded-full object-contain bg-transparent ring-1 ring-white/10"
+                    />
                   )}
                 </div>
                 {/* Label + address + actions */}
