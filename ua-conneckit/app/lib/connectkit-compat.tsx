@@ -13,22 +13,6 @@ import {
 } from "@privy-io/react-auth";
 import { arbitrum, avalanche, base, bsc, mainnet, optimism, polygon } from "viem/chains";
 
-/**
- * Shown in the Privy login modal when `NEXT_PUBLIC_PRIVY_LOGIN_LOGO_URL` is unset.
- * Dashboard + OTP emails: still add a hosted PNG under Configuration → UI components (≈180×90, 2:1).
- */
-function OmniPrivyModalLogo() {
-  return (
-    <img
-      src="/universal-wallet-web/omni-logo.svg"
-      alt="Omni"
-      width={180}
-      height={90}
-      className="mx-auto max-h-[90px] w-auto max-w-[180px] object-contain"
-    />
-  );
-}
-
 type WalletClientLike = {
   account?: { address?: `0x${string}` };
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
@@ -205,10 +189,16 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
   const clientId = process.env.NEXT_PUBLIC_PRIVY_CLIENT_ID || "client-WY6WwYjqhoUurxz6sQNKp3pBWkrdLC85MyF5LePfSyn5f";
 
   const hostedLoginLogoUrl = process.env.NEXT_PUBLIC_PRIVY_LOGIN_LOGO_URL?.trim();
+  const siteOrigin = process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") ?? "";
   const loginHeader = process.env.NEXT_PUBLIC_PRIVY_LOGIN_HEADER?.trim() || "Omni";
-  const loginMessage =
-    process.env.NEXT_PUBLIC_PRIVY_LOGIN_MESSAGE?.trim() || "Universal wallet — trade, earn, and move assets across chains.";
+  const loginMessageEnv = process.env.NEXT_PUBLIC_PRIVY_LOGIN_MESSAGE?.trim();
   const accentHex = process.env.NEXT_PUBLIC_PRIVY_ACCENT_COLOR?.trim();
+
+  /** Absolute URL when `NEXT_PUBLIC_SITE_ORIGIN` is set (e.g. GitHub Pages); else root-relative for same-origin. */
+  const defaultOmniLogoUrl = siteOrigin
+    ? `${siteOrigin}/universal-wallet-web/omni-logo.svg`
+    : "/universal-wallet-web/omni-logo.svg";
+  const loginLogoUrl = hostedLoginLogoUrl || defaultOmniLogoUrl;
 
   return (
     <PrivyProvider
@@ -217,9 +207,12 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
       config={{
         appearance: {
           theme: "dark",
-          logo: hostedLoginLogoUrl || <OmniPrivyModalLogo />,
+          logo: loginLogoUrl,
           landingHeader: loginHeader,
-          loginMessage,
+          ...(loginMessageEnv ? { loginMessage: loginMessageEnv.slice(0, 100) } : {}),
+          /** Replaces the default “Protected by Privy” footer graphic (SDK renders nothing else in its place). */
+          // @ts-expect-error `footerLogo` is merged in the SDK (ModalHeader BlobbyFooter) but missing from published typings.
+          footerLogo: <span style={{ display: "block", height: 0, overflow: "hidden" }} aria-hidden />,
           ...(accentHex && /^#[0-9A-Fa-f]{6}$/.test(accentHex) ? { accentColor: accentHex as `#${string}` } : {}),
         },
         loginMethods: ["email", "google", "apple", "passkey"],
