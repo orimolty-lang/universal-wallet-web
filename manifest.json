@@ -1,0 +1,27 @@
+{
+  "name": "OMNI - Universal Wallet",
+  "short_name": "OMNI",
+  "description": "One Balance. Any Chain. Trade Tokens & Perps. Call Contracts.",
+  "start_url": "/universal-wallet-web/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "icons": [
+    {
+      "src": "/universal-wallet-web/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/universal-wallet-web/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/universal-wallet-web/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

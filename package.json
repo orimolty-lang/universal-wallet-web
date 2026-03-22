@@ -1,4 +1,8 @@
 {
+  "scripts": {
+    "setup:cloud": "bash scripts/setup-cloud.sh",
+    "build:gh-pages": "bash scripts/build-gh-pages.sh"
+  },
   "dependencies": {
     "@particle-network/universal-account-sdk": "^1.0.10"
   }

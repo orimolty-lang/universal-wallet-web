@@ -43,13 +43,13 @@ export default function ConvertToUsdc({
           chainId: 143,
         });
 
-      // 2) Sign UA payload
+      // 2) Sign UA payload (rootHash)
       const signature = await walletClient?.signMessage({
         account: address as `0x${string}`,
         message: { raw: transaction.rootHash },
       });
 
-      // 3) Send via UA
+      // 3) Send via UA (SDK handles 7702 auth for embedded wallets)
       const result = await universalAccountInstance.sendTransaction(
         transaction,
         signature

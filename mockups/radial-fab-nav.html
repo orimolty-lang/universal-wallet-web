@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Radial FAB Nav Mockup</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      color: white;
+      overflow: hidden;
+    }
+    
+    /* Main content area */
+    .content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      padding-bottom: 100px;
+    }
+    
+    .balance-card {
+      background: rgba(255,255,255,0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 24px;
+      padding: 32px;
+      text-align: center;
+      width: 100%;
+      max-width: 340px;
+    }
+    
+    .balance-label {
+      font-size: 14px;
+      color: rgba(255,255,255,0.6);
+      margin-bottom: 8px;
+    }
+    
+    .balance-amount {
+      font-size: 48px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    
+    .balance-change {
+      font-size: 14px;
+      color: #4ade80;
+    }
+    
+    /* Bottom Nav */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 80px;
+      background: rgba(20, 20, 35, 0.95);
+      backdrop-filter: blur(20px);
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      padding: 0 16px;
+      padding-bottom: env(safe-area-inset-bottom, 0);
+      border-top: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .nav-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      color: rgba(255,255,255,0.5);
+      font-size: 10px;
+      cursor: pointer;
+      transition: color 0.2s;
+      padding: 8px 16px;
+    }
+    
+    .nav-item:hover, .nav-item.active {
+      color: #f97316;
+    }
+    
+    .nav-item svg {
+      width: 24px;
+      height: 24px;
+    }
+    
+    /* Center FAB */
+    .fab-container {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .fab-main {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 20px rgba(249, 115, 22, 0.4);
+      transition: transform 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55), 
+                  box-shadow 0.3s;
+      z-index: 10;
+      margin-top: -28px;
+    }
+    
+    .fab-main:hover {
+      transform: scale(1.05);
+      box-shadow: 0 6px 30px rgba(249, 115, 22, 0.5);
+    }
+    
+    .fab-main.expanded {
+      transform: rotate(45deg);
+    }
+    
+    .fab-main svg {
+      width: 28px;
+      height: 28px;
+      color: white;
+      transition: transform 0.3s;
+    }
+    
+    /* Radial Menu */
+    .radial-menu {
+      position: absolute;
+      bottom: 70px;
+      left: 50%;
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+    
+    .radial-item {
+      position: absolute;
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.15);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.2);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      opacity: 0;
+      transform: scale(0.5) translateY(20px);
+      transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+      pointer-events: none;
+      gap: 2px;
+    }
+    
+    .radial-item svg {
+      width: 20px;
+      height: 20px;
+      color: white;
+    }
+    
+    .radial-item span {
+      font-size: 8px;
+      color: rgba(255,255,255,0.8);
+      font-weight: 500;
+    }
+    
+    .radial-item:hover {
+      background: rgba(249, 115, 22, 0.3);
+      border-color: #f97316;
+      transform: scale(1.1) !important;
+    }
+    
+    /* Expanded state */
+    .fab-container.expanded .radial-item {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    
+    .fab-container.expanded .radial-item:nth-child(1) {
+      transform: translate(-70px, -60px);
+      transition-delay: 0.05s;
+    }
+    
+    .fab-container.expanded .radial-item:nth-child(2) {
+      transform: translate(0, -90px);
+      transition-delay: 0.1s;
+    }
+    
+    .fab-container.expanded .radial-item:nth-child(3) {
+      transform: translate(70px, -60px);
+      transition-delay: 0.15s;
+    }
+    
+    .fab-container.expanded .radial-item:nth-child(4) {
+      transform: translate(-90px, 10px);
+      transition-delay: 0s;
+    }
+    
+    .fab-container.expanded .radial-item:nth-child(5) {
+      transform: translate(90px, 10px);
+      transition-delay: 0.2s;
+    }
+    
+    /* Overlay */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+      z-index: 5;
+    }
+    
+    .overlay.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    
+    /* Toast notification */
+    .toast {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.9);
+      background: rgba(255,255,255,0.15);
+      backdrop-filter: blur(20px);
+      padding: 20px 40px;
+      border-radius: 16px;
+      font-size: 18px;
+      font-weight: 600;
+      opacity: 0;
+      transition: all 0.3s;
+      pointer-events: none;
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+    
+    .toast.show {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+    
+    /* Instructions */
+    .instructions {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255,255,255,0.1);
+      padding: 12px 20px;
+      border-radius: 12px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.7);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="instructions">
+    Tap the orange + button to expand actions
+  </div>
+
+  <div class="content">
+    <div class="balance-card">
+      <div class="balance-label">Total Balance</div>
+      <div class="balance-amount">$2,847.32</div>
+      <div class="balance-change">+$124.50 (4.6%) today</div>
+    </div>
+  </div>
+  
+  <div class="overlay" id="overlay"></div>
+  
+  <nav class="bottom-nav">
+    <div class="nav-item active">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+      </svg>
+      <span>Home</span>
+    </div>
+    
+    <div class="nav-item">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+      </svg>
+      <span>Portfolio</span>
+    </div>
+    
+    <div class="fab-container" id="fabContainer">
+      <div class="radial-menu">
+        <div class="radial-item" data-action="Send">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+          </svg>
+          <span>Send</span>
+        </div>
+        <div class="radial-item" data-action="Swap">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+          </svg>
+          <span>Swap</span>
+        </div>
+        <div class="radial-item" data-action="Buy">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          <span>Buy</span>
+        </div>
+        <div class="radial-item" data-action="Receive">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+          </svg>
+          <span>Receive</span>
+        </div>
+        <div class="radial-item" data-action="Convert">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+          <span>Convert</span>
+        </div>
+      </div>
+      <button class="fab-main" id="fabMain">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+        </svg>
+      </button>
+    </div>
+    
+    <div class="nav-item">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+      <span>Activity</span>
+    </div>
+    
+    <div class="nav-item">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+      </svg>
+      <span>Settings</span>
+    </div>
+  </nav>
+  
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const fabContainer = document.getElementById('fabContainer');
+    const fabMain = document.getElementById('fabMain');
+    const overlay = document.getElementById('overlay');
+    const toast = document.getElementById('toast');
+    const radialItems = document.querySelectorAll('.radial-item');
+    
+    let isExpanded = false;
+    
+    function toggleMenu() {
+      isExpanded = !isExpanded;
+      fabContainer.classList.toggle('expanded', isExpanded);
+      fabMain.classList.toggle('expanded', isExpanded);
+      overlay.classList.toggle('visible', isExpanded);
+    }
+    
+    function showToast(action) {
+      toast.textContent = `${action} tapped!`;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 1500);
+    }
+    
+    fabMain.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleMenu();
+    });
+    
+    overlay.addEventListener('click', () => {
+      if (isExpanded) toggleMenu();
+    });
+    
+    radialItems.forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const action = item.dataset.action;
+        showToast(action);
+        toggleMenu();
+      });
+    });
+    
+    // Close on escape
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && isExpanded) toggleMenu();
+    });
+  </script>
+</body>
+</html>

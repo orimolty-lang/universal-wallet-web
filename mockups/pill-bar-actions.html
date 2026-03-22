@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Pill Bar Actions</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(180deg, #1a1a2e 0%, #0f0f1a 100%);
+      min-height: 100vh;
+      color: white;
+      overflow-x: hidden;
+    }
+    
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 20px;
+    }
+    
+    .profile {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #f97316, #ea580c);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+    
+    .header-icons {
+      display: flex;
+      gap: 16px;
+    }
+    
+    .header-icons svg {
+      width: 24px;
+      height: 24px;
+      color: rgba(255,255,255,0.7);
+    }
+    
+    .balance-section {
+      text-align: center;
+      padding: 20px;
+    }
+    
+    .balance-label {
+      font-size: 14px;
+      color: rgba(255,255,255,0.5);
+      margin-bottom: 8px;
+    }
+    
+    .balance-amount {
+      font-size: 52px;
+      font-weight: 700;
+      letter-spacing: -2px;
+      margin-bottom: 8px;
+    }
+    
+    .balance-change {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+      color: #4ade80;
+      background: rgba(74, 222, 128, 0.1);
+      padding: 6px 12px;
+      border-radius: 20px;
+    }
+    
+    /* Pill Bar Actions */
+    .pill-bar-container {
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+    }
+    
+    .pill-bar {
+      display: flex;
+      background: rgba(255,255,255,0.08);
+      backdrop-filter: blur(20px);
+      border-radius: 50px;
+      padding: 6px;
+      border: 1px solid rgba(255,255,255,0.1);
+      gap: 4px;
+    }
+    
+    .pill-action {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 12px 18px;
+      border-radius: 50px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      color: rgba(255,255,255,0.7);
+      font-size: 14px;
+      font-weight: 500;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .pill-action::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, #f97316, #ea580c);
+      opacity: 0;
+      transition: opacity 0.25s;
+      border-radius: 50px;
+    }
+    
+    .pill-action:hover {
+      color: white;
+    }
+    
+    .pill-action:hover::before {
+      opacity: 1;
+    }
+    
+    .pill-action:active {
+      transform: scale(0.95);
+    }
+    
+    .pill-action:active::before {
+      opacity: 1;
+      background: linear-gradient(135deg, #ea580c, #c2410c);
+    }
+    
+    .pill-action svg {
+      width: 18px;
+      height: 18px;
+      position: relative;
+      z-index: 1;
+    }
+    
+    .pill-action span {
+      position: relative;
+      z-index: 1;
+    }
+    
+    /* Dividers */
+    .pill-divider {
+      width: 1px;
+      background: rgba(255,255,255,0.15);
+      margin: 8px 0;
+    }
+    
+    /* Token List */
+    .tokens-section {
+      padding: 0 20px 100px;
+    }
+    
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    
+    .section-title {
+      font-size: 18px;
+      font-weight: 600;
+    }
+    
+    .section-link {
+      font-size: 14px;
+      color: #f97316;
+    }
+    
+    .token-item {
+      display: flex;
+      align-items: center;
+      padding: 16px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 16px;
+      margin-bottom: 12px;
+    }
+    
+    .token-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #627EEA, #3b5998);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-right: 14px;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    
+    .token-icon.btc { background: linear-gradient(135deg, #F7931A, #c77800); }
+    .token-icon.sol { background: linear-gradient(135deg, #9945FF, #14F195); }
+    .token-icon.usdc { background: linear-gradient(135deg, #2775CA, #1a5490); }
+    
+    .token-info { flex: 1; }
+    .token-name { font-weight: 600; margin-bottom: 4px; }
+    .token-balance { font-size: 13px; color: rgba(255,255,255,0.5); }
+    .token-value { text-align: right; }
+    .token-usd { font-weight: 600; margin-bottom: 4px; }
+    .token-change { font-size: 13px; color: #4ade80; }
+    
+    /* Toast */
+    .toast {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.9);
+      background: rgba(255,255,255,0.15);
+      backdrop-filter: blur(20px);
+      padding: 20px 40px;
+      border-radius: 16px;
+      font-size: 18px;
+      font-weight: 600;
+      opacity: 0;
+      transition: all 0.3s;
+      pointer-events: none;
+      z-index: 100;
+    }
+    
+    .toast.show {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+    
+    /* Alternative: Icon-only compact version */
+    .pill-bar.compact .pill-action {
+      padding: 12px 14px;
+    }
+    
+    .pill-bar.compact .pill-action span {
+      display: none;
+    }
+    
+    /* Toggle button */
+    .toggle-container {
+      display: flex;
+      justify-content: center;
+      padding: 10px;
+      gap: 10px;
+    }
+    
+    .toggle-btn {
+      background: rgba(255,255,255,0.1);
+      border: none;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    
+    .toggle-btn.active {
+      background: #f97316;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="profile">🍊</div>
+    <div class="header-icons">
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+      </svg>
+      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+      </svg>
+    </div>
+  </div>
+  
+  <div class="balance-section">
+    <div class="balance-label">Total Balance</div>
+    <div class="balance-amount">$2,847</div>
+    <div class="balance-change">
+      <svg width="12" height="12" fill="currentColor" viewBox="0 0 20 20">
+        <path fill-rule="evenodd" d="M12 7a1 1 0 011-1h5a1 1 0 011 1v5a1 1 0 11-2 0V9.414l-4.293 4.293a1 1 0 01-1.414 0L8 10.414l-4.293 4.293a1 1 0 01-1.414-1.414l5-5a1 1 0 011.414 0L12 11.586 15.586 8H13a1 1 0 01-1-1z" clip-rule="evenodd"/>
+      </svg>
+      +4.6% today
+    </div>
+  </div>
+  
+  <div class="toggle-container">
+    <button class="toggle-btn active" onclick="setMode('full')">With Labels</button>
+    <button class="toggle-btn" onclick="setMode('compact')">Icons Only</button>
+  </div>
+  
+  <!-- Pill Bar Actions -->
+  <div class="pill-bar-container">
+    <div class="pill-bar" id="pillBar">
+      <div class="pill-action" data-action="Send">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+        </svg>
+        <span>Send</span>
+      </div>
+      <div class="pill-divider"></div>
+      <div class="pill-action" data-action="Receive">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+        </svg>
+        <span>Receive</span>
+      </div>
+      <div class="pill-divider"></div>
+      <div class="pill-action" data-action="Swap">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+        </svg>
+        <span>Swap</span>
+      </div>
+      <div class="pill-divider"></div>
+      <div class="pill-action" data-action="Buy">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <span>Buy</span>
+      </div>
+    </div>
+  </div>
+  
+  <div class="tokens-section">
+    <div class="section-header">
+      <span class="section-title">Tokens</span>
+      <span class="section-link">See all</span>
+    </div>
+    
+    <div class="token-item">
+      <div class="token-icon">ETH</div>
+      <div class="token-info">
+        <div class="token-name">Ethereum</div>
+        <div class="token-balance">0.82 ETH</div>
+      </div>
+      <div class="token-value">
+        <div class="token-usd">$1,892.40</div>
+        <div class="token-change">+3.2%</div>
+      </div>
+    </div>
+    
+    <div class="token-item">
+      <div class="token-icon btc">BTC</div>
+      <div class="token-info">
+        <div class="token-name">Bitcoin</div>
+        <div class="token-balance">0.012 BTC</div>
+      </div>
+      <div class="token-value">
+        <div class="token-usd">$724.80</div>
+        <div class="token-change">+1.8%</div>
+      </div>
+    </div>
+    
+    <div class="token-item">
+      <div class="token-icon usdc">USDC</div>
+      <div class="token-info">
+        <div class="token-name">USD Coin</div>
+        <div class="token-balance">230.12 USDC</div>
+      </div>
+      <div class="token-value">
+        <div class="token-usd">$230.12</div>
+        <div class="token-change">0.0%</div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const pillBar = document.getElementById('pillBar');
+    const toast = document.getElementById('toast');
+    const pillActions = document.querySelectorAll('.pill-action');
+    const toggleBtns = document.querySelectorAll('.toggle-btn');
+    
+    function showToast(action) {
+      toast.textContent = `${action} tapped!`;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 1500);
+    }
+    
+    function setMode(mode) {
+      if (mode === 'compact') {
+        pillBar.classList.add('compact');
+      } else {
+        pillBar.classList.remove('compact');
+      }
+      toggleBtns.forEach(btn => {
+        btn.classList.toggle('active', btn.textContent.toLowerCase().includes(mode === 'compact' ? 'icon' : 'label'));
+      });
+    }
+    
+    pillActions.forEach(item => {
+      item.addEventListener('click', () => {
+        showToast(item.dataset.action);
+      });
+    });
+  </script>
+</body>
+</html>
