@@ -183,6 +183,8 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
   const userRef = useRef(user);
   userRef.current = user;
   const [profileRev, setProfileRev] = useState(0);
+  /** Bumps when preferred embedded address changes so pick() re-reads localStorage (wallets[] may be referentially stable). */
+  const [walletPickEpoch, setWalletPickEpoch] = useState(0);
   const [isCreatingWallet, setIsCreatingWallet] = useState(false);
 
   const { createWallet } = useCreateWallet({
@@ -204,6 +206,7 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
           setActiveWallet(hit);
         }
         setProfileRev((r) => r + 1);
+        setWalletPickEpoch((e) => e + 1);
         setIsCreatingWallet(false);
       };
       window.setTimeout(activate, 500);
@@ -218,7 +221,7 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
 
   const embeddedWallet = useMemo(
     () => pickPrivyEmbeddedEthereumWallet(wallets, user?.id),
-    [wallets, user?.id],
+    [wallets, user?.id, walletPickEpoch],
   );
   const address = embeddedWallet?.address as `0x${string}` | undefined;
 
@@ -277,6 +280,7 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
       if (!hit) return;
       writePreferredEmbedded(user.id, hit.address);
       syncedPairRef.current = "";
+      setWalletPickEpoch((e) => e + 1);
       setProfileRev((r) => r + 1);
       setActiveWallet(hit);
     },

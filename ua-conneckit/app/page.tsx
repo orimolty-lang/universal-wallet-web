@@ -7262,10 +7262,21 @@ const App = () => {
 
   useEffect(() => {
     if (!universalAccountInstance || !address) return;
-    const fetchAddresses = async () => {
+    // Drop stale smart-account addresses immediately so Mobula/Particle don't query the previous wallet.
+    setAccountInfo({
+      ownerAddress: address,
+      evmSmartAccount: "",
+      solanaSmartAccount: "",
+    });
+    setPrimaryAssets(null);
+    setMobulaAssets([]);
+    setParticleAssets([]);
+    let cancelled = false;
+    (async () => {
       try {
         console.log("[UA] Fetching smart account options...");
         const options = await universalAccountInstance.getSmartAccountOptions();
+        if (cancelled) return;
         console.log("[UA] Smart accounts:", { evm: options.smartAccountAddress, sol: options.solanaSmartAccountAddress });
         setAccountInfo({
           ownerAddress: address,
@@ -7273,10 +7284,12 @@ const App = () => {
           solanaSmartAccount: options.solanaSmartAccountAddress || "",
         });
       } catch (error) {
-        console.error("[UA] Failed to fetch addresses:", error);
+        if (!cancelled) console.error("[UA] Failed to fetch addresses:", error);
       }
+    })();
+    return () => {
+      cancelled = true;
     };
-    fetchAddresses();
   }, [universalAccountInstance, address]);
 
   const fetchAssets = useCallback(async () => {
