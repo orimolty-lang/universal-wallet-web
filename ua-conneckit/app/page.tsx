@@ -1546,7 +1546,6 @@ const ConvertModal = ({
   const [error, setError] = useState<string | null>(null);
   const [estimatedOutput, setEstimatedOutput] = useState<string | null>(null);
   const [loadingStatus, setLoadingStatus] = useState<string>('');
-  const [txResult, setTxResult] = useState<{ txId: string; status: string } | null>(null);
   const [estimatedFee, setEstimatedFee] = useState<string | null>(null);
   const [debugOpen, setDebugOpen] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
@@ -1566,17 +1565,6 @@ const ConvertModal = ({
     }
   }, [isOpen, addDebug, universalAccount]);
 
-  // Auto-clear txResult after success animation and close modal
-  useEffect(() => {
-    if (txResult?.status === 'complete') {
-      const timer = setTimeout(() => {
-        setTxResult(null);
-        onClose();
-      }, 2500);
-      return () => clearTimeout(timer);
-    }
-  }, [txResult?.status, onClose]);
-  
   // Dropdown visibility states
   const [fromAssetOpen, setFromAssetOpen] = useState(false);
   const [fromChainOpen, setFromChainOpen] = useState(false);
@@ -1885,10 +1873,7 @@ const ConvertModal = ({
         
         if (sendResult?.transactionId) {
           console.log('[Convert] Transaction sent:', sendResult.transactionId);
-          setTxResult({
-            txId: sendResult.transactionId,
-            status: 'pending',
-          });
+          onWalletActivity?.('convert_submit');
           setLoadingStatus('Waiting for confirmation...');
           
           // Wait for balance refresh to confirm conversion
@@ -1905,25 +1890,23 @@ const ConvertModal = ({
               // In production, we'd compare before/after balances
               // For now, trust the refresh after a few attempts
               if (attempts >= 3) {
-                setTxResult({
-                  txId: sendResult.transactionId,
-                  status: 'complete',
-                });
                 setLoadingStatus('');
                 onWalletActivity?.('converted');
-                
-                // Reset form
                 setFromAsset('');
                 setFromChain(null);
                 setToAsset('');
                 setToChain(null);
                 setAmount('');
+                onClose();
               } else if (attempts < maxAttempts) {
                 setTimeout(checkBalance, 2000);
               }
             };
             
             setTimeout(checkBalance, 2000);
+          } else {
+            onWalletActivity?.('converted');
+            onClose();
           }
         }
       } else {
@@ -1949,7 +1932,7 @@ const ConvertModal = ({
 
   return (
     <BottomSheet isOpen={isOpen} onClose={onClose} dark>
-      <div className="px-5 pb-8 min-h-[400px]">
+      <div className="px-5 pb-5">
         <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#252525]">
           <h2 className="text-white text-xl font-bold">Convert</h2>
           <button
@@ -2198,33 +2181,6 @@ const ConvertModal = ({
         )}
         
         {/* Transaction Result - Spinner/Checkmark Animation */}
-        {txResult && (
-          <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/60">
-            <div 
-              className="flex flex-col items-center"
-              style={{
-                animation: txResult.status === 'complete' ? 'fadeOut 0.5s ease-out 2s forwards' : 'none'
-              }}
-            >
-              {txResult.status === 'pending' ? (
-                <div className="w-16 h-16 border-4 border-accent-dynamic border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <div className="w-16 h-16 rounded-full bg-green-500 flex items-center justify-center animate-bounce">
-                  <span className="text-white text-3xl">✓</span>
-                </div>
-              )}
-              <p className="text-white mt-4 text-sm">
-                {txResult.status === 'pending' ? 'Converting...' : 'Complete!'}
-              </p>
-            </div>
-            <style jsx>{`
-              @keyframes fadeOut {
-                from { opacity: 1; }
-                to { opacity: 0; pointer-events: none; }
-              }
-            `}</style>
-          </div>
-        )}
       </div>
     </BottomSheet>
   );
@@ -4240,11 +4196,7 @@ const PerpsModal = ({
                   <div>
                     <div className="text-[11px] uppercase tracking-wide text-gray-300 font-semibold">Available balance</div>
                     <div className="text-2xl font-bold text-white">
-                      $
-                      {Number(perpsUnifiedBalance).toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 6,
-                      })}
+                      ${Number(perpsUnifiedBalance).toFixed(2)}
                     </div>
                   </div>
                 </div>
@@ -4720,13 +4672,7 @@ const PerpsModal = ({
                         d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"
                       />
                     </svg>
-                    <span className="text-white">
-                      $
-                      {Number(perpsUnifiedBalance).toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 6,
-                      })}
-                    </span>
+                    <span className="text-white">${Number(perpsUnifiedBalance).toFixed(2)}</span>
                   </span>
                 </div>
                 <input type="number" value={collateral} onChange={(e) => setCollateral(e.target.value)} placeholder="0" className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-3 text-white outline-none text-base mb-2" />
@@ -5455,11 +5401,15 @@ const SearchTab = ({
   portfolioAssets,
   universalAccount,
   onSend,
+  onWalletActivity,
+  onSwapSuccess,
 }: { 
   primaryAssets: IAssetsResponse | null;
   portfolioAssets: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
   onSend?: () => void;
+  onWalletActivity?: (kind: WalletActivityToastKind, detail?: string) => void;
+  onSwapSuccess?: () => void;
 }) => {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<TokenResult[]>([]);
@@ -6120,9 +6070,8 @@ const SearchTab = ({
         primaryAssets={primaryAssets}
         portfolioAssets={portfolioAssets}
         universalAccount={universalAccount}
-        onSwapSuccess={(txId) => {
-          console.log("Swap success:", txId);
-        }}
+        onWalletActivity={onWalletActivity}
+        onSwapSuccess={onSwapSuccess}
       />
     </div>
   );
@@ -7191,9 +7140,11 @@ const App = () => {
       kind === "perps_long_confirmed" ||
       kind === "perps_short_confirmed" ||
       kind === "perps_close_confirmed" ||
-      kind === "perps_tpsl_confirmed"
+      kind === "perps_tpsl_confirmed" ||
+      kind === "swap_confirmed"
     )
       ms = 2800;
+    else if (kind === "swap_submit" || kind === "convert_submit") ms = 2200;
     window.setTimeout(() => {
       setWalletToastPayload((cur) => (cur?.key === key ? null : cur));
     }, ms);
@@ -7600,6 +7551,12 @@ const App = () => {
           portfolioAssets={combinedAssets as IAssetsResponse | null}
           universalAccount={universalAccountInstance}
           onSend={() => setShowSendModal(true)}
+          onWalletActivity={showWalletActivityToast}
+          onSwapSuccess={() => {
+            fetchAssets();
+            fetchMobulaAssets();
+            fetchParticleAssets();
+          }}
         />
       )}
       {activeTab === "points" && <PointsTab />}
@@ -7777,6 +7734,12 @@ const App = () => {
         primaryAssets={primaryAssets}
         portfolioAssets={combinedAssets as IAssetsResponse | null}
         universalAccount={universalAccountInstance}
+        onWalletActivity={showWalletActivityToast}
+        onSwapSuccess={() => {
+          fetchAssets();
+          fetchMobulaAssets();
+          fetchParticleAssets();
+        }}
       />
     </div>
   );
