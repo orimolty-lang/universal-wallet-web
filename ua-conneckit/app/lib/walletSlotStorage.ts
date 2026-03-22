@@ -70,3 +70,27 @@ export function setProfileForAddress(userId: string, address: string, profile: W
   map[address.toLowerCase()] = profile;
   writeProfilesMap(userId, map);
 }
+
+const ORDER_PREFIX = "omni_wallet_order_v1";
+
+export function readWalletOrder(userId: string): string[] {
+  try {
+    if (typeof window === "undefined") return [];
+    const raw = window.localStorage.getItem(`${ORDER_PREFIX}_${userId}`);
+    if (!raw) return [];
+    const arr = JSON.parse(raw) as unknown;
+    if (!Array.isArray(arr)) return [];
+    return arr.map((x) => String(x).trim().toLowerCase()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+export function writeWalletOrder(userId: string, addressesLower: string[]) {
+  try {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(`${ORDER_PREFIX}_${userId}`, JSON.stringify(addressesLower));
+  } catch {
+    // no-op
+  }
+}

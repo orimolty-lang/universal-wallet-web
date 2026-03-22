@@ -5165,9 +5165,9 @@ const HomeTab = ({
       })).filter((c: any) => c.amount > 0.0001) || [],
     };
   }).filter(
-    (t: { balance: number; isExternal?: boolean; assetKey?: string; contracts?: unknown[] }) => {
+    (t: { balance: number; isExternal?: boolean; assetKey?: string }) => {
       if (t.balance <= 0.0001) return false;
-      if (t.isExternal && (!t.assetKey || !Array.isArray(t.contracts) || t.contracts.length === 0)) return false;
+      if (t.isExternal && !t.assetKey) return false;
       return true;
     },
   ) || [];
@@ -7440,12 +7440,26 @@ const App = () => {
           }
         }
         
+        const chainIdToName: Record<number, string> = {
+          1: "ethereum", 8453: "base", 42161: "arbitrum",
+          10: "optimism", 137: "polygon", 56: "bsc", 101: "solana",
+        };
+
+        // Mobula often sends `contracts_balances` (not cross_chain_balances) — map so home list + swap agree.
+        if (contracts.length === 0 && Array.isArray(ma.contracts_balances)) {
+          for (const row of ma.contracts_balances) {
+            const cid = parseChainIdMobula(row.chainId);
+            if (row.address && cid) {
+              contracts.push({
+                address: row.address,
+                blockchain: chainIdToName[cid] || `chain-${cid}`,
+              });
+            }
+          }
+        }
+
         // Fallback: extract from cross_chain_balances if available (chainId often string "8453" from Mobula)
         if (contracts.length === 0 && ma.cross_chain_balances) {
-          const chainIdToName: Record<number, string> = {
-            1: "ethereum", 8453: "base", 42161: "arbitrum",
-            10: "optimism", 137: "polygon", 56: "bsc", 101: "solana",
-          };
           Object.values(ma.cross_chain_balances).forEach((data) => {
             const cid = parseChainIdMobula(data.chainId);
             if (data.address && cid) {

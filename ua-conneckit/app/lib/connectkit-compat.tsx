@@ -20,7 +20,9 @@ import {
   defaultWalletSlotProfile,
   getProfileForAddress,
   readProfilesMap,
+  readWalletOrder,
   setProfileForAddress,
+  writeWalletOrder,
   type WalletSlotProfile,
 } from "./walletSlotStorage";
 
@@ -34,6 +36,25 @@ export type EmbeddedWalletRow = {
   profile: WalletSlotProfile;
   isActive: boolean;
 };
+
+function applyWalletOrder(rows: EmbeddedWalletRow[], userId: string | undefined): EmbeddedWalletRow[] {
+  if (!userId || rows.length <= 1) return rows;
+  const pref = readWalletOrder(userId);
+  if (pref.length === 0) return rows;
+  const m = new Map(rows.map((r) => [r.address.toLowerCase(), r]));
+  const out: EmbeddedWalletRow[] = [];
+  for (const lo of pref) {
+    const hit = m.get(lo);
+    if (hit) {
+      out.push(hit);
+      m.delete(lo);
+    }
+  }
+  const rest = Array.from(m.values()).sort((a, b) =>
+    a.address.toLowerCase().localeCompare(b.address.toLowerCase()),
+  );
+  return [...out, ...rest];
+}
 
 /** Per-Privy-user preferred embedded EVM address (stable selection when multiple exist). */
 const PREFERRED_EMBEDDED_KEY_PREFIX = "omni_privy_preferred_embedded_v1";
@@ -109,6 +130,8 @@ type CompatContextType = {
   createAdditionalWallet: () => Promise<void>;
   canCreateWallet: boolean;
   isCreatingWallet: boolean;
+  /** Persist user-defined order (drag) for wallet switcher list. */
+  reorderEmbeddedWallets: (orderedAddressesLower: string[]) => void;
 };
 
 const CompatContext = createContext<CompatContextType>({
@@ -130,6 +153,7 @@ const CompatContext = createContext<CompatContextType>({
   createAdditionalWallet: async () => {},
   canCreateWallet: false,
   isCreatingWallet: false,
+  reorderEmbeddedWallets: () => {},
 });
 
 function isPrivyEmbeddedEthereum(w: ConnectedWallet): boolean {
@@ -185,6 +209,7 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
   const [profileRev, setProfileRev] = useState(0);
   /** Bumps when preferred embedded address changes so pick() re-reads localStorage (wallets[] may be referentially stable). */
   const [walletPickEpoch, setWalletPickEpoch] = useState(0);
+  const [walletOrderEpoch, setWalletOrderEpoch] = useState(0);
   const [isCreatingWallet, setIsCreatingWallet] = useState(false);
 
   const { createWallet } = useCreateWallet({
@@ -197,6 +222,9 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
       const addr = getAddress(raw);
       setProfileForAddress(userRef.current.id, addr, defaultWalletSlotProfile());
       writePreferredEmbedded(userRef.current.id, addr);
+      const ord = readWalletOrder(userRef.current.id);
+      const lo = addr.toLowerCase();
+      if (!ord.includes(lo)) writeWalletOrder(userRef.current.id, [...ord, lo]);
       const activate = () => {
         const hit = walletsRef.current?.find(
           (w) => isPrivyEmbeddedEthereum(w) && getAddress(w.address) === addr,
@@ -207,6 +235,7 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
         }
         setProfileRev((r) => r + 1);
         setWalletPickEpoch((e) => e + 1);
+        setWalletOrderEpoch((e) => e + 1);
         setIsCreatingWallet(false);
       };
       window.setTimeout(activate, 500);
@@ -241,12 +270,13 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
 
   const embeddedWalletRows = useMemo((): EmbeddedWalletRow[] => {
     void profileRev;
+    void walletOrderEpoch;
     if (!user?.id) return [];
     const sorted = [...(wallets || []).filter(isPrivyEmbeddedEthereum)].sort((a, b) =>
       getAddress(a.address).toLowerCase().localeCompare(getAddress(b.address).toLowerCase()),
     );
     const act = address?.toLowerCase();
-    return sorted.map((w) => {
+    const rows = sorted.map((w) => {
       const addr = getAddress(w.address);
       return {
         address: addr,
@@ -254,7 +284,8 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
         isActive: act === addr.toLowerCase(),
       };
     });
-  }, [wallets, user?.id, address, profileRev]);
+    return applyWalletOrder(rows, user.id);
+  }, [wallets, user?.id, address, profileRev, walletOrderEpoch]);
 
   const canCreateWallet =
     !!(authenticated && user?.id && privyEmbeddedAddresses.length < MAX_PRIVY_EMBEDDED_WALLETS);
@@ -266,9 +297,20 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
       await createWallet({ createAdditional: true } as { createAdditional: boolean });
     } catch (e) {
       console.warn("[Privy] createWallet:", e);
+    } finally {
       setIsCreatingWallet(false);
     }
   }, [canCreateWallet, createWallet]);
+
+  const reorderEmbeddedWallets = useCallback(
+    (orderedAddressesLower: string[]) => {
+      if (!user?.id) return;
+      const norm = orderedAddressesLower.map((a) => a.trim().toLowerCase()).filter(Boolean);
+      writeWalletOrder(user.id, norm);
+      setWalletOrderEpoch((e) => e + 1);
+    },
+    [user?.id],
+  );
 
   const setPreferredPrivyEmbeddedAddress = useCallback(
     (addr: string) => {
@@ -450,6 +492,7 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
       createAdditionalWallet,
       canCreateWallet,
       isCreatingWallet,
+      reorderEmbeddedWallets,
     }),
     [
       ready,
@@ -469,6 +512,7 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
       createAdditionalWallet,
       canCreateWallet,
       isCreatingWallet,
+      reorderEmbeddedWallets,
     ]
   );
 
@@ -568,6 +612,7 @@ export function useWalletAppearance() {
     createAdditionalWallet: ctx.createAdditionalWallet,
     canCreateWallet: ctx.canCreateWallet,
     isCreatingWallet: ctx.isCreatingWallet,
+    reorderEmbeddedWallets: ctx.reorderEmbeddedWallets,
   };
 }
 
