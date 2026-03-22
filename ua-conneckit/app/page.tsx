@@ -9,13 +9,16 @@ import {
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Home,
-  Search,
   Bot,
   Activity,
   Copy,
   Check,
   Send,
   ArrowDownToLine,
+  ArrowLeftRight,
+  TrendingUp,
+  Target,
+  Percent,
 } from "lucide-react";
 import {
   UniversalAccount,
@@ -25,9 +28,18 @@ import {
 } from "@particle-network/universal-account-sdk";
 import DepositDialog from "./components/DepositDialog";
 import AssetBreakdownDialog from "./components/AssetBreakdownDialog";
+import PerpsModal from "./components/PerpsModal";
+import PredictionsModal from "./components/PredictionsModal";
+import EarnModal from "./components/EarnModal";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 // Types
-type TabType = "home" | "search" | "agent" | "activity";
+type TabType = "home" | "agent" | "activity";
 
 interface AccountInfo {
   ownerAddress: string;
@@ -212,22 +224,6 @@ const HomeTab = ({
   );
 };
 
-// Search Tab Component
-const SearchTab = () => (
-  <div className="flex-1 flex flex-col items-center justify-center p-6">
-    <Search className="w-16 h-16 text-zinc-700 mb-4" />
-    <h2 className="text-xl text-white font-bold mb-2">Search</h2>
-    <p className="text-gray-500 text-center">Search tokens, NFTs, and addresses across all chains</p>
-    <div className="mt-6 w-full max-w-sm">
-      <input 
-        type="text" 
-        placeholder="Search..." 
-        className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-white placeholder-gray-500"
-      />
-    </div>
-  </div>
-);
-
 // Agent Tab Component
 const AgentTab = () => (
   <div className="flex-1 flex flex-col items-center justify-center p-6">
@@ -255,30 +251,71 @@ const ActivityTab = () => (
 );
 
 // Bottom Tab Bar Component
-const TabBar = ({ activeTab, onTabChange }: { activeTab: TabType; onTabChange: (tab: TabType) => void }) => (
+const TabBar = ({
+  activeTab,
+  onTabChange,
+  onOpenPerps,
+  onOpenPredictions,
+  onOpenEarn,
+}: {
+  activeTab: TabType;
+  onTabChange: (tab: TabType) => void;
+  onOpenPerps: () => void;
+  onOpenPredictions: () => void;
+  onOpenEarn: () => void;
+}) => (
   <div className="fixed bottom-0 left-0 right-0 bg-zinc-950 border-t border-zinc-800 px-6 py-3 flex justify-around items-center">
-    <button 
+    <button
       onClick={() => onTabChange("home")}
       className={`flex flex-col items-center gap-1 ${activeTab === "home" ? "text-purple-400" : "text-gray-500"}`}
     >
       <Home className="w-6 h-6" />
       <span className="text-xs">Home</span>
     </button>
-    <button 
-      onClick={() => onTabChange("search")}
-      className={`flex flex-col items-center gap-1 ${activeTab === "search" ? "text-purple-400" : "text-gray-500"}`}
-    >
-      <Search className="w-6 h-6" />
-      <span className="text-xs">Search</span>
-    </button>
-    <button 
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className="flex flex-col items-center gap-1 text-gray-500 hover:text-purple-400 focus:text-purple-400 focus:outline-none">
+          <ArrowLeftRight className="w-6 h-6" />
+          <span className="text-xs">Trade</span>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        side="top"
+        align="center"
+        sideOffset={8}
+        className="bg-zinc-900 border-zinc-800 min-w-[180px]"
+      >
+        <DropdownMenuItem
+          onSelect={onOpenPerps}
+          className="flex items-center gap-2 text-white focus:bg-zinc-800 focus:text-white cursor-pointer"
+        >
+          <TrendingUp className="w-4 h-4 text-purple-400" />
+          Perps
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={onOpenPredictions}
+          className="flex items-center gap-2 text-white focus:bg-zinc-800 focus:text-white cursor-pointer"
+        >
+          <Target className="w-4 h-4 text-purple-400" />
+          Predictions
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={onOpenEarn}
+          className="flex items-center gap-2 text-white focus:bg-zinc-800 focus:text-white cursor-pointer"
+        >
+          <Percent className="w-4 h-4 text-purple-400" />
+          Earn
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+    <button
       onClick={() => onTabChange("agent")}
       className={`flex flex-col items-center gap-1 ${activeTab === "agent" ? "text-purple-400" : "text-gray-500"}`}
     >
       <Bot className="w-6 h-6" />
       <span className="text-xs">Agent</span>
     </button>
-    <button 
+    <button
       onClick={() => onTabChange("activity")}
       className={`flex flex-col items-center gap-1 ${activeTab === "activity" ? "text-purple-400" : "text-gray-500"}`}
     >
@@ -300,6 +337,9 @@ const App = () => {
   const [primaryAssets, setPrimaryAssets] = useState<IAssetsResponse | null>(null);
   const [showDepositDialog, setShowDepositDialog] = useState(false);
   const [showAssetBreakdown, setShowAssetBreakdown] = useState(false);
+  const [showPerpsModal, setShowPerpsModal] = useState(false);
+  const [showPredictionsModal, setShowPredictionsModal] = useState(false);
+  const [showEarnModal, setShowEarnModal] = useState(false);
 
   // Initialize Universal Account
   const universalAccountConfig = useMemo((): IUniversalAccountConfig => ({
@@ -387,12 +427,17 @@ const App = () => {
           onViewAssets={() => setShowAssetBreakdown(true)}
         />
       )}
-      {activeTab === "search" && <SearchTab />}
       {activeTab === "agent" && <AgentTab />}
       {activeTab === "activity" && <ActivityTab />}
 
       {/* Bottom Tab Bar */}
-      <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
+      <TabBar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        onOpenPerps={() => setShowPerpsModal(true)}
+        onOpenPredictions={() => setShowPredictionsModal(true)}
+        onOpenEarn={() => setShowEarnModal(true)}
+      />
 
       {/* Dialogs */}
       {accountInfo && (
@@ -409,6 +454,10 @@ const App = () => {
         setIsOpen={setShowAssetBreakdown}
         assets={primaryAssets}
       />
+
+      <PerpsModal isOpen={showPerpsModal} setIsOpen={setShowPerpsModal} />
+      <PredictionsModal isOpen={showPredictionsModal} setIsOpen={setShowPredictionsModal} />
+      <EarnModal isOpen={showEarnModal} setIsOpen={setShowEarnModal} />
     </div>
   );
 };
