@@ -1,17 +1,49 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef } from "react";
 import { BrowserProvider, getBytes } from "ethers";
 import {
   PrivyProvider,
+  getEmbeddedConnectedWallet,
   useLogin,
   usePrivy,
-  useCreateWallet,
+  useActiveWallet,
   useSign7702Authorization,
   useSignMessage,
   useWallets as usePrivyWallets,
 } from "@privy-io/react-auth";
+import type { ConnectedWallet } from "@privy-io/react-auth";
+import { getAddress, isAddress } from "viem";
 import { arbitrum, avalanche, base, bsc, mainnet, optimism, polygon } from "viem/chains";
+
+/** Per-Privy-user preferred embedded EVM address (stable selection when multiple exist). */
+const PREFERRED_EMBEDDED_KEY_PREFIX = "omni_privy_preferred_embedded_v1";
+
+function preferredEmbeddedStorageKey(userId: string) {
+  return `${PREFERRED_EMBEDDED_KEY_PREFIX}_${userId}`;
+}
+
+function readPreferredEmbedded(userId: string): string | null {
+  try {
+    if (typeof window === "undefined") return null;
+    const v = window.localStorage.getItem(preferredEmbeddedStorageKey(userId))?.trim().toLowerCase();
+    return v || null;
+  } catch {
+    return null;
+  }
+}
+
+function writePreferredEmbedded(userId: string, addr: string) {
+  try {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(preferredEmbeddedStorageKey(userId), getAddress(addr));
+  } catch {
+    // private mode / blocked
+  }
+}
+
+/** Optional build-time default when user has multiple embedded wallets (e.g. recovery). */
+const EMBEDDED_ADDR_PIN = process.env.NEXT_PUBLIC_PRIVY_PIN_EMBEDDED_ADDRESS?.trim();
 
 type WalletClientLike = {
   account?: { address?: `0x${string}` };
@@ -47,6 +79,10 @@ type CompatContextType = {
   sign7702Authorization: Sign7702Fn | null;
   signMessage: SignMessageFn | null;
   exportWallet: ExportWalletFn | null;
+  /** All Privy embedded Ethereum addresses for this session (for Settings picker). */
+  privyEmbeddedAddresses: string[];
+  /** Pin which embedded wallet Omni uses (persists per Privy user on this device). */
+  setPreferredPrivyEmbeddedAddress: (address: string) => void;
 };
 
 const CompatContext = createContext<CompatContextType>({
@@ -60,30 +96,122 @@ const CompatContext = createContext<CompatContextType>({
   sign7702Authorization: null,
   signMessage: null,
   exportWallet: null,
+  privyEmbeddedAddresses: [],
+  setPreferredPrivyEmbeddedAddress: () => {},
 });
 
+function isPrivyEmbeddedEthereum(w: ConnectedWallet): boolean {
+  if (w.walletClientType !== "privy") return false;
+  return typeof (w as { getEthereumProvider?: () => Promise<unknown> }).getEthereumProvider === "function";
+}
+
+function pickPrivyEmbeddedEthereumWallet(
+  wallets: ConnectedWallet[] | undefined,
+  userId: string | undefined,
+): ConnectedWallet | null {
+  const list = (wallets || []).filter(isPrivyEmbeddedEthereum);
+  if (list.length === 0) {
+    return getEmbeddedConnectedWallet(wallets || []) || wallets?.[0] || null;
+  }
+  if (list.length === 1) return list[0];
+
+  const uid = userId;
+  if (uid) {
+    if (EMBEDDED_ADDR_PIN && isAddress(EMBEDDED_ADDR_PIN)) {
+      const pin = getAddress(EMBEDDED_ADDR_PIN).toLowerCase();
+      const byPin = list.find((w) => getAddress(w.address).toLowerCase() === pin);
+      if (byPin) {
+        writePreferredEmbedded(uid, byPin.address);
+        return byPin;
+      }
+    }
+    const stored = readPreferredEmbedded(uid);
+    if (stored) {
+      const hit = list.find((w) => getAddress(w.address).toLowerCase() === stored);
+      if (hit) return hit;
+    }
+  }
+
+  const sorted = [...list].sort((a, b) =>
+    getAddress(a.address).toLowerCase().localeCompare(getAddress(b.address).toLowerCase()),
+  );
+  return sorted[0] ?? null;
+}
+
 function PrivyAuthInner({ children }: React.PropsWithChildren) {
-  const { ready, authenticated, logout, exportWallet } = usePrivy();
+  const { ready, authenticated, logout, exportWallet, user } = usePrivy();
   const { login } = useLogin();
-  const { createWallet } = useCreateWallet();
-  const { wallets } = usePrivyWallets();
+  const { wallets, ready: walletsReady } = usePrivyWallets();
+  const { setActiveWallet, wallet: activePrivyWallet } = useActiveWallet();
   const { signAuthorization } = useSign7702Authorization();
   const { signMessage: signMessagePrivy } = useSignMessage();
+  const syncedPairRef = useRef<string>("");
+
+  const privyEmbeddedAddresses = useMemo(
+    () => (wallets || []).filter(isPrivyEmbeddedEthereum).map((w) => getAddress(w.address)),
+    [wallets],
+  );
 
   const embeddedWallet = useMemo(
-    () => wallets?.find((w) => w.walletClientType === "privy") || wallets?.[0],
-    [wallets]
+    () => pickPrivyEmbeddedEthereumWallet(wallets, user?.id),
+    [wallets, user?.id],
   );
   const address = embeddedWallet?.address as `0x${string}` | undefined;
 
-  // Ensure embedded wallet exists (like Particle example)
+  const setPreferredPrivyEmbeddedAddress = useCallback(
+    (addr: string) => {
+      if (!user?.id || !isAddress(addr)) return;
+      const norm = getAddress(addr);
+      const hit = (wallets || []).find(
+        (w) => isPrivyEmbeddedEthereum(w) && getAddress(w.address) === norm,
+      );
+      if (!hit) return;
+      writePreferredEmbedded(user.id, hit.address);
+      syncedPairRef.current = "";
+      setActiveWallet(hit);
+    },
+    [wallets, user?.id, setActiveWallet],
+  );
+
+  // Keep Privy "active" wallet aligned with our pick (critical when multiple embedded wallets exist).
   useEffect(() => {
-    if (!ready || !authenticated) return;
-    const hasEmbedded = embeddedWallet != null;
-    if (!hasEmbedded) {
-      createWallet().catch((err) => console.warn("[Privy] createWallet:", err));
+    if (!ready || !authenticated || !walletsReady || !embeddedWallet) return;
+    const t = getAddress(embeddedWallet.address);
+    const a =
+      activePrivyWallet && "address" in activePrivyWallet
+        ? getAddress((activePrivyWallet as { address: string }).address)
+        : null;
+    const pair = `${t}:${a ?? ""}`;
+    if (pair === syncedPairRef.current && a === t) return;
+    if (a === t) {
+      syncedPairRef.current = pair;
+      return;
     }
-  }, [ready, authenticated, embeddedWallet, createWallet]);
+    try {
+      setActiveWallet(embeddedWallet);
+      syncedPairRef.current = `${t}:${t}`;
+    } catch (e) {
+      console.warn("[Privy] setActiveWallet failed:", e);
+    }
+  }, [ready, authenticated, walletsReady, embeddedWallet, activePrivyWallet, setActiveWallet]);
+
+  // Single embedded wallet: always persist so UA stays stable across sessions.
+  useEffect(() => {
+    if (!authenticated || !user?.id || !embeddedWallet) return;
+    const n = privyEmbeddedAddresses.length;
+    if (n === 1) {
+      writePreferredEmbedded(user.id, embeddedWallet.address);
+    }
+  }, [authenticated, user?.id, embeddedWallet, privyEmbeddedAddresses.length]);
+
+  useEffect(() => {
+    if (!authenticated || !user?.id || privyEmbeddedAddresses.length <= 1) return;
+    const stored = readPreferredEmbedded(user.id);
+    if (stored) return;
+    console.warn(
+      "[Omni] Multiple Privy embedded wallets detected. Open Settings → Wallet to choose the funded address, or set NEXT_PUBLIC_PRIVY_PIN_EMBEDDED_ADDRESS for one-time deploy recovery.",
+    );
+  }, [authenticated, user?.id, privyEmbeddedAddresses.length]);
 
   const doLogin = useCallback(async () => {
     await login();
@@ -177,8 +305,22 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
       sign7702Authorization: address ? sign7702Authorization : null,
       signMessage: address ? signMessage : null,
       exportWallet: address ? (exportWallet as ExportWalletFn) : null,
+      privyEmbeddedAddresses,
+      setPreferredPrivyEmbeddedAddress,
     }),
-    [ready, authenticated, address, doLogin, doLogout, getWalletClient, sign7702Authorization, signMessage, exportWallet]
+    [
+      ready,
+      authenticated,
+      address,
+      doLogin,
+      doLogout,
+      getWalletClient,
+      sign7702Authorization,
+      signMessage,
+      exportWallet,
+      privyEmbeddedAddresses,
+      setPreferredPrivyEmbeddedAddress,
+    ]
   );
 
   return <CompatContext.Provider value={value}>{children}</CompatContext.Provider>;
@@ -215,7 +357,8 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
         loginMethods: ["email", "google", "apple", "passkey"],
         embeddedWallets: {
           ethereum: {
-            createOnLogin: "all-users",
+            // Only create when the user has no wallet yet — avoids extra embedded wallets on every login.
+            createOnLogin: "users-without-wallets",
           },
           showWalletUIs: false,
         },
@@ -259,6 +402,11 @@ export function useWallets(): CompatWallet[] {
 export function useDisconnect() {
   const { logout } = useContext(CompatContext);
   return { disconnect: logout };
+}
+
+export function usePrivyEmbeddedWalletPrefs() {
+  const { privyEmbeddedAddresses, setPreferredPrivyEmbeddedAddress } = useContext(CompatContext);
+  return { privyEmbeddedAddresses, setPreferredPrivyEmbeddedAddress };
 }
 
 export function useParticleAuth() {

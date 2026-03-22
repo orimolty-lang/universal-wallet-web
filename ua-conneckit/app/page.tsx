@@ -7,6 +7,7 @@ import {
   useDisconnect,
   useSign7702AuthorizationCompat,
   useExportWalletCompat,
+  usePrivyEmbeddedWalletPrefs,
 } from "@/app/lib/connectkit-compat";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
@@ -6961,6 +6962,7 @@ const SettingsModal = ({
 }) => {
   const exportWallet = useExportWalletCompat();
   const { address } = useAccount();
+  const { privyEmbeddedAddresses, setPreferredPrivyEmbeddedAddress } = usePrivyEmbeddedWalletPrefs();
   const [exporting, setExporting] = useState(false);
 
   const handleExportKey = async () => {
@@ -6982,6 +6984,35 @@ const SettingsModal = ({
     <div className="px-4 pb-8">
       <h2 className="text-white text-xl font-bold mb-6 text-center pt-1 pb-3 border-b border-[#252525]">Settings</h2>
       <div className="space-y-4">
+        {privyEmbeddedAddresses.length > 1 && (
+          <>
+            <div className="text-gray-500 text-xs uppercase tracking-wider mb-2">Wallet</div>
+            <p className="text-gray-400 text-xs mb-2">
+              Multiple embedded wallets are linked to this account. Select the one that holds your funds — this device will remember your choice.
+            </p>
+            <div className="flex flex-col gap-2 mb-4">
+              {privyEmbeddedAddresses.map((addr) => {
+                const active = address?.toLowerCase() === addr.toLowerCase();
+                return (
+                  <button
+                    key={addr}
+                    type="button"
+                    onClick={() => setPreferredPrivyEmbeddedAddress(addr)}
+                    className={`w-full text-left rounded-xl border px-3 py-2.5 text-sm transition-colors ${
+                      active
+                        ? "border-accent-dynamic bg-accent-dynamic/15 text-white"
+                        : "border-[#333] bg-[#1a1a1a] text-gray-300 hover:bg-[#252525]"
+                    }`}
+                  >
+                    <span className="font-mono text-xs break-all">{addr}</span>
+                    {active && <span className="ml-2 text-accent-dynamic text-xs font-semibold">Active</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+
         {/* Security Section */}
         <div className="text-gray-500 text-xs uppercase tracking-wider mb-2">Security</div>
         
