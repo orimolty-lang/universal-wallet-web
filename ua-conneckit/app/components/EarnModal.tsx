@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Loader2, TrendingUp, ChevronDown, RefreshCw } from "lucide-react";
 import BottomSheet from "../../components/BottomSheet";
+import SlideToConfirm from "../../components/SlideToConfirm";
 import type { UniversalAccount } from "@particle-network/universal-account-sdk";
 import { CHAIN_ID, SUPPORTED_TOKEN_TYPE } from "@particle-network/universal-account-sdk";
 import type { IAssetsResponse } from "@particle-network/universal-account-sdk";
@@ -29,18 +30,17 @@ type WalletClientLike = {
 const signUniversalRootHash = async (
   walletClient: WalletClientLike,
   rootHash: `0x${string}`,
-  signerAddress?: `0x${string}`,
-  blindSigningEnabled?: boolean
+  signerAddress?: `0x${string}`
 ): Promise<string> => {
   const signer = signerAddress || walletClient.account?.address;
   if (!signer) throw new Error("Signer address unavailable");
 
-  if (blindSigningEnabled && walletClient.signMessage) {
+  if (walletClient.signMessage) {
     try {
       const sig = await walletClient.signMessage({ message: { raw: rootHash } });
       if (typeof sig === "string" && sig.startsWith("0x")) return sig;
     } catch {
-      // fallback
+      /* fall through */
     }
   }
 
@@ -89,7 +89,6 @@ interface EarnModalProps {
   primaryAssets?: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
   smartAccountAddress?: string;
-  blindSigningEnabled: boolean;
   sign7702?: Sign7702Fn | null;
   onSuccess?: () => void;
   onWalletActivity?: (kind: WalletActivityToastKind, detail?: string) => void;
@@ -102,7 +101,6 @@ export default function EarnModal({
   primaryAssets,
   universalAccount,
   smartAccountAddress,
-  blindSigningEnabled,
   sign7702,
   onSuccess,
   onWalletActivity,
@@ -223,8 +221,7 @@ export default function EarnModal({
       const signature = await signUniversalRootHash(
         walletClient as unknown as WalletClientLike,
         (tx as { rootHash: string }).rootHash as `0x${string}`,
-        walletClient.account?.address as `0x${string}` | undefined,
-        blindSigningEnabled
+        walletClient.account?.address as `0x${string}` | undefined
       );
 
       const walletAddr = address || walletClient.account?.address;
@@ -268,8 +265,7 @@ export default function EarnModal({
       const signature = await signUniversalRootHash(
         walletClient as unknown as WalletClientLike,
         (tx as { rootHash: string }).rootHash as `0x${string}`,
-        walletClient.account?.address as `0x${string}` | undefined,
-        blindSigningEnabled
+        walletClient.account?.address as `0x${string}` | undefined
       );
       const walletAddr = address || walletClient.account?.address;
       if (!walletAddr) throw new Error("Wallet address unavailable");
@@ -495,13 +491,14 @@ export default function EarnModal({
               </div>
             </div>
 
-            <button
-              onClick={handleDeposit}
-              disabled={!canDeposit || isLoading}
-              className="w-full bg-accent-dynamic text-white font-bold py-4 rounded-full hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? "Depositing..." : "Deposit"}
-            </button>
+            <SlideToConfirm
+              label="Slide to deposit"
+              disabled={!canDeposit}
+              loading={isLoading}
+              loadingLabel="Depositing…"
+              onConfirm={handleDeposit}
+              variant="accent"
+            />
           </div>
         ) : (
             <>
@@ -523,23 +520,27 @@ export default function EarnModal({
                     <div className="text-gray-500 text-sm py-3">Loading...</div>
                   )}
                   {positions.map((pos) => (
-                    <div key={pos.market.id} className="flex items-center justify-between gap-3 py-3 border-b border-[#252525] last:border-b-0 hover:bg-white/[0.03]">
-                      <div className="min-w-0">
-                        <div className="text-white font-medium text-sm truncate">{pos.market.name}</div>
-                        <div className="flex items-center gap-2 text-gray-500 text-xs mt-0.5">
-                          <img src={getChainLogo(pos.market.chainId)} alt="" className="w-4 h-4 object-contain shrink-0" title={pos.market.chainName} />
-                          <img src={getAssetLogo(pos.market.assetSymbol)} alt="" className="w-4 h-4 object-contain shrink-0" />
-                          <span className="text-accent-dynamic-light font-medium">~{pos.assetsApprox.toFixed(2)} {pos.market.assetSymbol}</span>
+                    <div key={pos.market.id} className="py-3 border-b border-[#252525] last:border-b-0 hover:bg-white/[0.03]">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-white font-medium text-sm truncate">{pos.market.name}</div>
+                          <div className="flex items-center gap-2 text-gray-500 text-xs mt-0.5">
+                            <img src={getChainLogo(pos.market.chainId)} alt="" className="w-4 h-4 object-contain shrink-0" title={pos.market.chainName} />
+                            <img src={getAssetLogo(pos.market.assetSymbol)} alt="" className="w-4 h-4 object-contain shrink-0" />
+                            <span className="text-accent-dynamic-light font-medium">~{pos.assetsApprox.toFixed(2)} {pos.market.assetSymbol}</span>
+                          </div>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => handleWithdraw(pos)}
-                        disabled={!!withdrawingPosition}
-                        className="px-3 py-1.5 rounded-lg bg-[#1a1a1a] border border-[#333] text-white text-xs font-medium hover:border-accent-dynamic/40 disabled:opacity-50 shrink-0"
-                      >
-                        {withdrawingPosition?.market.id === pos.market.id ? "..." : "Withdraw"}
-                      </button>
+                      <SlideToConfirm
+                        label="Slide to withdraw"
+                        variant="neutral"
+                        compact
+                        className="mt-2"
+                        disabled={!!withdrawingPosition && withdrawingPosition.market.id !== pos.market.id}
+                        loading={withdrawingPosition?.market.id === pos.market.id}
+                        loadingLabel="Withdrawing…"
+                        onConfirm={() => handleWithdraw(pos)}
+                      />
                     </div>
                   ))}
                 </div>

@@ -13,6 +13,7 @@ import { RelayClient, RelayerTxType } from "@polymarket/builder-relayer-client";
 import type { WalletClient } from "viem";
 import { getCreate2Address, keccak256, encodeAbiParameters } from "viem";
 import { getLifiSwapQuote } from "../lib/swapService";
+import SlideToConfirm from "../../components/SlideToConfirm";
 
 const RELAYER_URL = "https://relayer-v2.polymarket.com";
 const BUILDER_SIGN_URL = "https://polymarket-builder-worker-ori.orimolty.workers.dev/builder/sign";
@@ -166,6 +167,7 @@ export default function PolymarketModal({
   const [error, setError] = useState<string | null>(null);
   const [needsApproval, setNeedsApproval] = useState(true);
   const [isApproving, setIsApproving] = useState(false);
+  const [sellingTokenId, setSellingTokenId] = useState<string | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   const [debugInfo, setDebugInfo] = useState<{ 
     endpoint?: string; 
@@ -1127,6 +1129,7 @@ export default function PolymarketModal({
       const shares = Number(maxAmountRaw) / 1_000_000;
       if (!shares || shares <= 0) throw new Error("No position to sell");
       setIsLoading(true);
+      setSellingTokenId(tokenId);
       
       setStatus("Initializing proxy...");
       const proxy = await initializeProxy();
@@ -1153,6 +1156,7 @@ export default function PolymarketModal({
       setError(msg);
     } finally {
       setIsLoading(false);
+      setSellingTokenId(null);
     }
   };
 
@@ -1531,18 +1535,23 @@ export default function PolymarketModal({
                       const raw = positionBalances[t.token_id] || "0";
                       const qty = Number(raw) / 1_000_000;
                       return (
-                        <div key={t.token_id} className="flex items-center justify-between bg-[#141414] rounded px-3 py-2 border border-[#333]">
-                          <div>
-                            <div className="text-white text-sm">{t.outcome}</div>
-                            <div className="text-xs text-gray-400">{qty.toFixed(4)} shares</div>
+                        <div key={t.token_id} className="bg-[#141414] rounded px-3 py-2 border border-[#333]">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="text-white text-sm">{t.outcome}</div>
+                              <div className="text-xs text-gray-400">{qty.toFixed(4)} shares</div>
+                            </div>
                           </div>
-                          <button
-                            onClick={() => handleSell(t.token_id, raw)}
-                            disabled={isLoading || qty <= 0}
-                            className="text-xs px-2 py-1 rounded bg-red-500/20 text-red-300 disabled:opacity-40"
-                          >
-                            Sell
-                          </button>
+                          <SlideToConfirm
+                            label="Slide to sell"
+                            variant="danger"
+                            compact
+                            className="mt-2"
+                            disabled={(isLoading && sellingTokenId !== t.token_id) || qty <= 0}
+                            loading={isLoading && sellingTokenId === t.token_id}
+                            loadingLabel="Selling…"
+                            onConfirm={() => handleSell(t.token_id, raw)}
+                          />
                         </div>
                       );
                     })}
@@ -1560,35 +1569,23 @@ export default function PolymarketModal({
 
               {/* Action buttons */}
               {needsApproval ? (
-                <button
-                  onClick={handleApprove}
+                <SlideToConfirm
+                  label="Slide to approve Polymarket"
+                  variant="accent"
                   disabled={isApproving}
-                  className="w-full py-3 bg-accent-dynamic text-white font-bold rounded-full disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {isApproving ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Approving...
-                    </>
-                  ) : (
-                    "Approve Polymarket"
-                  )}
-                </button>
+                  loading={isApproving}
+                  loadingLabel="Approving…"
+                  onConfirm={handleApprove}
+                />
               ) : (
-                <button
-                  onClick={handleBuy}
-                  disabled={isLoading || !amount}
-                  className="w-full py-3 bg-accent-dynamic text-white font-bold rounded-full disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    `Buy ${selectedMarket.outcomes?.[selectedOutcome] || "Shares"}`
-                  )}
-                </button>
+                <SlideToConfirm
+                  label={`Slide to buy ${selectedMarket.outcomes?.[selectedOutcome] || "shares"}`}
+                  variant="accent"
+                  disabled={!amount || isLoading}
+                  loading={isLoading}
+                  loadingLabel="Processing…"
+                  onConfirm={handleBuy}
+                />
               )}
 
               <p className="text-xs text-gray-500 text-center">

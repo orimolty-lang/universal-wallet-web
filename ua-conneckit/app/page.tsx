@@ -25,6 +25,7 @@ import PolymarketModal from "./components/PolymarketModal";
 import EarnModal from "./components/EarnModal";
 import WalletActivityToast, { type WalletActivityToastKind, type WalletToastPayload } from "./components/WalletActivityToast";
 import BottomSheet from "../components/BottomSheet";
+import SlideToConfirm from "../components/SlideToConfirm";
 import { HermesClient } from "@pythnetwork/hermes-client";
 import { decodeFunctionResult, encodeFunctionData, formatEther, parseEther } from "viem";
 import { toBeHex, formatUnits } from "ethers";
@@ -332,7 +333,6 @@ interface ProfileSettings {
   customImage: string | null;
   displayName: string;
   backgroundColor: string;
-  blindSigningEnabled: boolean;
 }
 
 interface PairLeverageLimits {
@@ -442,21 +442,17 @@ const signUniversalRootHash = async ({
   walletClient,
   rootHash,
   signerAddress,
-  blindSigningEnabled,
   addDebug,
 }: {
   walletClient: WalletClientLike;
   rootHash: `0x${string}`;
   signerAddress?: `0x${string}`;
-  blindSigningEnabled: boolean;
   addDebug?: (msg: string) => void;
 }): Promise<string> => {
   const signer = signerAddress || walletClient.account?.address;
   if (!signer) {
     throw new Error('Signer address unavailable for UA signature');
   }
-
-  void blindSigningEnabled;
 
   // Particle demo uses signMessage (personal_sign) for rootHash - NOT secp256k1_sign.
   // Relay expects personal_sign format. Use signMessage first.
@@ -1213,7 +1209,6 @@ const SendModal = ({
   onClose,
   assets,
   universalAccount,
-  blindSigningEnabled,
   sign7702,
   onSuccess,
   onWalletActivity,
@@ -1222,7 +1217,6 @@ const SendModal = ({
   onClose: () => void;
   assets: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
-  blindSigningEnabled: boolean;
   sign7702: ((p: { contractAddress: `0x${string}`; chainId: number; nonce: number }, o: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>) | null;
   onSuccess?: () => void;
   onWalletActivity?: (kind: WalletActivityToastKind, detail?: string) => void;
@@ -1336,7 +1330,6 @@ const SendModal = ({
         walletClient: wc,
         rootHash: tx.rootHash as `0x${string}`,
         signerAddress: wc?.account?.address as `0x${string}` | undefined,
-        blindSigningEnabled,
       });
       if (!signature) throw new Error("Failed to sign");
 
@@ -1484,13 +1477,14 @@ const SendModal = ({
               )}
             </div>
 
-            <button
-              onClick={handleSend}
-              disabled={!canSend || isLoading}
-              className="w-full bg-accent-dynamic text-white font-bold py-4 rounded-full hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? "Sending..." : "Send"}
-            </button>
+            <SlideToConfirm
+              label="Slide to send"
+              disabled={!canSend}
+              loading={isLoading}
+              loadingLabel="Sending…"
+              onConfirm={handleSend}
+              variant="accent"
+            />
           </>
         )}
       </div>
@@ -1525,7 +1519,6 @@ const ConvertModal = ({
   onClose,
   assets,
   universalAccount,
-  blindSigningEnabled,
   signMessage,
   onTransactionCreated,
   onSuccess,
@@ -1535,7 +1528,6 @@ const ConvertModal = ({
   onClose: () => void;
   assets: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
-  blindSigningEnabled: boolean;
   signMessage?: ((p: { message: string }, o: { uiOptions?: { title?: string }; address: string }) => Promise<{ signature: string }>) | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onTransactionCreated?: (tx: any) => void;
@@ -1880,7 +1872,6 @@ const ConvertModal = ({
               walletClient: wc,
               rootHash: rootHash as `0x${string}`,
               signerAddress: wc.account?.address as `0x${string}` | undefined,
-              blindSigningEnabled,
               addDebug,
             });
 
@@ -2181,17 +2172,14 @@ const ConvertModal = ({
           </div>
         )}
 
-        <button 
-          onClick={handleConvert}
-          disabled={!canConvert || isLoading}
-          className={`w-full font-bold py-4 rounded-full transition-colors ${
-            canConvert && !isLoading
-              ? 'bg-accent-dynamic text-white hover:brightness-90'
-              : 'bg-gray-700 text-gray-500 cursor-not-allowed'
-          }`}
-        >
-          {isLoading ? (loadingStatus || 'Processing...') : 'Convert'}
-        </button>
+        <SlideToConfirm
+          label="Slide to convert"
+          disabled={!canConvert}
+          loading={isLoading}
+          loadingLabel={loadingStatus || "Processing…"}
+          onConfirm={handleConvert}
+          variant="accent"
+        />
 
         {debugOpen && (
           <div className="fixed inset-0 z-[120] bg-black/70 flex items-end" onClick={() => setDebugOpen(false)}>
@@ -2668,7 +2656,6 @@ const PerpsModal = ({
   onClose,
   assets,
   universalAccount,
-  blindSigningEnabled,
   smartAccountAddress,
   sign7702,
   onSuccess,
@@ -2678,7 +2665,6 @@ const PerpsModal = ({
   onClose: () => void;
   assets: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
-  blindSigningEnabled: boolean;
   smartAccountAddress?: string;
   sign7702: ((p: { contractAddress: `0x${string}`; chainId: number; nonce: number }, o: { address: string }) => Promise<{ r: string; s: string; v?: bigint; yParity: number }>) | null;
   onSuccess?: () => void;
@@ -3725,7 +3711,6 @@ const PerpsModal = ({
               walletClient: walletClient as unknown as WalletClientLike,
               rootHash,
               signerAddress: ownerEOA as `0x${string}`,
-              blindSigningEnabled,
             });
             if (!sign7702 || !ownerEOA) throw new Error('Wallet signing not available');
             const authorizations = await build7702Authorizations(tx, sign7702, ownerEOA);
@@ -3952,7 +3937,7 @@ const PerpsModal = ({
       if (!signerAddress) throw new Error('Wallet signer unavailable');
       const rootHash = (uaTx as { rootHash?: `0x${string}` }).rootHash;
       if (!rootHash) throw new Error('Perps transaction missing rootHash');
-      const signature = await signUniversalRootHash({ walletClient, rootHash, signerAddress, blindSigningEnabled, addDebug });
+      const signature = await signUniversalRootHash({ walletClient, rootHash, signerAddress, addDebug });
       if (!sign7702) throw new Error('7702 signing not available');
       const authorizations = await build7702Authorizations(uaTx, sign7702, signerAddress);
       setLoadingStatus('Opening position...');
@@ -4010,7 +3995,7 @@ const PerpsModal = ({
       if (!signerAddress || !sign7702) throw new Error('Wallet signing not available');
       const rootHash = (tx as { rootHash?: `0x${string}` }).rootHash;
       if (!rootHash) throw new Error('Perps close missing rootHash');
-      const signature = await signUniversalRootHash({ walletClient, rootHash, signerAddress, blindSigningEnabled, addDebug });
+      const signature = await signUniversalRootHash({ walletClient, rootHash, signerAddress, addDebug });
       const auths = await build7702Authorizations(tx, sign7702, signerAddress);
       addDebug('Submitting close position via UA...');
       const res = await universalAccount.sendTransaction(tx, signature as string, auths);
@@ -4095,7 +4080,7 @@ const PerpsModal = ({
       if (!signerAddress || !sign7702) throw new Error('Wallet signing not available');
       const rootHash = (tx as { rootHash?: `0x${string}` }).rootHash;
       if (!rootHash) throw new Error('Perps TP/SL update missing rootHash');
-      const signature = await signUniversalRootHash({ walletClient, rootHash, signerAddress, blindSigningEnabled, addDebug });
+      const signature = await signUniversalRootHash({ walletClient, rootHash, signerAddress, addDebug });
       const auths = await build7702Authorizations(tx, sign7702, signerAddress);
       addDebug('Submitting TP/SL transaction via UA...');
       const res = await universalAccount.sendTransaction(tx, signature as string, auths);
@@ -4341,21 +4326,25 @@ const PerpsModal = ({
                           className="bg-gray-800 rounded-lg px-2 py-1.5 text-white text-xs outline-none"
                         />
                       </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleUpdatePositionTpSl(p)}
+                      <div className="space-y-2 mt-1">
+                        <SlideToConfirm
+                          label="Slide to update TP/SL"
+                          variant="neutral"
+                          compact
                           disabled={isLoading}
-                          className="flex-1 bg-gray-800 text-gray-200 rounded-lg py-2 text-xs font-semibold disabled:opacity-50"
-                        >
-                          {isLoading && perpsBusyAction === 'tpsl' ? (loadingStatus || 'Updating...') : 'Update TP/SL'}
-                        </button>
-                        <button
-                          onClick={() => handleClosePosition(p)}
+                          loading={isLoading && perpsBusyAction === "tpsl"}
+                          loadingLabel={loadingStatus || "Updating…"}
+                          onConfirm={() => handleUpdatePositionTpSl(p)}
+                        />
+                        <SlideToConfirm
+                          label="Slide to close position"
+                          variant="danger"
+                          compact
                           disabled={isLoading}
-                          className="flex-1 bg-red-600/80 text-white rounded-lg py-2 text-xs font-semibold disabled:opacity-50"
-                        >
-                          Close
-                        </button>
+                          loading={isLoading && perpsBusyAction === "close"}
+                          loadingLabel={loadingStatus || "Closing…"}
+                          onConfirm={() => handleClosePosition(p)}
+                        />
                       </div>
                     </div>
                   ))}
@@ -4627,13 +4616,14 @@ const PerpsModal = ({
               </ol>
             </div>
 
-            <button
-              onClick={handleDepositToEOA}
-              disabled={isLoading || !canDeposit}
-              className="w-full bg-accent-dynamic text-black font-bold py-4 rounded-2xl disabled:bg-gray-700 disabled:text-gray-400"
-            >
-              {isLoading ? loadingStatus || depositCtaLabel : depositCtaLabel}
-            </button>
+            <SlideToConfirm
+              label={`Slide to ${depositCtaLabel.toLowerCase()}`}
+              variant="accent"
+              disabled={!canDeposit}
+              loading={isLoading}
+              loadingLabel={loadingStatus || depositCtaLabel}
+              onConfirm={handleDepositToEOA}
+            />
           </div>
         ) : view === 'withdraw' ? (
           <div className="px-5 pb-8">
@@ -4659,13 +4649,19 @@ const PerpsModal = ({
               <div className="text-gray-400 text-xs uppercase tracking-wide mb-2">To Omni Wallet</div>
               <div className="text-white text-sm font-mono break-all">{smartAccountAddress || "Not available"}</div>
             </div>
-            <button
-              onClick={handleWithdrawToUA}
-              disabled={isLoading || !smartAccountAddress || !withdrawAmount || parseFloat(withdrawAmount) <= 0 || parseFloat(withdrawAmount) > eoaUsdcBalance}
-              className="w-full bg-accent-dynamic text-black font-bold py-4 rounded-2xl disabled:bg-gray-700 disabled:text-gray-400"
-            >
-              {isLoading ? (loadingStatus || "Withdrawing...") : "Withdraw to UA"}
-            </button>
+            <SlideToConfirm
+              label="Slide to withdraw to UA"
+              variant="accent"
+              disabled={
+                !smartAccountAddress ||
+                !withdrawAmount ||
+                parseFloat(withdrawAmount) <= 0 ||
+                parseFloat(withdrawAmount) > eoaUsdcBalance
+              }
+              loading={isLoading}
+              loadingLabel={loadingStatus || "Withdrawing…"}
+              onConfirm={handleWithdrawToUA}
+            />
           </div>
         ) : (
           /* ========== TRADE VIEW - inner modal only (dark sheet, no outer grey) ========== */
@@ -4861,18 +4857,14 @@ const PerpsModal = ({
               </div>
             )}
 
-            {/* Open Position Button - Avantis exact */}
-            <button 
-              onClick={handleOpenPosition}
-              disabled={!canTrade || isLoading}
-              className={`w-full font-bold py-4 rounded-xl transition-colors ${
-                canTrade && !isLoading
-                  ? isLong ? 'bg-[#22c55e] text-white' : 'bg-[#ef4444] text-white'
-                  : 'bg-[#2a2a2a] text-gray-500'
-              }`}
-            >
-              {isLoading && perpsBusyAction === 'open' ? (loadingStatus || '…') : `Open ${isLong ? 'Long' : 'Short'}`}
-            </button>
+            <SlideToConfirm
+              label={`Slide to open ${isLong ? "long" : "short"}`}
+              variant={isLong ? "long" : "short"}
+              disabled={!canTrade}
+              loading={isLoading && perpsBusyAction === "open"}
+              loadingLabel={loadingStatus || "Signing…"}
+              onConfirm={handleOpenPosition}
+            />
           </div>
         )}
       </div>
@@ -6971,15 +6963,11 @@ const SettingsModal = ({
   isOpen,
   onClose,
   onLogout,
-  blindSigningEnabled,
-  onToggleBlindSigning,
   onOpenAppLock,
 }: {
   isOpen: boolean;
   onClose: () => void;
   onLogout: () => void;
-  blindSigningEnabled: boolean;
-  onToggleBlindSigning: (enabled: boolean) => void;
   onOpenAppLock?: () => void;
 }) => {
   const exportWallet = useExportWalletCompat();
@@ -7048,22 +7036,6 @@ const SettingsModal = ({
         )}
         
         <div className="text-gray-500 text-xs uppercase tracking-wider mb-2 mt-6">Signing</div>
-        <div className="w-full flex items-center justify-between py-3 border-b border-[#333]">
-          <div className="pr-3">
-            <div className="text-white">Blind Signing</div>
-            <div className="text-[11px] text-gray-500">When enabled, UA signing uses a lower-friction blind-sign path when supported.</div>
-          </div>
-          <button
-            type="button"
-            onClick={() => onToggleBlindSigning(!blindSigningEnabled)}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${blindSigningEnabled ? 'bg-accent-dynamic' : 'bg-gray-600'}`}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${blindSigningEnabled ? 'translate-x-6' : 'translate-x-1'}`}
-            />
-          </button>
-        </div>
-        
         <button 
           onClick={onLogout}
           className="w-full py-3 text-red-500 text-center mt-6"
@@ -7222,7 +7194,6 @@ const App = () => {
       customImage: null,
       displayName: "Wallet",
       backgroundColor: "#f97316",
-      blindSigningEnabled: false,
     };
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('walletProfile');
@@ -7652,7 +7623,6 @@ const App = () => {
         onClose={() => setShowSendModal(false)}
         assets={combinedAssets as IAssetsResponse | null}
         universalAccount={universalAccountInstance}
-        blindSigningEnabled={profile.blindSigningEnabled}
         sign7702={sign7702}
         onWalletActivity={showWalletActivityToast}
         onSuccess={() => {
@@ -7667,7 +7637,6 @@ const App = () => {
         onClose={() => setShowConvertModal(false)}
         assets={primaryAssets}
         universalAccount={universalAccountInstance}
-        blindSigningEnabled={profile.blindSigningEnabled}
         signMessage={undefined}
         onTransactionCreated={(tx) => {
           console.log('[Convert] Transaction created:', tx);
@@ -7686,7 +7655,6 @@ const App = () => {
         onClose={() => setShowPerpsModal(false)}
         assets={primaryAssets}
         universalAccount={universalAccountInstance}
-        blindSigningEnabled={profile.blindSigningEnabled}
         smartAccountAddress={accountInfo?.evmSmartAccount}
         sign7702={sign7702}
         onWalletActivity={showWalletActivityToast}
@@ -7714,7 +7682,6 @@ const App = () => {
         primaryAssets={primaryAssets}
         universalAccount={universalAccountInstance}
         smartAccountAddress={accountInfo?.evmSmartAccount}
-        blindSigningEnabled={profile.blindSigningEnabled}
         sign7702={sign7702}
         onWalletActivity={showWalletActivityToast}
         onSuccess={() => {
@@ -7750,8 +7717,6 @@ const App = () => {
         isOpen={showSettingsModal} 
         onClose={() => setShowSettingsModal(false)} 
         onLogout={disconnect}
-        blindSigningEnabled={profile.blindSigningEnabled}
-        onToggleBlindSigning={(enabled) => updateProfile({ ...profile, blindSigningEnabled: enabled })}
         onOpenAppLock={() => setShowAppLockModal(true)}
       />
       

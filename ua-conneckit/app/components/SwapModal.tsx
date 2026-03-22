@@ -6,6 +6,7 @@ import { executeSwap, executeSell, getChainIdFromBlockchain, pollTransactionDeta
 import { mergedAssetMatchesContractKeys, tokenContractKeySet } from "../lib/mobulaAssetIdentity";
 import { useWallets, useSign7702AuthorizationCompat } from "@/app/lib/connectkit-compat";
 import { getUserOpsFromTx, handleEIP7702Authorizations } from "@/lib/eip7702";
+import SlideToConfirm from "../../components/SlideToConfirm";
 
 // Types
 interface TokenInfo {
@@ -831,30 +832,33 @@ export const SwapModal = ({
                 </div>
               </div>
               
-              <button
-                onClick={handleSwap}
-                disabled={!canSwap || isLoading}
-                className={`w-full py-4 rounded-full font-bold text-lg ${
-                  canSwap && !isLoading
-                    ? direction === "buy" ? "bg-accent-dynamic text-white" : "bg-red-500 text-white"
-                    : "bg-gray-700 text-gray-400"
-                }`}
-              >
-                {isLoading 
-                  ? loadingStatus || (direction === "buy" ? "Buying..." : "Selling...")
-                  : direction === "sell" && tokenBalance <= 0
+              <SlideToConfirm
+                label={
+                  direction === "sell" && tokenBalance <= 0
                     ? "No tokens to sell"
                     : hasInsufficientBalance && direction === "buy"
-                      ? "Insufficient Balance"
+                      ? "Insufficient balance"
                       : !universalAccount
-                        ? "Connect Wallet"
+                        ? "Connect wallet"
                         : sliderValue <= 0
-                          ? "Enter Amount"
-                          : direction === "buy" 
-                            ? `Buy ${targetToken?.symbol}`
-                            : `Sell ${targetToken?.symbol}`
+                          ? "Enter amount"
+                          : direction === "buy"
+                            ? `Slide to buy ${targetToken?.symbol || ""}`
+                            : `Slide to sell ${targetToken?.symbol || ""}`
                 }
-              </button>
+                variant={direction === "buy" ? "accent" : "short"}
+                disabled={
+                  !canSwap ||
+                  isLoading ||
+                  !universalAccount ||
+                  sliderValue <= 0 ||
+                  (direction === "sell" && tokenBalance <= 0) ||
+                  (direction === "buy" && hasInsufficientBalance)
+                }
+                loading={isLoading}
+                loadingLabel={loadingStatus || (direction === "buy" ? "Buying…" : "Selling…")}
+                onConfirm={handleSwap}
+              />
             </div>
           </>
         )}
