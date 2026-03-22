@@ -7646,10 +7646,11 @@ const App = () => {
         }}
       />
 
+      {/* UA primary only — unified/collateral figures must not include Mobula/Particle externals (home list still uses combinedAssets). */}
       <PerpsModal
         isOpen={showPerpsModal}
         onClose={() => setShowPerpsModal(false)}
-        assets={combinedAssets as IAssetsResponse | null}
+        assets={primaryAssets}
         universalAccount={universalAccountInstance}
         blindSigningEnabled={profile.blindSigningEnabled}
         smartAccountAddress={accountInfo?.evmSmartAccount}
