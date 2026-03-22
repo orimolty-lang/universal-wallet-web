@@ -13,6 +13,22 @@ import {
 } from "@privy-io/react-auth";
 import { arbitrum, avalanche, base, bsc, mainnet, optimism, polygon } from "viem/chains";
 
+/**
+ * Shown in the Privy login modal when `NEXT_PUBLIC_PRIVY_LOGIN_LOGO_URL` is unset.
+ * Dashboard + OTP emails: still add a hosted PNG under Configuration → UI components (≈180×90, 2:1).
+ */
+function OmniPrivyModalLogo() {
+  return (
+    <img
+      src="/universal-wallet-web/omni-logo.svg"
+      alt="Omni"
+      width={180}
+      height={90}
+      className="mx-auto max-h-[90px] w-auto max-w-[180px] object-contain"
+    />
+  );
+}
+
 type WalletClientLike = {
   account?: { address?: `0x${string}` };
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
@@ -188,12 +204,24 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
   const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID || "cmmvrmj1503730cjx4s1nu78t";
   const clientId = process.env.NEXT_PUBLIC_PRIVY_CLIENT_ID || "client-WY6WwYjqhoUurxz6sQNKp3pBWkrdLC85MyF5LePfSyn5f";
 
+  const hostedLoginLogoUrl = process.env.NEXT_PUBLIC_PRIVY_LOGIN_LOGO_URL?.trim();
+  const loginHeader = process.env.NEXT_PUBLIC_PRIVY_LOGIN_HEADER?.trim() || "Omni";
+  const loginMessage =
+    process.env.NEXT_PUBLIC_PRIVY_LOGIN_MESSAGE?.trim() || "Universal wallet — trade, earn, and move assets across chains.";
+  const accentHex = process.env.NEXT_PUBLIC_PRIVY_ACCENT_COLOR?.trim();
+
   return (
     <PrivyProvider
       appId={appId}
       clientId={clientId || undefined}
       config={{
-        appearance: { theme: "dark" },
+        appearance: {
+          theme: "dark",
+          logo: hostedLoginLogoUrl || <OmniPrivyModalLogo />,
+          landingHeader: loginHeader,
+          loginMessage,
+          ...(accentHex && /^#[0-9A-Fa-f]{6}$/.test(accentHex) ? { accentColor: accentHex as `#${string}` } : {}),
+        },
         loginMethods: ["email", "google", "apple", "passkey"],
         embeddedWallets: {
           ethereum: {
