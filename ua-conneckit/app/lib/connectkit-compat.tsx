@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { BrowserProvider, getBytes } from "ethers";
 import {
   PrivyProvider,
@@ -8,6 +8,7 @@ import {
   useLogin,
   usePrivy,
   useActiveWallet,
+  useCreateWallet,
   useSign7702Authorization,
   useSignMessage,
   useWallets as usePrivyWallets,
@@ -15,6 +16,24 @@ import {
 import type { ConnectedWallet } from "@privy-io/react-auth";
 import { getAddress, isAddress } from "viem";
 import { arbitrum, avalanche, base, bsc, mainnet, optimism, polygon } from "viem/chains";
+import {
+  defaultWalletSlotProfile,
+  getProfileForAddress,
+  readProfilesMap,
+  setProfileForAddress,
+  type WalletSlotProfile,
+} from "./walletSlotStorage";
+
+export type { WalletSlotProfile } from "./walletSlotStorage";
+
+/** Max embedded Ethereum wallets per Privy user (Omni cap). */
+export const MAX_PRIVY_EMBEDDED_WALLETS = 5;
+
+export type EmbeddedWalletRow = {
+  address: string;
+  profile: WalletSlotProfile;
+  isActive: boolean;
+};
 
 /** Per-Privy-user preferred embedded EVM address (stable selection when multiple exist). */
 const PREFERRED_EMBEDDED_KEY_PREFIX = "omni_privy_preferred_embedded_v1";
@@ -83,6 +102,13 @@ type CompatContextType = {
   privyEmbeddedAddresses: string[];
   /** Pin which embedded wallet Omni uses (persists per Privy user on this device). */
   setPreferredPrivyEmbeddedAddress: (address: string) => void;
+  /** Profile for the active embedded wallet (per-address). */
+  walletProfile: WalletSlotProfile;
+  setWalletProfile: (p: WalletSlotProfile) => void;
+  embeddedWalletRows: EmbeddedWalletRow[];
+  createAdditionalWallet: () => Promise<void>;
+  canCreateWallet: boolean;
+  isCreatingWallet: boolean;
 };
 
 const CompatContext = createContext<CompatContextType>({
@@ -98,6 +124,12 @@ const CompatContext = createContext<CompatContextType>({
   exportWallet: null,
   privyEmbeddedAddresses: [],
   setPreferredPrivyEmbeddedAddress: () => {},
+  walletProfile: defaultWalletSlotProfile(),
+  setWalletProfile: () => {},
+  embeddedWalletRows: [],
+  createAdditionalWallet: async () => {},
+  canCreateWallet: false,
+  isCreatingWallet: false,
 });
 
 function isPrivyEmbeddedEthereum(w: ConnectedWallet): boolean {
@@ -146,6 +178,38 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
   const { signAuthorization } = useSign7702Authorization();
   const { signMessage: signMessagePrivy } = useSignMessage();
   const syncedPairRef = useRef<string>("");
+  const walletsRef = useRef(wallets);
+  walletsRef.current = wallets;
+  const userRef = useRef(user);
+  userRef.current = user;
+  const [profileRev, setProfileRev] = useState(0);
+  const [isCreatingWallet, setIsCreatingWallet] = useState(false);
+
+  const { createWallet } = useCreateWallet({
+    onSuccess: ({ wallet }) => {
+      const raw = (wallet as { address?: string })?.address;
+      if (!raw || !userRef.current?.id) {
+        setIsCreatingWallet(false);
+        return;
+      }
+      const addr = getAddress(raw);
+      setProfileForAddress(userRef.current.id, addr, defaultWalletSlotProfile());
+      writePreferredEmbedded(userRef.current.id, addr);
+      const activate = () => {
+        const hit = walletsRef.current?.find(
+          (w) => isPrivyEmbeddedEthereum(w) && getAddress(w.address) === addr,
+        );
+        if (hit) {
+          syncedPairRef.current = "";
+          setActiveWallet(hit);
+        }
+        setProfileRev((r) => r + 1);
+        setIsCreatingWallet(false);
+      };
+      window.setTimeout(activate, 500);
+    },
+    onError: () => setIsCreatingWallet(false),
+  });
 
   const privyEmbeddedAddresses = useMemo(
     () => (wallets || []).filter(isPrivyEmbeddedEthereum).map((w) => getAddress(w.address)),
@@ -158,6 +222,51 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
   );
   const address = embeddedWallet?.address as `0x${string}` | undefined;
 
+  const walletProfile = useMemo(() => {
+    void profileRev; // bump when per-address profile saved
+    return getProfileForAddress(user?.id, address);
+  }, [user?.id, address, profileRev]);
+
+  const setWalletProfile = useCallback(
+    (p: WalletSlotProfile) => {
+      if (!user?.id || !address) return;
+      setProfileForAddress(user.id, address, p);
+      setProfileRev((r) => r + 1);
+    },
+    [user?.id, address],
+  );
+
+  const embeddedWalletRows = useMemo((): EmbeddedWalletRow[] => {
+    void profileRev;
+    if (!user?.id) return [];
+    const sorted = [...(wallets || []).filter(isPrivyEmbeddedEthereum)].sort((a, b) =>
+      getAddress(a.address).toLowerCase().localeCompare(getAddress(b.address).toLowerCase()),
+    );
+    const act = address?.toLowerCase();
+    return sorted.map((w) => {
+      const addr = getAddress(w.address);
+      return {
+        address: addr,
+        profile: getProfileForAddress(user.id, addr),
+        isActive: act === addr.toLowerCase(),
+      };
+    });
+  }, [wallets, user?.id, address, profileRev]);
+
+  const canCreateWallet =
+    !!(authenticated && user?.id && privyEmbeddedAddresses.length < MAX_PRIVY_EMBEDDED_WALLETS);
+
+  const createAdditionalWallet = useCallback(async () => {
+    if (!canCreateWallet) return;
+    setIsCreatingWallet(true);
+    try {
+      await createWallet({ createAdditional: true } as { createAdditional: boolean });
+    } catch (e) {
+      console.warn("[Privy] createWallet:", e);
+      setIsCreatingWallet(false);
+    }
+  }, [canCreateWallet, createWallet]);
+
   const setPreferredPrivyEmbeddedAddress = useCallback(
     (addr: string) => {
       if (!user?.id || !isAddress(addr)) return;
@@ -168,10 +277,34 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
       if (!hit) return;
       writePreferredEmbedded(user.id, hit.address);
       syncedPairRef.current = "";
+      setProfileRev((r) => r + 1);
       setActiveWallet(hit);
     },
     [wallets, user?.id, setActiveWallet],
   );
+
+  // One-time: migrate legacy single `walletProfile` into per-address map.
+  useEffect(() => {
+    if (!authenticated || !user?.id || !address) return;
+    try {
+      const legacy = localStorage.getItem("walletProfile");
+      if (!legacy) return;
+      const map = readProfilesMap(user.id);
+      if (Object.keys(map).length > 0) {
+        localStorage.removeItem("walletProfile");
+        return;
+      }
+      const p = JSON.parse(legacy) as Partial<WalletSlotProfile>;
+      setProfileForAddress(user.id, address, {
+        ...defaultWalletSlotProfile(),
+        ...p,
+      });
+      localStorage.removeItem("walletProfile");
+      setProfileRev((r) => r + 1);
+    } catch {
+      localStorage.removeItem("walletProfile");
+    }
+  }, [authenticated, user?.id, address]);
 
   // Keep Privy "active" wallet aligned with our pick (critical when multiple embedded wallets exist).
   useEffect(() => {
@@ -209,7 +342,7 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
     const stored = readPreferredEmbedded(user.id);
     if (stored) return;
     console.warn(
-      "[Omni] Multiple Privy embedded wallets detected. Open Settings → Wallet to choose the funded address, or set NEXT_PUBLIC_PRIVY_PIN_EMBEDDED_ADDRESS for one-time deploy recovery.",
+      "[Omni] Multiple embedded wallets: open Settings → Wallet, or long-press your avatar on Home to pick the funded address.",
     );
   }, [authenticated, user?.id, privyEmbeddedAddresses.length]);
 
@@ -307,6 +440,12 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
       exportWallet: address ? (exportWallet as ExportWalletFn) : null,
       privyEmbeddedAddresses,
       setPreferredPrivyEmbeddedAddress,
+      walletProfile,
+      setWalletProfile,
+      embeddedWalletRows,
+      createAdditionalWallet,
+      canCreateWallet,
+      isCreatingWallet,
     }),
     [
       ready,
@@ -320,6 +459,12 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
       exportWallet,
       privyEmbeddedAddresses,
       setPreferredPrivyEmbeddedAddress,
+      walletProfile,
+      setWalletProfile,
+      embeddedWalletRows,
+      createAdditionalWallet,
+      canCreateWallet,
+      isCreatingWallet,
     ]
   );
 
@@ -407,6 +552,19 @@ export function useDisconnect() {
 export function usePrivyEmbeddedWalletPrefs() {
   const { privyEmbeddedAddresses, setPreferredPrivyEmbeddedAddress } = useContext(CompatContext);
   return { privyEmbeddedAddresses, setPreferredPrivyEmbeddedAddress };
+}
+
+export function useWalletAppearance() {
+  const ctx = useContext(CompatContext);
+  return {
+    profile: ctx.walletProfile,
+    setProfile: ctx.setWalletProfile,
+    embeddedWalletRows: ctx.embeddedWalletRows,
+    switchWallet: ctx.setPreferredPrivyEmbeddedAddress,
+    createAdditionalWallet: ctx.createAdditionalWallet,
+    canCreateWallet: ctx.canCreateWallet,
+    isCreatingWallet: ctx.isCreatingWallet,
+  };
 }
 
 export function useParticleAuth() {

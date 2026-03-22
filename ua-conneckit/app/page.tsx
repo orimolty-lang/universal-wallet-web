@@ -8,7 +8,11 @@ import {
   useSign7702AuthorizationCompat,
   useExportWalletCompat,
   usePrivyEmbeddedWalletPrefs,
+  useWalletAppearance,
+  MAX_PRIVY_EMBEDDED_WALLETS,
 } from "@/app/lib/connectkit-compat";
+import type { WalletSlotProfile } from "@/app/lib/walletSlotStorage";
+import WalletSwitcherModal from "./components/WalletSwitcherModal";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   UniversalAccount,
@@ -329,12 +333,7 @@ interface TokenResult {
   circulatingSupply?: number;
 }
 
-interface ProfileSettings {
-  emoji: string;
-  customImage: string | null;
-  displayName: string;
-  backgroundColor: string;
-}
+type ProfileSettings = WalletSlotProfile;
 
 interface PairLeverageLimits {
   pairIndex?: number;
@@ -5001,6 +5000,7 @@ const HomeTab = ({
   primaryAssets, 
   profile,
   onShowProfilePicker,
+  onShowWalletSwitcher,
   onReceive,
   onSend,
   onConvert,
@@ -5012,6 +5012,7 @@ const HomeTab = ({
   primaryAssets: IAssetsResponse | null;
   profile: ProfileSettings;
   onShowProfilePicker: () => void;
+  onShowWalletSwitcher?: () => void;
   onReceive: () => void;
   onSend: () => void;
   onConvert: () => void;
@@ -5036,6 +5037,8 @@ const HomeTab = ({
   });
   const [actionBarToast, setActionBarToast] = useState<string | null>(null);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
+  const profileLongPressTimer = useRef<NodeJS.Timeout | null>(null);
+  const profileLongPressDidFire = useRef(false);
   
   // Toggle compact mode on long-press
   const handleActionBarLongPress = () => {
@@ -5055,6 +5058,27 @@ const HomeTab = ({
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
     }
+  };
+
+  const startProfileLongPress = () => {
+    profileLongPressDidFire.current = false;
+    profileLongPressTimer.current = setTimeout(() => {
+      profileLongPressDidFire.current = true;
+      onShowWalletSwitcher?.();
+    }, 550);
+  };
+  const endProfileLongPress = () => {
+    if (profileLongPressTimer.current) {
+      clearTimeout(profileLongPressTimer.current);
+      profileLongPressTimer.current = null;
+    }
+  };
+  const handleProfileTap = () => {
+    if (profileLongPressDidFire.current) {
+      profileLongPressDidFire.current = false;
+      return;
+    }
+    onShowProfilePicker();
   };
   
   // Pull-to-refresh handler
@@ -5178,21 +5202,34 @@ const HomeTab = ({
       {/* Profile & Balance */}
       <div className="flex flex-col items-center pt-6 pb-4">
         <button 
-          onClick={onShowProfilePicker}
+          type="button"
+          onClick={handleProfileTap}
+          onTouchStart={startProfileLongPress}
+          onTouchEnd={endProfileLongPress}
+          onMouseDown={startProfileLongPress}
+          onMouseUp={endProfileLongPress}
+          onMouseLeave={endProfileLongPress}
           className="w-16 h-16 rounded-full flex items-center justify-center text-3xl mb-3 overflow-hidden relative group"
           style={{ backgroundColor: profile.customImage ? undefined : (profile.backgroundColor || "#f97316") }}
+          title="Tap to edit profile · hold for wallets"
         >
           {profile.customImage ? (
             <img src={profile.customImage} alt="Profile" className="w-full h-full object-cover" />
           ) : (
             profile.emoji
           )}
-          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
             <span className="text-white text-xs">Edit</span>
           </div>
+          {onShowWalletSwitcher && (
+            <span className="absolute bottom-0.5 right-0.5 text-[10px] leading-none bg-black/65 text-white rounded px-0.5 py-px pointer-events-none">
+              ▾
+            </span>
+          )}
         </button>
         <button 
-          onClick={onShowProfilePicker}
+          type="button"
+          onClick={handleProfileTap}
           className="text-gray-400 text-sm mb-2 hover:text-white transition-colors"
         >
           {profile.displayName || (accountInfo ? formatAddress(accountInfo.evmSmartAccount) : "Loading...")}
@@ -6903,11 +6940,13 @@ const SettingsModal = ({
   onClose,
   onLogout,
   onOpenAppLock,
+  onManageWallets,
 }: {
   isOpen: boolean;
   onClose: () => void;
   onLogout: () => void;
   onOpenAppLock?: () => void;
+  onManageWallets?: () => void;
 }) => {
   const exportWallet = useExportWalletCompat();
   const { address } = useAccount();
@@ -6933,6 +6972,19 @@ const SettingsModal = ({
     <div className="px-4 pb-8">
       <h2 className="text-white text-xl font-bold mb-6 text-center pt-1 pb-3 border-b border-[#252525]">Settings</h2>
       <div className="space-y-4">
+        {onManageWallets && privyEmbeddedAddresses.length > 0 && (
+          <button
+            type="button"
+            onClick={onManageWallets}
+            className="w-full flex items-center justify-between py-3 border border-[#333] rounded-xl px-3 hover:bg-[#1a1a1a]/80 transition-colors"
+          >
+            <span className="text-white text-sm font-medium">Manage wallets</span>
+            <span className="text-gray-500 text-xs">
+              {privyEmbeddedAddresses.length}/{MAX_PRIVY_EMBEDDED_WALLETS}
+            </span>
+          </button>
+        )}
+
         {privyEmbeddedAddresses.length > 1 && (
           <>
             <div className="text-gray-500 text-xs uppercase tracking-wider mb-2">Wallet</div>
@@ -7156,44 +7208,23 @@ const App = () => {
   const [showAppLockModal, setShowAppLockModal] = useState(false);
   const [homeSelectedToken, setHomeSelectedToken] = useState<{ id: string; symbol: string; name: string; logo?: string; price: number; contracts?: Array<{ address: string; blockchain: string }> } | null>(null);
   const [showHomeSwapModal, setShowHomeSwapModal] = useState(false);
+  const [showWalletSwitcher, setShowWalletSwitcher] = useState(false);
   // Sell is handled by SwapModal with direction flip
 
-  // Profile settings (persisted to localStorage)
-  const [profile, setProfile] = useState<ProfileSettings>(() => {
-    const defaults: ProfileSettings = {
-      emoji: "🍊",
-      customImage: null,
-      displayName: "Wallet",
-      backgroundColor: "#f97316",
-    };
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('walletProfile');
-      if (saved) {
-        try {
-          return { ...defaults, ...JSON.parse(saved) };
-        } catch {
-          return defaults;
-        }
-      }
-    }
-    return defaults;
-  });
+  const { profile, setProfile } = useWalletAppearance();
 
   const updateProfile = (p: ProfileSettings) => {
     setProfile(p);
-    localStorage.setItem('walletProfile', JSON.stringify(p));
-    // Apply accent theme based on profile background color
     if (p.backgroundColor) {
       applyAccentTheme(p.backgroundColor);
     }
   };
-  
-  // Apply accent theme on initial load
+
   useEffect(() => {
     if (profile.backgroundColor) {
       applyAccentTheme(profile.backgroundColor);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [profile.backgroundColor]);
 
   const universalAccountConfig = useMemo((): IUniversalAccountConfig | null => {
     if (!address || typeof address !== "string" || !address.startsWith("0x") || address.length !== 42) {
@@ -7534,6 +7565,7 @@ const App = () => {
           primaryAssets={combinedAssets as IAssetsResponse | null}
           profile={profile}
           onShowProfilePicker={() => setShowProfilePicker(true)}
+          onShowWalletSwitcher={() => setShowWalletSwitcher(true)}
           onReceive={() => setShowReceiveModal(true)}
           onSend={() => setShowSendModal(true)}
           onConvert={() => setShowConvertModal(true)}
@@ -7584,6 +7616,11 @@ const App = () => {
         onClose={() => setShowProfilePicker(false)}
         profile={profile}
         onUpdateProfile={updateProfile}
+      />
+
+      <WalletSwitcherModal
+        isOpen={showWalletSwitcher}
+        onClose={() => setShowWalletSwitcher(false)}
       />
       
       <WalletActivityToast payload={walletToastPayload} />
@@ -7696,6 +7733,10 @@ const App = () => {
         onClose={() => setShowSettingsModal(false)} 
         onLogout={disconnect}
         onOpenAppLock={() => setShowAppLockModal(true)}
+        onManageWallets={() => {
+          setShowSettingsModal(false);
+          setShowWalletSwitcher(true);
+        }}
       />
       
       <AppLockModal
