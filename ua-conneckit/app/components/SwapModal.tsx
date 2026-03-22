@@ -2,13 +2,11 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type { IAssetsResponse, UniversalAccount } from "@particle-network/universal-account-sdk";
-import { executeSwap, executeSell, getChainIdFromBlockchain, pollTransactionDetails } from "../lib/swapService";
+import { executeSwap, executeSell, getChainIdFromBlockchain, pollTransactionDetails, getChainName } from "../lib/swapService";
 import { mergedAssetMatchesContractKeys, tokenContractKeySet } from "../lib/mobulaAssetIdentity";
 import { useWallets, useSign7702AuthorizationCompat } from "@/app/lib/connectkit-compat";
 import { getUserOpsFromTx, handleEIP7702Authorizations } from "@/lib/eip7702";
 import SlideToConfirm from "../../components/SlideToConfirm";
-import type { WalletActivityToastKind } from "./WalletActivityToast";
-import { parseUnits } from "viem";
 
 // Types
 interface TokenInfo {
@@ -32,7 +30,6 @@ interface SwapModalProps {
   portfolioAssets?: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
   onSwapSuccess?: (txId: string) => void;
-  onWalletActivity?: (kind: WalletActivityToastKind, detail?: string) => void;
 }
 
 // Official USDC logo
@@ -68,14 +65,6 @@ const clampSlippagePct = (value: number): number => {
   if (!Number.isFinite(value)) return DEFAULT_SLIPPAGE_PCT;
   return Math.max(MIN_SLIPPAGE_PCT, Math.min(MAX_SLIPPAGE_PCT, Number(value.toFixed(2))));
 };
-
-/** Floor human token amount to base units (avoids float overshoot on max sells). */
-function humanToRawUnits(human: number, decimals: number): bigint {
-  if (!(human > 0) || !Number.isFinite(human)) return BigInt(0);
-  const d = Math.min(Math.max(0, decimals), 36);
-  const s = human.toFixed(d);
-  return parseUnits(s as `${string}`, d);
-}
 
 // Token logo with chain badge component
 const TokenWithChainBadge = ({ logo, symbol, chainId, size = "w-10 h-10" }: { 
@@ -114,7 +103,6 @@ export const SwapModal = ({
   portfolioAssets,
   universalAccount,
   onSwapSuccess,
-  onWalletActivity,
 }: SwapModalProps) => {
   const [amount, setAmount] = useState("");
   const [sliderValue, setSliderValue] = useState(50);
@@ -122,7 +110,14 @@ export const SwapModal = ({
   const [loadingStatus, setLoadingStatus] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [direction, setDirection] = useState<"buy" | "sell">("buy"); // buy = USD→Token, sell = Token→USD
-  const [isConfirming, setIsConfirming] = useState(false);
+  const [txResult, setTxResult] = useState<{ 
+    txId: string; 
+    expectedAmount?: string;
+    actualAmount?: string;
+    explorerUrl?: string;
+    chainId?: number;
+    status: "pending" | "completed" | "failed";
+  } | null>(null);
   const [isTyping, setIsTyping] = useState(false); // Track manual input to prevent slider override
   const [showSlippageSettings, setShowSlippageSettings] = useState(false);
   const [slippagePct, setSlippagePct] = useState<number>(DEFAULT_SLIPPAGE_PCT);
@@ -176,7 +171,7 @@ export const SwapModal = ({
       setAmount("");
       setSliderValue(50);
       setError(null);
-      setIsConfirming(false);
+      setTxResult(null);
       setDirection("buy"); // Default to buy mode
       setIsTyping(false); // Reset typing state
       setShowSlippageSettings(false);
@@ -210,10 +205,11 @@ export const SwapModal = ({
   }, [assetsForTokenLookup, targetToken]);
 
   const tokenBalance = getTokenBalance();
+  const sellPreviewAmount = tokenBalance * sliderValue / 100 * (targetToken?.price || 0) * Math.max(0, 1 - slippagePct / 100);
 
   // Update amount based on slider - ONLY when user drags slider, not when typing
   useEffect(() => {
-    if (!isLoading && !isConfirming && !isTyping) {
+    if (!txResult && !isTyping) {
       if (direction === "buy" && totalBalance > 0) {
         // Buy mode: slider controls USD amount
         const newAmount = (totalBalance * sliderValue / 100).toFixed(2);
@@ -225,14 +221,14 @@ export const SwapModal = ({
         setAmount(usdValue.toFixed(2));
       }
     }
-  }, [sliderValue, totalBalance, tokenBalance, direction, isLoading, isConfirming, targetToken?.price, isTyping]);
+  }, [sliderValue, totalBalance, tokenBalance, direction, txResult, targetToken?.price, isTyping]);
 
   // Debounce timer ref for slider sync
   const sliderSyncTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Number pad handler - sets isTyping to prevent slider from overriding typed amount
   const handleNumPad = (key: string) => {
-    if (isLoading || isConfirming) return;
+    if (txResult) return; // Don't allow input after success
     
     // Set typing mode immediately to prevent slider useEffect from overriding
     setIsTyping(true);
@@ -401,34 +397,27 @@ export const SwapModal = ({
           slippageBps,
         });
       } else {
-        // SELL: Token → USD (`amount` is USD notional; matches numpad + slider)
+        // SELL: Token → USD
+        // Calculate token amount to sell based on slider percentage
+        const tokenAmountToSell = tokenBalance * sliderValue / 100;
         const isSolanaToken = targetChainId === 101;
         const rawDecimals = targetToken.decimals || (isSolanaToken ? 9 : 18);
         const decimals = isSolanaToken ? Math.min(rawDecimals, 9) : rawDecimals;
-        const price = targetToken.price || 0;
-        const tokenAmountToSell =
-          price > 0 ? Math.min(Math.max(0, amountNum / price), tokenBalance) : 0;
-        if (tokenAmountToSell <= 0) {
-          setError("Invalid sell amount");
-          setIsLoading(false);
-          return;
-        }
-        const maxRaw = humanToRawUnits(tokenBalance, decimals);
-        let wantRaw = humanToRawUnits(tokenAmountToSell, decimals);
-        if (wantRaw > maxRaw) wantRaw = maxRaw;
-        const isFullSell =
-          sliderValue >= 100 || tokenAmountToSell >= tokenBalance * 0.999999999;
-        if (isFullSell && maxRaw > BigInt(1)) wantRaw = maxRaw - BigInt(1);
-        else if (isFullSell && maxRaw === BigInt(1)) wantRaw = BigInt(1);
-        const amountRaw = wantRaw.toString();
-
+        
+        // Format amount without scientific notation
+        // Split into integer and decimal parts, then pad with zeros
+        const amountStr = tokenAmountToSell.toFixed(decimals);
+        const [intPart, decPart = ""] = amountStr.split(".");
+        const paddedDec = (decPart + "0".repeat(decimals)).slice(0, decimals);
+        const amountRaw = (intPart + paddedDec).replace(/^0+/, "") || "0";
+        
         console.log("[Sell] Amount calc:", { tokenAmountToSell, decimals, amountRaw, chainId: targetChainId });
-
+        
         result = await executeSell({
           ua: universalAccount,
           tokenAddress: address,
           tokenChainId: targetChainId,
-          amountRaw,
+          amountRaw: amountRaw,
           amount: tokenAmountToSell.toString(),
           tokenDecimals: decimals,
           slippagePct,
@@ -499,31 +488,37 @@ export const SwapModal = ({
           const sendResult = await universalAccount.sendTransaction(txAny, signature as string, authorizations);
           
           if (sendResult?.transactionId) {
-            onWalletActivity?.("swap_submit", targetToken.symbol);
+            // Format expected amount
+            // When selling: output is USDC (6 decimals), when buying: output is target token
+            const outputDecimals = direction === "sell" ? 6 : (targetToken?.decimals || 18);
+            const expectedFormatted = result.outputAmount 
+              ? formatTokenAmount(parseFloat(result.outputAmount) / Math.pow(10, outputDecimals))
+              : undefined;
+            
+            // Show pending state with TARGET chain (not source chain)
+            setTxResult({
+              txId: sendResult.transactionId,
+              expectedAmount: expectedFormatted,
+              status: "pending",
+              chainId: targetChainId, // Use target chain ID for display
+            });
+            onSwapSuccess?.(sendResult.transactionId);
             setIsLoading(false);
-            setIsConfirming(true);
-            setLoadingStatus("");
-            try {
-              const txDetails = await pollTransactionDetails(
-                universalAccount,
-                sendResult.transactionId,
-                targetChainId,
-              );
-              if (txDetails.status === "completed") {
-                const outSym = direction === "sell" ? "USDC" : (targetToken?.symbol || "");
-                let detail: string | undefined;
-                if (txDetails.receivedAmount && outSym) {
-                  detail = `${formatTokenAmount(parseFloat(txDetails.receivedAmount))} ${outSym}`;
-                } else if (outSym) {
-                  detail = outSym;
-                }
-                onWalletActivity?.("swap_confirmed", detail);
-                onSwapSuccess?.(sendResult.transactionId);
-              } else if (txDetails.status === "failed") {
-                setError("Swap failed on-chain");
-              }
-            } finally {
-              setIsConfirming(false);
+            
+            // Poll for actual transaction details
+            setLoadingStatus("Confirming...");
+            const txDetails = await pollTransactionDetails(universalAccount, sendResult.transactionId, targetChainId);
+            
+            if (txDetails.status === "completed") {
+              setTxResult(prev => prev ? {
+                ...prev,
+                status: "completed",
+                actualAmount: txDetails.receivedAmount,
+                explorerUrl: txDetails.explorerUrl,
+                chainId: txDetails.chainId || targetChainId, // Fallback to target chain
+              } : null);
+            } else if (txDetails.status === "failed") {
+              setTxResult(prev => prev ? { ...prev, status: "failed" } : null);
             }
           } else {
             setError("Transaction failed - no ID returned");
@@ -534,23 +529,13 @@ export const SwapModal = ({
           return;
         }
       } else if (result.transactionId) {
-        onWalletActivity?.("swap_submit", targetToken.symbol);
-        setIsConfirming(true);
-        try {
-          const txDetails = await pollTransactionDetails(
-            universalAccount,
-            result.transactionId,
-            targetChainId,
-          );
-          if (txDetails.status === "completed") {
-            onWalletActivity?.("swap_confirmed", targetToken.symbol);
-            onSwapSuccess?.(result.transactionId);
-          } else if (txDetails.status === "failed") {
-            setError("Swap failed on-chain");
-          }
-        } finally {
-          setIsConfirming(false);
-        }
+        setTxResult({
+          txId: result.transactionId,
+          expectedAmount: result.outputAmount,
+          status: "pending",
+          chainId: targetChainId,
+        });
+        onSwapSuccess?.(result.transactionId);
       } else {
         setError("Swap failed - no transaction created");
       }
@@ -563,18 +548,8 @@ export const SwapModal = ({
     }
   };
 
-  const sellTokenHuman =
-    direction === "sell" && (targetToken?.price || 0) > 0
-      ? Math.min(Math.max(0, amountNum / (targetToken?.price || 1)), tokenBalance)
-      : tokenBalance * sliderValue / 100;
-  const sellUsdPreview = amountNum * Math.max(0, 1 - slippagePct / 100);
-
   const hasInsufficientBalance = direction === "buy" ? amountNum > totalBalance : tokenBalance <= 0;
-  const canSwap =
-    sliderValue > 0 &&
-    targetToken &&
-    universalAccount &&
-    !isConfirming &&
+  const canSwap = sliderValue > 0 && targetToken && universalAccount && !txResult && 
     (direction === "buy" ? amountNum > 0 : tokenBalance > 0);
 
   if (!isOpen) return null;
@@ -582,10 +557,7 @@ export const SwapModal = ({
   return (
     <>
       {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/70 z-50"
-        onClick={() => (showSlippageSettings ? setShowSlippageSettings(false) : onClose())}
-      />
+      <div className="fixed inset-0 bg-black/70 z-50" onClick={onClose} />
 
       {/* Modal */}
       <div className="fixed inset-x-0 bottom-0 z-50 bg-[#0a0a0a] rounded-t-3xl overflow-hidden flex flex-col max-h-[95vh] animate-slide-up border-t border-white/10" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
@@ -612,8 +584,123 @@ export const SwapModal = ({
           </button>
         </div>
 
-        <>
-            <div className="flex-1 overflow-y-auto px-5 pb-3 max-h-[min(52vh,420px)]">
+        {!txResult && showSlippageSettings && (
+          <div className="px-5 pb-3">
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-white font-medium">Slippage tolerance</span>
+                <span className="text-accent-dynamic text-sm">{slippageLabel}%</span>
+              </div>
+              <div className="grid grid-cols-5 gap-2 mb-3">
+                {PRESET_SLIPPAGE_PCTS.map((preset) => (
+                  <button
+                    key={preset}
+                    onClick={() => applySlippagePct(preset)}
+                    className={`rounded-lg py-1.5 text-xs ${
+                      Math.abs(slippagePct - preset) < 0.001
+                        ? "bg-accent-dynamic text-white"
+                        : "bg-white/10 text-gray-300"
+                    }`}
+                  >
+                    {preset}%
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={MIN_SLIPPAGE_PCT}
+                  max={MAX_SLIPPAGE_PCT}
+                  step="0.1"
+                  value={customSlippageInput}
+                  onChange={(e) => setCustomSlippageInput(e.target.value)}
+                  onBlur={() => applySlippagePct(Number(customSlippageInput))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") applySlippagePct(Number(customSlippageInput));
+                  }}
+                  className="w-24 rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-white outline-none"
+                />
+                <span className="text-gray-400 text-sm">% (0.1 - 10)</span>
+              </div>
+              <p className="text-[11px] text-gray-500 mt-2">
+                Applied to Li.Fi quotes for both buy and sell swaps.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Success/Pending State */}
+        {txResult && (
+          <div className="flex-1 flex flex-col items-center justify-center p-8">
+            {/* Status Icon with animation */}
+            <div className="text-6xl mb-4">
+              {txResult.status === "completed" ? (
+                <span className="animate-bounce inline-block">✅</span>
+              ) : txResult.status === "failed" ? (
+                <span>❌</span>
+              ) : (
+                <span className="inline-block animate-pulse">⏳</span>
+              )}
+            </div>
+            
+            {/* Title */}
+            <h2 className="text-white text-xl font-bold mb-2">
+              {txResult.status === "completed" ? "Swap Complete!" : 
+               txResult.status === "failed" ? "Swap Failed" : "Swap Pending..."}
+            </h2>
+            
+            {/* Amount Display */}
+            <div className="text-center mb-4">
+              {txResult.status === "completed" && txResult.actualAmount ? (
+                <p className="text-green-400 text-lg">
+                  Received: {formatTokenAmount(parseFloat(txResult.actualAmount))} {direction === "sell" ? "USDC" : targetToken?.symbol}
+                </p>
+              ) : txResult.expectedAmount ? (
+                <p className="text-gray-400">
+                  Expected: ~{txResult.expectedAmount} {direction === "sell" ? "USDC" : targetToken?.symbol}
+                </p>
+              ) : null}
+              
+              {/* Chain info */}
+              {txResult.chainId && (
+                <p className="text-gray-500 text-sm mt-1">
+                  on {getChainName(txResult.chainId)}
+                </p>
+              )}
+            </div>
+            
+            {/* View on Explorer - target chain tx link (lending/swap ops), not UniversalX */}
+            <div className="flex flex-col gap-3 mb-6 w-full max-w-xs">
+              {txResult.explorerUrl ? (
+                <a
+                  href={txResult.explorerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 bg-accent-dynamic/20 border border-accent-dynamic/50 text-accent-dynamic py-3 px-4 rounded-full font-medium"
+                >
+                  <span>View on Explorer</span>
+                  <span>↗</span>
+                </a>
+              ) : (
+                <p className="text-gray-500 text-sm text-center">
+                  {txResult.status === "pending" ? "Confirming... Check back shortly." : "Transaction submitted."}
+                </p>
+              )}
+            </div>
+            
+            <button
+              onClick={onClose}
+              className="w-full max-w-xs bg-accent-dynamic text-white py-3 rounded-full font-bold"
+            >
+              Done
+            </button>
+          </div>
+        )}
+
+        {/* Swap Form */}
+        {!txResult && (
+          <>
+            <div className="flex-1 overflow-y-auto px-5 pb-4">
               {/* Error Message */}
               {error && (
                 <div className="bg-red-500/20 border border-red-500/50 rounded-xl p-3 mb-4">
@@ -641,7 +728,7 @@ export const SwapModal = ({
                           chainId={getTokenAddressAndChain().chainId}
                         />
                         <div className="text-white text-3xl font-bold">
-                          {formatTokenAmount(sellTokenHuman)}
+                          {formatTokenAmount(tokenBalance * sliderValue / 100)}
                         </div>
                       </>
                     )}
@@ -690,7 +777,7 @@ export const SwapModal = ({
                         <img src={USDC_LOGO} alt="USDC" className="w-10 h-10 rounded-full" />
                         <div className="flex items-center gap-1">
                           <span className="text-gray-400 text-2xl">$</span>
-                          <span className="text-white text-3xl font-bold">{sellUsdPreview.toFixed(2)}</span>
+                          <span className="text-white text-3xl font-bold">{sellPreviewAmount.toFixed(2)}</span>
                         </div>
                       </>
                     )}
@@ -742,13 +829,12 @@ export const SwapModal = ({
               </div>
 
               {/* Number Pad */}
-              <div className="grid grid-cols-3 gap-1.5 mt-4">
+              <div className="grid grid-cols-3 gap-2 mt-6">
                 {["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "backspace"].map((key) => (
                   <button
                     key={key}
-                    type="button"
                     onClick={() => handleNumPad(key)}
-                    className="h-11 rounded-lg bg-white/10 text-white text-base font-medium flex items-center justify-center active:bg-white/20"
+                    className="h-14 rounded-xl bg-white/10 text-white text-xl font-medium flex items-center justify-center active:bg-white/20"
                   >
                     {key === "backspace" ? "⌫" : key}
                   </button>
@@ -757,7 +843,18 @@ export const SwapModal = ({
             </div>
 
             {/* Bottom Action */}
-            <div className="px-5 py-3 border-t border-white/10 shrink-0" style={{ paddingBottom: "max(env(safe-area-inset-bottom), 12px)" }}>
+            <div className="px-5 py-4 border-t border-white/10" style={{ paddingBottom: "max(env(safe-area-inset-bottom), 16px)" }}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-accent-dynamic">⛽</span>
+                  <span className="text-white font-medium">Fast</span>
+                </div>
+                <div className="text-right">
+                  <div className="text-gray-400 text-sm">Gas: &lt;$0.01</div>
+                  <div className="text-gray-500 text-xs">Slippage: {slippageLabel}%</div>
+                </div>
+              </div>
+              
               <SlideToConfirm
                 label={
                   direction === "sell" && tokenBalance <= 0
@@ -776,92 +873,19 @@ export const SwapModal = ({
                 disabled={
                   !canSwap ||
                   isLoading ||
-                  isConfirming ||
                   !universalAccount ||
                   sliderValue <= 0 ||
                   (direction === "sell" && tokenBalance <= 0) ||
                   (direction === "buy" && hasInsufficientBalance)
                 }
-                loading={isLoading || isConfirming}
-                loadingLabel={
-                  isConfirming
-                    ? "Confirming…"
-                    : loadingStatus || (direction === "buy" ? "Buying…" : "Selling…")
-                }
+                loading={isLoading}
+                loadingLabel={loadingStatus || (direction === "buy" ? "Buying…" : "Selling…")}
                 onConfirm={handleSwap}
               />
             </div>
           </>
+        )}
       </div>
-
-      {showSlippageSettings && (
-        <>
-          <div
-            className="fixed inset-0 z-[100] bg-black/80"
-            onClick={() => setShowSlippageSettings(false)}
-            aria-hidden
-          />
-          <div
-            className="fixed left-4 right-4 top-[14%] z-[101] max-h-[min(72vh,520px)] overflow-y-auto rounded-2xl border border-white/15 bg-[#101010] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.85)]"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="swap-slippage-title"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 id="swap-slippage-title" className="text-white font-semibold text-lg">
-                Slippage
-              </h3>
-              <button
-                type="button"
-                onClick={() => setShowSlippageSettings(false)}
-                className="rounded-full bg-white/10 px-3 py-1 text-sm text-gray-200"
-              >
-                Done
-              </button>
-            </div>
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-gray-400 text-sm">Tolerance</span>
-              <span className="text-accent-dynamic text-sm font-medium">{slippageLabel}%</span>
-            </div>
-            <div className="grid grid-cols-5 gap-2 mb-4">
-              {PRESET_SLIPPAGE_PCTS.map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  onClick={() => applySlippagePct(preset)}
-                  className={`rounded-lg py-2 text-xs font-medium ${
-                    Math.abs(slippagePct - preset) < 0.001
-                      ? "bg-accent-dynamic text-white"
-                      : "bg-white/10 text-gray-300"
-                  }`}
-                >
-                  {preset}%
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2 mb-2">
-              <input
-                type="number"
-                min={MIN_SLIPPAGE_PCT}
-                max={MAX_SLIPPAGE_PCT}
-                step="0.1"
-                value={customSlippageInput}
-                onChange={(e) => setCustomSlippageInput(e.target.value)}
-                onBlur={() => applySlippagePct(Number(customSlippageInput))}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") applySlippagePct(Number(customSlippageInput));
-                }}
-                className="w-28 rounded-lg border border-white/10 bg-black/40 px-2 py-2 text-white outline-none"
-              />
-              <span className="text-gray-400 text-sm">% (0.1 – 10)</span>
-            </div>
-            <p className="text-[11px] text-gray-500">
-              Applied to Li.Fi quotes for buy and sell.
-            </p>
-          </div>
-        </>
-      )}
 
       {/* Animation Styles */}
       <style jsx>{`

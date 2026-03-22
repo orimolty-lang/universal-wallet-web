@@ -4,10 +4,7 @@ export type WalletActivityToastKind =
   | "copied"
   | "send"
   | "converted"
-  | "convert_submit"
   | "deposited"
-  | "swap_submit"
-  | "swap_confirmed"
   | "perps_long_submit"
   | "perps_short_submit"
   | "perps_long_confirmed"
@@ -53,8 +50,6 @@ export default function WalletActivityToast({ payload }: Props) {
             <span>Confirmed</span>
           </>
         )}
-        {kind === "convert_submit" && <span>Converting…</span>}
-
         {(kind === "converted" || kind === "deposited") && (
           <>
             <span
@@ -74,28 +69,6 @@ export default function WalletActivityToast({ payload }: Props) {
             </span>
             <span>{kind === "converted" ? "Converted" : "Deposited"}</span>
           </>
-        )}
-
-        {kind === "swap_submit" && <span>Swapping…</span>}
-        {kind === "swap_confirmed" && (
-          <span className="inline-flex items-center gap-2">
-            <span
-              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400"
-              aria-hidden
-            >
-              <svg className="h-3.5 w-3.5" viewBox="0 0 14 14" fill="none">
-                <path
-                  className="wallet-toast-check-stroke"
-                  d="M3 7.2 5.8 10 11 4.5"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
-            <span>{d ? `Swapped · ${d}` : "Swap complete"}</span>
-          </span>
         )}
 
         {kind === "perps_long_submit" && <span>Longing…</span>}
