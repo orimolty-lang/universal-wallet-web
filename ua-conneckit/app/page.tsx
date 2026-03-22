@@ -585,23 +585,31 @@ type DexPairMetrics = {
 };
 
 function mergeTokenWithDexMetrics(token: TokenResult, metrics: DexPairMetrics): TokenResult {
-  const cap =
-    typeof token.market_cap === "number" && token.market_cap > 0
-      ? token.market_cap
-      : metrics.marketCap && metrics.marketCap > 0
-        ? metrics.marketCap
-        : token.market_cap;
   const nextPrice =
     typeof metrics.priceUsd === "number" && Number.isFinite(metrics.priceUsd) && metrics.priceUsd > 0
       ? metrics.priceUsd
       : token.price;
+
+  const circ = token.circulatingSupply;
+  const total = token.totalSupply;
+  let market_cap: number | undefined;
+  if (typeof nextPrice === "number" && nextPrice > 0 && typeof circ === "number" && circ > 0) {
+    market_cap = nextPrice * circ;
+  } else if (typeof nextPrice === "number" && nextPrice > 0 && typeof total === "number" && total > 0) {
+    market_cap = nextPrice * total;
+  } else if (metrics.marketCap && metrics.marketCap > 0) {
+    market_cap = metrics.marketCap;
+  } else if (typeof token.market_cap === "number" && token.market_cap > 0) {
+    market_cap = token.market_cap;
+  }
+
   return {
     ...token,
     price: nextPrice,
     volume: token.volume ?? metrics.volume,
     liquidity: token.liquidity ?? metrics.liquidity,
     price_change_24h: typeof token.price_change_24h === "number" ? token.price_change_24h : metrics.priceChange24h,
-    market_cap: cap,
+    market_cap,
   };
 }
 
