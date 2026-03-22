@@ -199,7 +199,7 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
           ethereum: {
             createOnLogin: "all-users",
           },
-          showWalletUIs: true,
+          showWalletUIs: false,
         },
         defaultChain: base,
         supportedChains: [base, optimism, arbitrum, polygon, bsc, mainnet, avalanche],
