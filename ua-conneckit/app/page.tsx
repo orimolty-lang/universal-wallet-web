@@ -4229,7 +4229,7 @@ const PerpsModal = ({
 
             {/* Available Balance Card */}
             <div className="px-4 mb-5">
-              <div className="rounded-2xl border border-[#333] bg-[#1a1a1a] px-3 py-3 flex items-center justify-between">
+              <div className="rounded-2xl border border-[#333] bg-[#1a1a1a] px-3 py-3 flex items-center">
                 <div className="flex items-center gap-3">
                   <img
                     src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png"
@@ -4246,20 +4246,6 @@ const PerpsModal = ({
                       })}
                     </div>
                   </div>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setView('deposit')}
-                    className="px-4 py-2.5 rounded-xl bg-accent-dynamic text-black font-bold text-sm"
-                  >
-                    Deposit
-                  </button>
-                  <button
-                    onClick={() => setView('withdraw')}
-                    className="px-4 py-2.5 rounded-xl bg-zinc-700 text-white font-bold text-sm hover:bg-zinc-600"
-                  >
-                    Withdraw
-                  </button>
                 </div>
               </div>
             </div>

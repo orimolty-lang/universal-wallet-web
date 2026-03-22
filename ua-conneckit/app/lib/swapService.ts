@@ -747,8 +747,8 @@ export async function prepareRelayRoute(params: {
 
 /**
  * Execute swap using Universal Account
- * - EVM tokens: Use 0x API
- * - Solana tokens: Use Relay.link (EVM → Solana cross-chain)
+ * - EVM tokens: Li.Fi quote (integrator fee); `get0xSwapQuote` exists but is not wired here
+ * - Solana tokens: Relay.link (EVM → Solana cross-chain)
  */
 export async function executeSwap(params: SwapParams): Promise<SwapResult> {
   const { ua, fromToken, toTokenAddress, toTokenChainId, amountUsd, slippageBps = 100 } = params;
