@@ -1,6 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type { IAssetsResponse, UniversalAccount } from "@particle-network/universal-account-sdk";
 import { executeSwap, executeSell, getChainIdFromBlockchain, pollTransactionDetails, getChainName } from "../lib/swapService";
 import { mergedAssetMatchesContractKeys, tokenContractKeySet } from "../lib/mobulaAssetIdentity";
@@ -24,7 +24,10 @@ interface SwapModalProps {
   isOpen: boolean;
   onClose: () => void;
   targetToken: TokenInfo | null;
+  /** UA primary portfolio only — used for buy-side unified USD cap (matches Perps). */
   primaryAssets: IAssetsResponse | null;
+  /** Optional Mobula/Particle merge — used to resolve sell balances & chainAggregation for external tokens. */
+  portfolioAssets?: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
   onSwapSuccess?: (txId: string) => void;
 }
@@ -97,6 +100,7 @@ export const SwapModal = ({
   onClose,
   targetToken,
   primaryAssets,
+  portfolioAssets,
   universalAccount,
   onSwapSuccess,
 }: SwapModalProps) => {
@@ -119,8 +123,27 @@ export const SwapModal = ({
   const [slippagePct, setSlippagePct] = useState<number>(DEFAULT_SLIPPAGE_PCT);
   const [customSlippageInput, setCustomSlippageInput] = useState<string>(DEFAULT_SLIPPAGE_PCT.toString());
 
-  // Get total unified balance (UA aggregates across all chains)
-  const totalBalance = primaryAssets?.totalAmountInUSD || 0;
+  /** Buy cap: primary UA unified USD (sum amountInUSD), not combined Mobula total. */
+  const unifiedUaBuyBalance = useMemo(() => {
+    const list = (primaryAssets?.assets || []) as Array<{ amountInUSD?: number | string }>;
+    if (list.length > 0) {
+      let sum = 0;
+      for (const a of list) {
+        const raw = a.amountInUSD;
+        const v = typeof raw === "string" ? parseFloat(raw) : Number(raw || 0);
+        if (Number.isFinite(v)) sum += v;
+      }
+      return sum;
+    }
+    const t = primaryAssets?.totalAmountInUSD as number | string | undefined;
+    if (t === undefined || t === null) return 0;
+    const n = typeof t === "string" ? parseFloat(t) : Number(t);
+    return Number.isFinite(n) ? n : 0;
+  }, [primaryAssets]);
+
+  const totalBalance = unifiedUaBuyBalance;
+
+  const assetsForTokenLookup = portfolioAssets ?? primaryAssets;
   
   const amountNum = parseFloat(amount) || 0;
   const amountUsd = amountNum;
@@ -172,14 +195,14 @@ export const SwapModal = ({
 
   // Sell balance: contract + chain only (symbol can collide across scam tokens)
   const getTokenBalance = useCallback(() => {
-    if (!targetToken || !primaryAssets?.assets) return 0;
+    if (!targetToken || !assetsForTokenLookup?.assets) return 0;
     const want = tokenContractKeySet(targetToken.contracts);
     if (want.size === 0) return 0;
-    const asset = primaryAssets.assets.find((a) => mergedAssetMatchesContractKeys(a as never, want));
+    const asset = assetsForTokenLookup.assets.find((a) => mergedAssetMatchesContractKeys(a as never, want));
     if (!asset) return 0;
     const amt = (asset as { amount?: number | string }).amount;
     return typeof amt === "string" ? parseFloat(amt) : (amt || 0);
-  }, [primaryAssets, targetToken]);
+  }, [assetsForTokenLookup, targetToken]);
 
   const tokenBalance = getTokenBalance();
   const sellPreviewAmount = tokenBalance * sliderValue / 100 * (targetToken?.price || 0) * Math.max(0, 1 - slippagePct / 100);
@@ -312,10 +335,10 @@ export const SwapModal = ({
       };
     }
     
-    if (primaryAssets?.assets && targetToken.contracts?.length) {
+    if (assetsForTokenLookup?.assets && targetToken.contracts?.length) {
       const want = tokenContractKeySet(targetToken.contracts);
       if (want.size > 0) {
-        const matchingAsset = primaryAssets.assets.find((a) =>
+        const matchingAsset = assetsForTokenLookup.assets.find((a) =>
           mergedAssetMatchesContractKeys(a as never, want),
         );
         if (matchingAsset && (matchingAsset as { chainAggregation?: unknown[] }).chainAggregation) {
@@ -335,7 +358,7 @@ export const SwapModal = ({
     
     console.log("[SwapModal] No address found for token:", targetToken.symbol);
     return { address: "", chainId: 8453 };
-  }, [targetToken, primaryAssets]);
+  }, [targetToken, assetsForTokenLookup]);
 
   // Get wallet for signing
   const [primaryWallet] = useWallets();

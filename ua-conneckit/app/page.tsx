@@ -5465,10 +5465,12 @@ const HomeTab = ({
 // Search Tab with Mobula API
 const SearchTab = ({ 
   primaryAssets,
+  portfolioAssets,
   universalAccount,
   onSend,
 }: { 
   primaryAssets: IAssetsResponse | null;
+  portfolioAssets: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
   onSend?: () => void;
 }) => {
@@ -5497,16 +5499,16 @@ const SearchTab = ({
 
   // Calculate user balance for selected token
   const getUserBalance = useCallback((token: TokenResult | null) => {
-    if (!token || !primaryAssets?.assets) return null;
+    if (!token || !portfolioAssets?.assets) return null;
     const want = tokenContractKeySet(token.contracts);
     if (want.size === 0) return null;
-    const userAsset = primaryAssets.assets.find((a) => mergedAssetMatchesContractKeys(a as never, want));
+    const userAsset = portfolioAssets.assets.find((a) => mergedAssetMatchesContractKeys(a as never, want));
     if (!userAsset) return null;
     return {
       amount: typeof userAsset.amount === "string" ? parseFloat(userAsset.amount) : (userAsset.amount || 0),
       amountInUSD: userAsset.amountInUSD || 0,
     };
-  }, [primaryAssets]);
+  }, [portfolioAssets]);
   
   // Recent searches - persisted to localStorage
   // Recent searches - store full token data for rich display
@@ -6129,6 +6131,7 @@ const SearchTab = ({
           contracts: swapTargetToken.contracts,
         } : null}
         primaryAssets={primaryAssets}
+        portfolioAssets={portfolioAssets}
         universalAccount={universalAccount}
         onSwapSuccess={(txId) => {
           console.log("Swap success:", txId);
@@ -7576,7 +7579,8 @@ const App = () => {
       )}
       {activeTab === "search" && (
         <SearchTab 
-          primaryAssets={combinedAssets as IAssetsResponse | null}
+          primaryAssets={primaryAssets}
+          portfolioAssets={combinedAssets as IAssetsResponse | null}
           universalAccount={universalAccountInstance}
           onSend={() => setShowSendModal(true)}
         />
@@ -7753,7 +7757,8 @@ const App = () => {
         isOpen={showHomeSwapModal}
         onClose={() => setShowHomeSwapModal(false)}
         targetToken={homeSelectedToken}
-        primaryAssets={combinedAssets as IAssetsResponse | null}
+        primaryAssets={primaryAssets}
+        portfolioAssets={combinedAssets as IAssetsResponse | null}
         universalAccount={universalAccountInstance}
       />
     </div>
