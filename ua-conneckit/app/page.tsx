@@ -1198,7 +1198,7 @@ function isSolanaAddress(addr: string): boolean {
   return a.length >= 32 && a.length <= 44 && !a.startsWith("0x");
 }
 
-// Send Modal - wired transfer for UA primary assets
+// Send Modal — UA primary + external (Mobula/Particle) rows from combined portfolio
 const SendModal = ({
   isOpen,
   onClose,
@@ -1228,26 +1228,45 @@ const SendModal = ({
   const [error, setError] = useState<string | null>(null);
   const [txResult, setTxResult] = useState<{ txId: string } | null>(null);
 
-  // Flatten assets to (symbol, chainId, address, balance) for transfer
+  // Flatten primary + external rows; symbol from tokenType or Mobula/Particle symbol
   const transferOptions = useMemo(() => {
     if (!assets?.assets) return [];
-    const out: Array<{ key: string; symbol: string; chainId: number; address: string; balance: number }> = [];
+    const out: Array<{
+      key: string;
+      symbol: string;
+      chainId: number;
+      address: string;
+      balance: number;
+      chainLabel: string;
+    }> = [];
     for (const a of assets.assets) {
-      const asset = a as { tokenType?: string; chainAggregation?: Array<{ token?: { chainId?: number; address?: string }; amount?: number }> };
+      const asset = a as {
+        tokenType?: string;
+        symbol?: string;
+        assetKey?: string;
+        chainAggregation?: Array<{
+          token?: { chainId?: number | string; address?: string };
+          amount?: number | string;
+        }>;
+      };
       const chainAgg = asset.chainAggregation;
       if (!chainAgg?.length) continue;
-      for (const c of chainAgg) {
+      const sym = (asset.tokenType || asset.symbol || "?").toUpperCase();
+      for (let i = 0; i < chainAgg.length; i++) {
+        const c = chainAgg[i];
         const chainId = Number(c.token?.chainId);
-        const tokenAddr = c.token?.address || "";
-        const bal = Number(c.amount || 0);
-        if (bal < 0.0001 || !chainId) continue;
-        const key = `${asset.tokenType}-${chainId}`;
+        const tokenAddr = (c.token?.address || "").trim();
+        const bal = typeof c.amount === "string" ? parseFloat(c.amount) : Number(c.amount || 0);
+        if (!Number.isFinite(chainId) || bal < 0.0001) continue;
+        const addrKey = tokenAddr ? tokenAddr.toLowerCase() : "native";
+        const key = `${asset.assetKey ?? sym}|${chainId}|${addrKey}|${i}`;
         out.push({
           key,
-          symbol: asset.tokenType?.toUpperCase() || "?",
+          symbol: sym,
           chainId,
           address: tokenAddr,
           balance: bal,
+          chainLabel: CHAIN_ID_TO_NAME_SEND[chainId] || `Chain ${chainId}`,
         });
       }
     }
@@ -1385,7 +1404,9 @@ const SendModal = ({
                           />
                         </div>
                         <span className="text-sm font-medium">{selected.symbol}</span>
-                        <span className="text-gray-500 text-xs">— {selected.balance.toFixed(4)}</span>
+                        <span className="text-gray-500 text-xs">
+                          — {selected.chainLabel} — {selected.balance.toFixed(4)}
+                        </span>
                       </>
                     ) : (
                       <span className="text-gray-400 text-sm">Select token</span>
@@ -1411,7 +1432,10 @@ const SendModal = ({
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-white text-sm">{o.symbol}</div>
-                          <div className="text-gray-500 text-xs">{o.balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })}</div>
+                          <div className="text-gray-500 text-xs">
+                            {o.chainLabel} ·{" "}
+                            {o.balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 6 })}
+                          </div>
                         </div>
                       </button>
                     ))}
@@ -7616,7 +7640,7 @@ const App = () => {
       <SendModal
         isOpen={showSendModal}
         onClose={() => setShowSendModal(false)}
-        assets={primaryAssets}
+        assets={combinedAssets as IAssetsResponse | null}
         universalAccount={universalAccountInstance}
         blindSigningEnabled={profile.blindSigningEnabled}
         sign7702={sign7702}
