@@ -935,9 +935,9 @@ const ProfilePickerModal = ({
   };
 
   return (
-    <BottomSheet isOpen={isOpen} onClose={onClose}>
-      <div className="px-6 pb-8">
-        <h2 className="text-white text-xl font-bold mb-6 text-center">Customize Profile</h2>
+    <BottomSheet isOpen={isOpen} onClose={onClose} dark>
+      <div className="px-4 pb-8">
+        <h2 className="text-white text-xl font-bold mb-6 text-center pt-1">Customize Profile</h2>
         
         {/* Display Name */}
         <div className="mb-6">
@@ -947,7 +947,7 @@ const ProfilePickerModal = ({
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder="Enter a custom name..."
-            className="w-full bg-gray-800 rounded-xl px-3 py-2 text-white outline-none"
+            className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl px-3 py-2 text-white outline-none focus:border-accent-dynamic/50"
             maxLength={20}
           />
         </div>
@@ -965,8 +965,9 @@ const ProfilePickerModal = ({
             )}
           </div>
           <button
+            type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="bg-gray-800 text-white px-4 py-2 rounded-xl text-sm"
+            className="bg-[#1a1a1a] border border-[#333] text-white px-4 py-2 rounded-xl text-sm hover:border-accent-dynamic/40 transition-colors"
           >
             Upload Image
           </button>
@@ -989,7 +990,7 @@ const ProfilePickerModal = ({
                   key={color}
                   onClick={() => setSelectedColor(color)}
                   className={`w-8 h-8 rounded-full transition-transform ${
-                    selectedColor === color ? "scale-110 ring-2 ring-white ring-offset-2 ring-offset-[#1a1a1a]" : ""
+                    selectedColor === color ? "scale-110 ring-2 ring-white ring-offset-2 ring-offset-[#0d0d0d]" : ""
                   }`}
                   style={{ backgroundColor: color }}
                 />
@@ -1006,8 +1007,8 @@ const ProfilePickerModal = ({
               <button
                 key={emoji}
                 onClick={() => onUpdateProfile({ ...profile, emoji, customImage: null, backgroundColor: selectedColor })}
-                className={`w-10 h-10 rounded-lg flex items-center justify-center text-xl ${
-                  profile.emoji === emoji && !profile.customImage ? "bg-gray-600" : "bg-gray-800"
+                className={`w-10 h-10 rounded-lg flex items-center justify-center text-xl border ${
+                  profile.emoji === emoji && !profile.customImage ? "bg-[#333] border-[#444]" : "bg-[#1a1a1a] border-[#333]"
                 }`}
               >
                 {emoji}
@@ -4982,10 +4983,10 @@ const AgentModal = ({
   ];
 
   return (
-    <BottomSheet isOpen={isOpen} onClose={onClose} fullScreen>
-      <div className="flex flex-col h-full bg-[#1a1a1a]">
+    <BottomSheet isOpen={isOpen} onClose={onClose} fullScreen dark>
+      <div className="flex flex-col h-full bg-[#0d0d0d]">
         {/* Header */}
-        <div className="flex items-center justify-center px-4 pb-4 border-b border-gray-800">
+        <div className="flex items-center justify-center px-4 pb-4 border-b border-[#252525]">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
               🤖
@@ -5008,7 +5009,7 @@ const AgentModal = ({
               <p className="text-gray-500 text-center text-sm mb-6">Your crypto assistant</p>
               <div className="w-full max-w-sm space-y-2">
                 {suggestions.map((s, i) => (
-                  <button key={i} onClick={() => setMessage(s)} className="w-full bg-gray-900 rounded-xl p-3 text-left text-gray-300 text-sm">
+                  <button key={i} type="button" onClick={() => setMessage(s)} className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl p-3 text-left text-gray-300 text-sm hover:border-accent-dynamic/30">
                     {s}
                   </button>
                 ))}
@@ -5018,7 +5019,7 @@ const AgentModal = ({
             <div className="p-4 space-y-3">
               {chat.map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                  <div className={`max-w-[80%] rounded-2xl px-4 py-2 ${msg.role === "user" ? "bg-accent-dynamic text-black" : "bg-gray-800 text-white"}`}>
+                  <div className={`max-w-[80%] rounded-2xl px-4 py-2 ${msg.role === "user" ? "bg-accent-dynamic text-black" : "bg-[#1a1a1a] border border-[#333] text-white"}`}>
                     {msg.text}
                   </div>
                 </div>
@@ -5028,14 +5029,14 @@ const AgentModal = ({
         </div>
 
         {/* Input */}
-        <div className="p-4 border-t border-gray-800 pb-8">
+        <div className="p-4 border-t border-[#252525] pb-8">
           <div className="flex gap-2">
             <input
               type="text"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               placeholder="Ask anything..."
-              className="flex-1 bg-gray-900 rounded-xl px-3 py-2 text-white placeholder-gray-500 outline-none"
+              className="flex-1 bg-[#1a1a1a] border border-[#333] rounded-xl px-3 py-2 text-white placeholder-gray-500 outline-none focus:border-accent-dynamic/50"
               onKeyPress={(e) => {
                 if (e.key === "Enter" && message.trim()) {
                   setChat([...chat, { role: "user", text: message }]);
@@ -6421,7 +6422,7 @@ const ActivityModal = ({
     if (s.includes('success') || s.includes('complete')) return 'text-accent-dynamic bg-accent-dynamic-20';
     if (s.includes('pending') || s.includes('process')) return 'text-amber-400 bg-amber-400/20';
     if (s.includes('fail') || s.includes('error') || s.includes('cancel')) return 'text-red-400 bg-red-400/20';
-    return 'text-zinc-400 bg-zinc-500/20';
+    return 'text-gray-400 bg-[#333]/50';
   };
 
   const formatHexUsd = (value: string | number | undefined): string => {
@@ -6568,24 +6569,24 @@ const ActivityModal = ({
   };
 
   const copyIcon = (
-    <svg className="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
     </svg>
   );
   const doCopy = (value: string) => { try { navigator.clipboard.writeText(value); } catch { /* ignore */ } };
   const copyRowAddr = (label: string, addr: string) => (
-    <div className="flex justify-between items-center py-2 border-b border-zinc-700/50 last:border-0">
-      <span className="text-zinc-400 text-sm">{label}</span>
+    <div className="flex justify-between items-center py-2 border-b border-[#333] last:border-0">
+      <span className="text-gray-400 text-sm">{label}</span>
       <div className="flex items-center gap-2">
-        <span className="text-zinc-200 text-xs bg-accent-dynamic-10 px-2 py-1 rounded border border-accent-dynamic/30">Omni Wallet</span>
+        <span className="text-gray-200 text-xs bg-accent-dynamic-10 px-2 py-1 rounded border border-accent-dynamic/30">Omni Wallet</span>
         <span className="text-white font-mono text-sm">{shortenHash(addr)}</span>
-        <button onClick={() => doCopy(addr)} className="p-1 hover:bg-zinc-700/50 rounded">{copyIcon}</button>
+        <button type="button" onClick={() => doCopy(addr)} className="p-1 hover:bg-[#252525] rounded">{copyIcon}</button>
       </div>
     </div>
   );
   const copyRowTxHash = (hash: string, href: string) => (
     <div className="flex justify-between items-center py-2">
-      <span className="text-zinc-400 text-sm">Tx Hash</span>
+      <span className="text-gray-400 text-sm">Tx Hash</span>
       <a href={href} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-accent-dynamic hover:underline">
         <span className="font-mono text-sm">{shortenHash(hash)}</span>
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
@@ -6593,7 +6594,7 @@ const ActivityModal = ({
     </div>
   );
   const infoIcon = (title: string) => (
-    <span title={title} className="text-zinc-500 text-xs ml-0.5 cursor-help">?</span>
+    <span title={title} className="text-gray-500 text-xs ml-0.5 cursor-help">?</span>
   );
 
   // Transaction Detail View - 1:1 reference layout
@@ -6609,11 +6610,13 @@ const ActivityModal = ({
 
     return (
       <BottomSheet isOpen={isOpen} onClose={onClose} dark>
-        <div className="px-6 pb-8 max-h-[80vh] overflow-y-auto">
-          <button onClick={handleBack} className="flex items-center gap-2 text-zinc-400 mb-4 hover:text-accent-dynamic transition-colors">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/></svg>
-            Back
-          </button>
+        <div className="px-4 pb-8 max-h-[80vh] overflow-y-auto">
+          <div className="flex items-center gap-2 pb-3 mb-3 border-b border-[#252525]">
+            <button type="button" onClick={handleBack} className="flex items-center gap-2 text-gray-400 hover:text-accent-dynamic transition-colors text-sm font-medium">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/></svg>
+              Back
+            </button>
+          </div>
 
           {isLoadingDetails ? (
             <div className="text-center py-8">
@@ -6630,7 +6633,7 @@ const ActivityModal = ({
               {/* 1. Balance change (first) */}
               {(details.tokenChanges?.decr?.length || details.tokenChanges?.incr?.length) ? (
                 <div className="mb-6">
-                  <div className="text-zinc-400 text-sm mb-2">Balance change</div>
+                  <div className="text-gray-400 text-sm mb-2">Balance change</div>
                   <div className="space-y-2">
                     {(details.tokenChanges?.decr || []).map((d: { amount?: string; rawAmount?: string; amountInUSD?: string; token?: { symbol?: string; tokenType?: string; image?: string; chainId?: number; realDecimals?: number; decimals?: number } }, i: number) => {
                       const sym = (d.token?.symbol || d.token?.tokenType || '').toUpperCase();
@@ -6673,21 +6676,21 @@ const ActivityModal = ({
               ) : null}
 
               {/* 2. Transaction details */}
-              <div className="border-t border-zinc-700/50 pt-4 space-y-0">
+              <div className="border-t border-[#252525] pt-4 space-y-0">
                 {details.sender && copyRowAddr('From(you)', details.sender)}
                 {details.receiver && copyRowAddr('To', details.receiver)}
                 {getTxDate(details) && (
-                  <div className="flex justify-between items-center py-2 border-b border-zinc-700/50">
-                    <span className="text-zinc-400 text-sm">Time</span>
+                  <div className="flex justify-between items-center py-2 border-b border-[#333]">
+                    <span className="text-gray-400 text-sm">Time</span>
                     <span className="text-white text-sm">{formatFullDate(getTxDate(details))}</span>
                   </div>
                 )}
-                <div className="flex justify-between items-center py-2 border-b border-zinc-700/50">
-                  <span className="text-zinc-400 text-sm">Gas fee{infoIcon('Estimated gas cost')}</span>
+                <div className="flex justify-between items-center py-2 border-b border-[#333]">
+                  <span className="text-gray-400 text-sm">Gas fee{infoIcon('Estimated gas cost')}</span>
                   <span className="text-white text-sm">≈${gasUsd}</span>
                 </div>
-                <div className="flex justify-between items-center py-2 border-b border-zinc-700/50">
-                  <span className="text-zinc-400 text-sm">Transaction fee{infoIcon('Service fee')}</span>
+                <div className="flex justify-between items-center py-2 border-b border-[#333]">
+                  <span className="text-gray-400 text-sm">Transaction fee{infoIcon('Service fee')}</span>
                   <span className="text-white text-sm">${txFeeUsd}</span>
                 </div>
               </div>
@@ -6705,10 +6708,10 @@ const ActivityModal = ({
                   ? [...decrForChain, ...incrForChain]
                   : depositForChain.map((d: { token?: { symbol?: string }; amount?: string; rawAmount?: string }) => ({ ...d, rawAmount: d.rawAmount ?? d.amount, isDeposit: true }));
                 return (
-                  <div key={`from-${i}`} className="mt-6 border-t border-zinc-700/50 pt-4">
+                  <div key={`from-${i}`} className="mt-6 border-t border-[#252525] pt-4">
                     <div className="flex items-center gap-2 mb-3">
                       <img src={chain.logo} alt={chain.name} className="w-4 h-4 rounded-full object-contain" referrerPolicy="no-referrer" />
-                      <span className="text-zinc-300 font-medium text-sm">From Tx Hash - on {chain.name}</span>
+                      <span className="text-gray-300 font-medium text-sm">From Tx Hash - on {chain.name}</span>
                     </div>
                     {chainTokens.map((item: { amount?: string; rawAmount?: string; token?: { symbol?: string; tokenType?: string; image?: string; realDecimals?: number; decimals?: number }; isDeposit?: boolean }, j: number) => {
                       const sym = (item.token?.symbol || item.token?.tokenType || '').toUpperCase();
@@ -6726,7 +6729,7 @@ const ActivityModal = ({
                       );
                     })}
                     {chainTokens.length === 0 && fromChains.includes(op.chainId ?? 0) ? (
-                      <div className="text-zinc-500 text-xs py-1">Balance change on chain</div>
+                      <div className="text-gray-500 text-xs py-1">Balance change on chain</div>
                     ) : null}
                     {op.txHash && copyRowTxHash(op.txHash, href)}
                   </div>
@@ -6738,10 +6741,10 @@ const ActivityModal = ({
                 const incrForChain = (details.tokenChanges?.incr || []).filter((x: { token?: { chainId?: number } }) => x.token?.chainId === op.chainId);
                 const decrForChain = (details.tokenChanges?.decr || []).filter((x: { token?: { chainId?: number } }) => x.token?.chainId === op.chainId);
                 return (
-                  <div key={`target-${i}`} className="mt-6 border-t border-zinc-700/50 pt-4">
+                  <div key={`target-${i}`} className="mt-6 border-t border-[#252525] pt-4">
                     <div className="flex items-center gap-2 mb-3">
                       <img src={chain.logo} alt={chain.name} className="w-4 h-4 rounded-full object-contain" referrerPolicy="no-referrer" />
-                      <span className="text-zinc-300 font-medium text-sm">Target Tx Hash - on {chain.name}</span>
+                      <span className="text-gray-300 font-medium text-sm">Target Tx Hash - on {chain.name}</span>
                     </div>
                     {[...decrForChain, ...incrForChain].map((item: { amount?: string; rawAmount?: string; token?: { symbol?: string; tokenType?: string; image?: string; realDecimals?: number; decimals?: number } }, j: number) => {
                       const sym = (item.token?.symbol || item.token?.tokenType || '').toUpperCase();
@@ -6764,9 +6767,9 @@ const ActivityModal = ({
               })}
 
               {/* Advanced */}
-              <details className="mt-6 border-t border-zinc-700/50 pt-4">
-                <summary className="cursor-pointer text-zinc-400 text-sm hover:text-accent-dynamic transition-colors">Advanced</summary>
-                <pre className="mt-2 text-xs text-zinc-500 whitespace-pre-wrap break-all overflow-x-auto">{JSON.stringify(details, null, 2)}</pre>
+              <details className="mt-6 border-t border-[#252525] pt-4">
+                <summary className="cursor-pointer text-gray-400 text-sm hover:text-accent-dynamic transition-colors">Advanced</summary>
+                <pre className="mt-2 text-xs text-gray-500 whitespace-pre-wrap break-all overflow-x-auto bg-[#1a1a1a] border border-[#333] rounded-xl p-3">{JSON.stringify(details, null, 2)}</pre>
               </details>
             </>
           )}
@@ -6777,32 +6780,31 @@ const ActivityModal = ({
 
   // Transaction List View
   return (
-    <BottomSheet isOpen={isOpen} onClose={onClose}>
-      <div className="px-6 pb-8 max-h-[70vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-6">
+    <BottomSheet isOpen={isOpen} onClose={onClose} dark>
+      <div className="pb-8 max-h-[70vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-4 mb-1 pb-3 border-b border-[#252525]">
           <h2 className="text-white text-xl font-bold">Activity</h2>
           <button
+            type="button"
             onClick={refreshTransactions}
             disabled={isLoading || isRefreshing}
-            className="text-sm px-3 py-1 rounded-lg bg-white/10 text-gray-200 hover:bg-white/20 disabled:opacity-50"
+            className="text-sm px-3 py-2 rounded-xl bg-[#1a1a1a] border border-[#333] text-gray-200 hover:border-accent-dynamic/40 disabled:opacity-50 transition-colors"
           >
-            {isRefreshing ? 'Refreshing…' : 'Refresh'}
+            {isRefreshing ? "Refreshing…" : "Refresh"}
           </button>
         </div>
-        
+
         {isLoading && transactions.length === 0 ? (
-          <div className="text-center py-8">
+          <div className="text-center py-10 px-4">
             <div className="animate-spin w-8 h-8 border-2 border-accent-dynamic border-t-transparent rounded-full mx-auto mb-4" />
-            <div className="text-gray-500">Loading transactions...</div>
+            <div className="text-gray-500 text-sm">Loading transactions…</div>
           </div>
         ) : error ? (
-          <div className="text-center py-8 text-red-400">{error}</div>
+          <div className="text-center py-10 px-4 text-red-400 text-sm">{error}</div>
         ) : transactions.length === 0 ? (
-          <div className="text-center py-8 text-gray-600">
-            No transactions yet
-          </div>
+          <div className="text-center py-10 px-4 text-gray-500 text-sm">No transactions yet</div>
         ) : (
-          <div className="space-y-3">
+          <div className="divide-y divide-[#333]">
             {transactions.map((tx, idx) => {
               const txType = getTxType(tx);
               const status = getTxStatus(tx);
@@ -6811,42 +6813,41 @@ const ActivityModal = ({
 
               return (
                 <button
+                  type="button"
                   key={tx.transactionId || tx.id || idx}
                   onClick={() => handleTxClick(tx)}
-                  className="w-full flex items-center gap-3 p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-colors text-left"
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[#1a1a1a]/90 transition-colors active:bg-[#1a1a1a]"
                 >
-                  <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-lg">
+                  <div className="w-10 h-10 shrink-0 rounded-full bg-[#1a1a1a] border border-[#333] flex items-center justify-center text-lg text-gray-200">
                     {getTagIcon(txType)}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-white font-medium capitalize">{txType}</span>
-                      <span className={`text-xs px-1.5 py-0.5 rounded ${getStatusColor(status)}`}>
-                        {status}
-                      </span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full ${getStatusColor(status)}`}>{status}</span>
                     </div>
-                    {amount && (
-                      <div className={`text-sm ${amount.isNegative ? 'text-red-400' : 'text-green-400'}`}>
-                        {amount.isNegative ? '-' : '+'}{amount.amount} {amount.symbol}
+                    {amount ? (
+                      <div className={`text-sm mt-0.5 ${amount.isNegative ? "text-red-400" : "text-green-400"}`}>
+                        {amount.isNegative ? "-" : "+"}
+                        {amount.amount} {amount.symbol}
                       </div>
-                    )}
+                    ) : null}
                   </div>
-                  <div className="text-gray-500 text-sm">
-                    {dateStr || ''}
-                  </div>
+                  <div className="text-gray-500 text-xs shrink-0 tabular-nums">{dateStr || ""}</div>
                 </button>
               );
             })}
-            
-            {hasMore && (
+
+            {hasMore ? (
               <button
+                type="button"
                 onClick={loadMore}
                 disabled={isLoading}
-                className="w-full py-3 text-center text-accent-dynamic hover:text-white transition-colors disabled:opacity-50"
+                className="w-full py-3.5 text-center text-sm font-medium text-accent-dynamic hover:text-white transition-colors disabled:opacity-50"
               >
-                {isLoading ? 'Loading...' : 'Load more'}
+                {isLoading ? "Loading…" : "Load more"}
               </button>
-            )}
+            ) : null}
           </div>
         )}
       </div>
@@ -6910,10 +6911,10 @@ const AppLockModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
   };
   
   return (
-    <BottomSheet isOpen={isOpen} onClose={onClose}>
-      <div className="px-6 pb-8">
-        <div className="flex items-center gap-3 mb-6">
-          <button onClick={onClose} className="text-white">
+    <BottomSheet isOpen={isOpen} onClose={onClose} dark>
+      <div className="px-4 pb-8">
+        <div className="flex items-center gap-3 mb-6 pb-3 border-b border-[#252525]">
+          <button type="button" onClick={onClose} className="text-white p-1 hover:bg-[#1a1a1a] rounded-lg">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/>
             </svg>
@@ -6926,19 +6927,19 @@ const AppLockModal = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
         </p>
         
         {!isNativeApp ? (
-          <div className="bg-gray-800/50 rounded-lg p-4">
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4">
             <p className="text-gray-400 text-sm">
               App Lock requires the native OMNI app. This feature is not available in the web browser.
             </p>
           </div>
         ) : !biometricsAvailable ? (
-          <div className="bg-gray-800/50 rounded-lg p-4">
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-xl p-4">
             <p className="text-gray-400 text-sm">
               Biometrics are not available on this device. Please ensure Face ID or Touch ID is set up in your device settings.
             </p>
           </div>
         ) : (
-          <div className="flex items-center justify-between py-4 border-b border-gray-800">
+          <div className="flex items-center justify-between py-4 border-b border-[#333]">
             <div className="flex items-center gap-3">
               <svg className="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7.864 4.243A7.5 7.5 0 0119.5 10.5c0 2.92-.556 5.709-1.568 8.268M5.742 6.364A7.465 7.465 0 004.5 10.5a7.464 7.464 0 01-1.15 3.993m1.989 3.559A11.209 11.209 0 008.25 10.5a3.75 3.75 0 117.5 0c0 .527-.021 1.049-.064 1.565M12 10.5a14.94 14.94 0 01-3.6 9.75m6.633-4.596a18.666 18.666 0 01-2.485 5.33"/>
@@ -7000,16 +7001,17 @@ const SettingsModal = ({
   };
 
   return (
-  <BottomSheet isOpen={isOpen} onClose={onClose}>
-    <div className="px-6 pb-8">
-      <h2 className="text-white text-xl font-bold mb-6 text-center">Settings</h2>
+  <BottomSheet isOpen={isOpen} onClose={onClose} dark>
+    <div className="px-4 pb-8">
+      <h2 className="text-white text-xl font-bold mb-6 text-center pt-1 pb-3 border-b border-[#252525]">Settings</h2>
       <div className="space-y-4">
         {/* Security Section */}
         <div className="text-gray-500 text-xs uppercase tracking-wider mb-2">Security</div>
         
         <button 
+          type="button"
           onClick={onOpenAppLock}
-          className="w-full flex items-center justify-between py-3 border-b border-gray-800"
+          className="w-full flex items-center justify-between py-3 border-b border-[#333] hover:bg-[#1a1a1a]/80 rounded-lg px-1 -mx-1 transition-colors"
         >
           <div className="flex items-center gap-3">
             <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -7027,7 +7029,7 @@ const SettingsModal = ({
             type="button"
             onClick={handleExportKey}
             disabled={exporting}
-            className="w-full flex items-center justify-between py-3 border-b border-gray-800 hover:bg-white/5 transition-colors"
+            className="w-full flex items-center justify-between py-3 border-b border-[#333] hover:bg-[#1a1a1a]/80 rounded-lg px-1 -mx-1 transition-colors"
           >
             <div className="flex items-center gap-3">
               <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -7046,7 +7048,7 @@ const SettingsModal = ({
         )}
         
         <div className="text-gray-500 text-xs uppercase tracking-wider mb-2 mt-6">Signing</div>
-        <div className="w-full flex items-center justify-between py-3 border-b border-gray-800">
+        <div className="w-full flex items-center justify-between py-3 border-b border-[#333]">
           <div className="pr-3">
             <div className="text-white">Blind Signing</div>
             <div className="text-[11px] text-gray-500">When enabled, UA signing uses a lower-friction blind-sign path when supported.</div>
