@@ -189,16 +189,9 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
   const clientId = process.env.NEXT_PUBLIC_PRIVY_CLIENT_ID || "client-WY6WwYjqhoUurxz6sQNKp3pBWkrdLC85MyF5LePfSyn5f";
 
   const hostedLoginLogoUrl = process.env.NEXT_PUBLIC_PRIVY_LOGIN_LOGO_URL?.trim();
-  const siteOrigin = process.env.NEXT_PUBLIC_SITE_ORIGIN?.replace(/\/$/, "") ?? "";
   const loginHeader = process.env.NEXT_PUBLIC_PRIVY_LOGIN_HEADER?.trim() || "Omni";
   const loginMessageEnv = process.env.NEXT_PUBLIC_PRIVY_LOGIN_MESSAGE?.trim();
   const accentHex = process.env.NEXT_PUBLIC_PRIVY_ACCENT_COLOR?.trim();
-
-  /** Absolute URL when `NEXT_PUBLIC_SITE_ORIGIN` is set (e.g. GitHub Pages); else root-relative for same-origin. */
-  const defaultOmniLogoUrl = siteOrigin
-    ? `${siteOrigin}/universal-wallet-web/omni-logo.svg`
-    : "/universal-wallet-web/omni-logo.svg";
-  const loginLogoUrl = hostedLoginLogoUrl || defaultOmniLogoUrl;
 
   return (
     <PrivyProvider
@@ -207,7 +200,11 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
       config={{
         appearance: {
           theme: "dark",
-          logo: loginLogoUrl,
+          /**
+           * Omit `logo` unless this env is set so Privy uses the hosted logo from the dashboard
+           * (Configuration → UI). Passing a default URL here overrides that and showed the wrong asset.
+           */
+          ...(hostedLoginLogoUrl ? { logo: hostedLoginLogoUrl } : {}),
           landingHeader: loginHeader,
           ...(loginMessageEnv ? { loginMessage: loginMessageEnv.slice(0, 100) } : {}),
           /** Replaces the default “Protected by Privy” footer graphic (SDK renders nothing else in its place). */
