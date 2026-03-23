@@ -7,9 +7,7 @@ import {
   useDisconnect,
   useSign7702AuthorizationCompat,
   useExportWalletCompat,
-  usePrivyEmbeddedWalletPrefs,
   useWalletAppearance,
-  MAX_PRIVY_EMBEDDED_WALLETS,
 } from "@/app/lib/connectkit-compat";
 import type { WalletSlotProfile } from "@/app/lib/walletSlotStorage";
 import WalletSwitcherModal from "./components/WalletSwitcherModal";
@@ -48,6 +46,8 @@ import {
   isMobulaDuplicateOfUaPrimaryStaple,
   isPositionKeysDuplicateOfUaPrimaryStaple,
 } from "./lib/mobulaAssetIdentity";
+import { fetchWalletPortfolioSnapshot } from "./lib/fetchWalletPortfolioSnapshot";
+import type { WalletSwitcherBalanceEntry } from "./components/WalletSwitcherModal";
 
 // Mobula: proxied via Cloudflare worker (no frontend API key)
 const MOBULA_PROXY_BASE = process.env.NEXT_PUBLIC_LIFI_PROXY_URL || "https://lifi-proxy.orimolty.workers.dev";
@@ -5000,7 +5000,6 @@ const HomeTab = ({
   primaryAssets, 
   profile,
   onShowProfilePicker,
-  onShowWalletSwitcher,
   onReceive,
   onSend,
   onConvert,
@@ -5012,7 +5011,6 @@ const HomeTab = ({
   primaryAssets: IAssetsResponse | null;
   profile: ProfileSettings;
   onShowProfilePicker: () => void;
-  onShowWalletSwitcher?: () => void;
   onReceive: () => void;
   onSend: () => void;
   onConvert: () => void;
@@ -5037,8 +5035,6 @@ const HomeTab = ({
   });
   const [actionBarToast, setActionBarToast] = useState<string | null>(null);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
-  const profileLongPressTimer = useRef<NodeJS.Timeout | null>(null);
-  const profileLongPressDidFire = useRef(false);
   
   // Toggle compact mode on long-press
   const handleActionBarLongPress = () => {
@@ -5060,24 +5056,7 @@ const HomeTab = ({
     }
   };
 
-  const startProfileLongPress = () => {
-    profileLongPressDidFire.current = false;
-    profileLongPressTimer.current = setTimeout(() => {
-      profileLongPressDidFire.current = true;
-      onShowWalletSwitcher?.();
-    }, 550);
-  };
-  const endProfileLongPress = () => {
-    if (profileLongPressTimer.current) {
-      clearTimeout(profileLongPressTimer.current);
-      profileLongPressTimer.current = null;
-    }
-  };
   const handleProfileTap = () => {
-    if (profileLongPressDidFire.current) {
-      profileLongPressDidFire.current = false;
-      return;
-    }
     onShowProfilePicker();
   };
   
@@ -5204,14 +5183,9 @@ const HomeTab = ({
         <button 
           type="button"
           onClick={handleProfileTap}
-          onTouchStart={startProfileLongPress}
-          onTouchEnd={endProfileLongPress}
-          onMouseDown={startProfileLongPress}
-          onMouseUp={endProfileLongPress}
-          onMouseLeave={endProfileLongPress}
           className="w-16 h-16 rounded-full flex items-center justify-center text-3xl mb-3 overflow-hidden relative group"
           style={{ backgroundColor: profile.customImage ? undefined : (profile.backgroundColor || "#f97316") }}
-          title="Tap to edit profile · hold for wallets"
+          title="Edit profile"
         >
           {profile.customImage ? (
             <img src={profile.customImage} alt="Profile" className="w-full h-full object-cover" />
@@ -5221,11 +5195,6 @@ const HomeTab = ({
           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
             <span className="text-white text-xs">Edit</span>
           </div>
-          {onShowWalletSwitcher && (
-            <span className="absolute bottom-0.5 right-0.5 text-[10px] leading-none bg-black/65 text-white rounded px-0.5 py-px pointer-events-none">
-              ▾
-            </span>
-          )}
         </button>
         <button 
           type="button"
@@ -6940,17 +6909,14 @@ const SettingsModal = ({
   onClose,
   onLogout,
   onOpenAppLock,
-  onManageWallets,
 }: {
   isOpen: boolean;
   onClose: () => void;
   onLogout: () => void;
   onOpenAppLock?: () => void;
-  onManageWallets?: () => void;
 }) => {
   const exportWallet = useExportWalletCompat();
   const { address } = useAccount();
-  const { privyEmbeddedAddresses, setPreferredPrivyEmbeddedAddress } = usePrivyEmbeddedWalletPrefs();
   const [exporting, setExporting] = useState(false);
 
   const handleExportKey = async () => {
@@ -6972,48 +6938,6 @@ const SettingsModal = ({
     <div className="px-4 pb-8">
       <h2 className="text-white text-xl font-bold mb-6 text-center pt-1 pb-3 border-b border-[#252525]">Settings</h2>
       <div className="space-y-4">
-        {onManageWallets && privyEmbeddedAddresses.length > 0 && (
-          <button
-            type="button"
-            onClick={onManageWallets}
-            className="w-full flex items-center justify-between py-3 border border-[#333] rounded-xl px-3 hover:bg-[#1a1a1a]/80 transition-colors"
-          >
-            <span className="text-white text-sm font-medium">Manage wallets</span>
-            <span className="text-gray-500 text-xs">
-              {privyEmbeddedAddresses.length}/{MAX_PRIVY_EMBEDDED_WALLETS}
-            </span>
-          </button>
-        )}
-
-        {privyEmbeddedAddresses.length > 1 && (
-          <>
-            <div className="text-gray-500 text-xs uppercase tracking-wider mb-2">Wallet</div>
-            <p className="text-gray-400 text-xs mb-2">
-              Multiple embedded wallets are linked to this account. Select the one that holds your funds — this device will remember your choice.
-            </p>
-            <div className="flex flex-col gap-2 mb-4">
-              {privyEmbeddedAddresses.map((addr) => {
-                const active = address?.toLowerCase() === addr.toLowerCase();
-                return (
-                  <button
-                    key={addr}
-                    type="button"
-                    onClick={() => setPreferredPrivyEmbeddedAddress(addr)}
-                    className={`w-full text-left rounded-xl border px-3 py-2.5 text-sm transition-colors ${
-                      active
-                        ? "border-accent-dynamic bg-accent-dynamic/15 text-white"
-                        : "border-[#333] bg-[#1a1a1a] text-gray-300 hover:bg-[#252525]"
-                    }`}
-                  >
-                    <span className="font-mono text-xs break-all">{addr}</span>
-                    {active && <span className="ml-2 text-accent-dynamic text-xs font-semibold">Active</span>}
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        )}
-
         {/* Security Section */}
         <div className="text-gray-500 text-xs uppercase tracking-wider mb-2">Security</div>
         
@@ -7211,7 +7135,16 @@ const App = () => {
   const [showWalletSwitcher, setShowWalletSwitcher] = useState(false);
   // Sell is handled by SwapModal with direction flip
 
-  const { profile, setProfile } = useWalletAppearance();
+  const { profile, setProfile, embeddedWalletRows } = useWalletAppearance();
+
+  const [walletSwitcherBalances, setWalletSwitcherBalances] = useState<
+    Record<string, WalletSwitcherBalanceEntry>
+  >({});
+
+  const embeddedWalletRowKey = useMemo(
+    () => embeddedWalletRows.map((r) => r.address.toLowerCase()).join(","),
+    [embeddedWalletRows],
+  );
 
   const updateProfile = (p: ProfileSettings) => {
     setProfile(p);
@@ -7542,6 +7475,61 @@ const App = () => {
   }, [primaryAssets, mobulaAssets, particleAssets]);
 
   useEffect(() => {
+    if (!showWalletSwitcher) return;
+    let cancelled = false;
+    const rows = embeddedWalletRows;
+    if (rows.length === 0) return;
+
+    const activeLo = address?.toLowerCase() || "";
+
+    (async () => {
+      const initial: Record<string, WalletSwitcherBalanceEntry> = {};
+      for (const row of rows) {
+        const lo = row.address.toLowerCase();
+        if (activeLo && lo === activeLo && primaryAssets && combinedAssets) {
+          const uni = primaryAssets.totalAmountInUSD ?? 0;
+          const comb = combinedAssets.totalAmountInUSD ?? uni;
+          const ext = Math.max(0, comb - uni);
+          initial[lo] = { unifiedUsd: uni, externalUsd: ext, combinedUsd: comb, loading: false };
+        } else {
+          initial[lo] = { unifiedUsd: null, externalUsd: null, combinedUsd: null, loading: true };
+        }
+      }
+      if (!cancelled) setWalletSwitcherBalances(initial);
+
+      await Promise.all(
+        rows.map(async (row) => {
+          const lo = row.address.toLowerCase();
+          if (activeLo && lo === activeLo) return;
+          try {
+            const snap = await fetchWalletPortfolioSnapshot(row.address);
+            if (cancelled) return;
+            setWalletSwitcherBalances((prev) => ({
+              ...prev,
+              [lo]: {
+                unifiedUsd: snap.unifiedUsd,
+                externalUsd: snap.externalUsd,
+                combinedUsd: snap.combinedUsd,
+                loading: false,
+              },
+            }));
+          } catch {
+            if (cancelled) return;
+            setWalletSwitcherBalances((prev) => ({
+              ...prev,
+              [lo]: { unifiedUsd: 0, externalUsd: 0, combinedUsd: 0, loading: false },
+            }));
+          }
+        }),
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showWalletSwitcher, embeddedWalletRowKey, address, primaryAssets, combinedAssets, embeddedWalletRows]);
+
+  useEffect(() => {
     fetchAssets();
   }, [fetchAssets]);
 
@@ -7563,19 +7551,41 @@ const App = () => {
     <div className="flex flex-col min-h-screen bg-[#0a0a0a]">
       {/* Top Header with Activity/Settings - only on Home tab */}
       {activeTab === "home" && (
-        <div className="fixed top-0 left-0 right-0 z-30 flex items-center justify-end px-4 py-3" style={{ paddingTop: "max(env(safe-area-inset-top), 12px)" }}>
+        <div
+          className="fixed top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-3"
+          style={{ paddingTop: "max(env(safe-area-inset-top), 12px)" }}
+        >
+          <button
+            type="button"
+            onClick={() => setShowWalletSwitcher(true)}
+            className="w-10 h-10 rounded-full bg-gray-800/80 flex items-center justify-center shrink-0"
+            aria-label="Wallets"
+          >
+            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 10-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 3V9M3 12c0-1.66 1.34-3 3-3h12c1.66 0 3 1.34 3 3"
+              />
+            </svg>
+          </button>
           <div className="flex items-center gap-2">
-            <button 
+            <button
+              type="button"
               onClick={() => setShowActivityModal(true)}
               className="w-10 h-10 rounded-full bg-gray-800/80 flex items-center justify-center"
+              aria-label="Activity"
             >
               <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
               </svg>
             </button>
-            <button 
+            <button
+              type="button"
               onClick={() => setShowSettingsModal(true)}
               className="w-10 h-10 rounded-full bg-gray-800/80 flex items-center justify-center"
+              aria-label="Settings"
             >
               <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"/>
@@ -7592,7 +7602,6 @@ const App = () => {
           primaryAssets={combinedAssets as IAssetsResponse | null}
           profile={profile}
           onShowProfilePicker={() => setShowProfilePicker(true)}
-          onShowWalletSwitcher={() => setShowWalletSwitcher(true)}
           onReceive={() => setShowReceiveModal(true)}
           onSend={() => setShowSendModal(true)}
           onConvert={() => setShowConvertModal(true)}
@@ -7648,6 +7657,7 @@ const App = () => {
       <WalletSwitcherModal
         isOpen={showWalletSwitcher}
         onClose={() => setShowWalletSwitcher(false)}
+        balanceByAddress={walletSwitcherBalances}
       />
       
       <WalletActivityToast payload={walletToastPayload} />
@@ -7760,10 +7770,6 @@ const App = () => {
         onClose={() => setShowSettingsModal(false)} 
         onLogout={disconnect}
         onOpenAppLock={() => setShowAppLockModal(true)}
-        onManageWallets={() => {
-          setShowSettingsModal(false);
-          setShowWalletSwitcher(true);
-        }}
       />
       
       <AppLockModal

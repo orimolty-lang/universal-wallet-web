@@ -388,7 +388,7 @@ function PrivyAuthInner({ children }: React.PropsWithChildren) {
     const stored = readPreferredEmbedded(user.id);
     if (stored) return;
     console.warn(
-      "[Omni] Multiple embedded wallets: open Settings → Wallet, or long-press your avatar on Home to pick the funded address.",
+      "[Omni] Multiple embedded wallets: tap the wallet icon (top left on Home) to pick the funded address.",
     );
   }, [authenticated, user?.id, privyEmbeddedAddresses.length]);
 

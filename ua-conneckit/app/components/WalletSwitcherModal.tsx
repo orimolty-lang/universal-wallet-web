@@ -4,9 +4,18 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import BottomSheet from "../../components/BottomSheet";
 import { MAX_PRIVY_EMBEDDED_WALLETS, useWalletAppearance, type EmbeddedWalletRow } from "@/app/lib/connectkit-compat";
 
+export type WalletSwitcherBalanceEntry = {
+  unifiedUsd: number | null;
+  externalUsd: number | null;
+  combinedUsd: number | null;
+  loading?: boolean;
+};
+
 type Props = {
   isOpen: boolean;
   onClose: () => void;
+  /** Per-EOA balances (lowercase hex key). Matches home headline: combined = unified + external (Mobula/Particle after de-dupe). */
+  balanceByAddress?: Record<string, WalletSwitcherBalanceEntry>;
 };
 
 const FLIP_MS = 220;
@@ -31,7 +40,7 @@ function indexAtClientY(rowEls: (HTMLElement | null)[], clientY: number, len: nu
   return -1;
 }
 
-export default function WalletSwitcherModal({ isOpen, onClose }: Props) {
+export default function WalletSwitcherModal({ isOpen, onClose, balanceByAddress }: Props) {
   const {
     embeddedWalletRows,
     switchWallet,
@@ -221,6 +230,7 @@ export default function WalletSwitcherModal({ isOpen, onClose }: Props) {
         <div className="flex flex-col gap-2 mb-4 mt-3">
           {displayRows.map((row) => {
             const isDraggingRow = draggingAddress === row.address;
+            const bal = balanceByAddress?.[row.address.toLowerCase()];
             return (
               <div
                 key={row.address}
@@ -283,6 +293,22 @@ export default function WalletSwitcherModal({ isOpen, onClose }: Props) {
                       {row.profile.displayName || "Wallet"}
                     </div>
                     <div className="text-gray-500 text-[11px] font-mono truncate">{row.address}</div>
+                    {bal?.loading ? (
+                      <div className="text-gray-600 text-[10px] mt-1">Loading balances…</div>
+                    ) : bal &&
+                      bal.combinedUsd !== null &&
+                      bal.unifiedUsd !== null &&
+                      bal.externalUsd !== null ? (
+                      <div className="mt-1 space-y-0.5">
+                        <div className="text-white text-sm font-semibold tabular-nums">
+                          ${bal.combinedUsd.toFixed(2)}
+                          <span className="text-gray-500 font-normal text-[10px] ml-1">total</span>
+                        </div>
+                        <div className="text-gray-500 text-[10px] tabular-nums leading-tight">
+                          Unified ${bal.unifiedUsd.toFixed(2)} · External ${bal.externalUsd.toFixed(2)}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                   {row.isActive && (
                     <span className="text-accent-dynamic text-xs font-semibold shrink-0">Active</span>
