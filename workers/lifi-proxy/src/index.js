@@ -4,6 +4,7 @@
  */
 
 const LIFI_API_BASE = "https://li.quest/v1";
+const ZEROX_API_BASE = "https://api.0x.org";
 const MOBULA_API_BASE = "https://api.mobula.io/api/1";
 
 const corsHeaders = (env) => ({
@@ -43,6 +44,35 @@ export default {
         const text = await mobulaResponse.text();
         return new Response(text, {
           status: mobulaResponse.status,
+          headers: {
+            "Content-Type": "application/json",
+            ...corsHeaders(env),
+          },
+        });
+      }
+
+      // 0x proxy path: /0x/*
+      if (url.pathname.startsWith("/0x/")) {
+        const zeroXPath = url.pathname.replace("/0x", "");
+        const zeroXUrl = new URL(`${ZEROX_API_BASE}${zeroXPath}`);
+        url.searchParams.forEach((value, key) => {
+          zeroXUrl.searchParams.set(key, value);
+        });
+
+        const zeroXResponse = await fetch(zeroXUrl.toString(), {
+          method: request.method,
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+            "0x-api-key": env.ZEROX_API_KEY,
+            "0x-version": "v2",
+          },
+          body: request.method !== "GET" ? await request.text() : undefined,
+        });
+
+        const text = await zeroXResponse.text();
+        return new Response(text, {
+          status: zeroXResponse.status,
           headers: {
             "Content-Type": "application/json",
             ...corsHeaders(env),

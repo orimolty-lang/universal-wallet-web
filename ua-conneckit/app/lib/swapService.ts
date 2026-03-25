@@ -8,12 +8,10 @@ import { UniversalAccount, CHAIN_ID, SUPPORTED_TOKEN_TYPE } from "@particle-netw
 
 // ============ CONSTANTS ============
 
-// Li.Fi API - use proxy in production to hide API key
-const LIFI_API_BASE = process.env.NEXT_PUBLIC_LIFI_PROXY_URL || "https://li.quest/v1";
-
-// 0x API (backup)
-const ZEROX_API_KEY = process.env.NEXT_PUBLIC_ZEROX_API_KEY || "5673a1cb-0778-485d-9523-b98ee680ab97";
-const ZEROX_BASE_URL = "https://api.0x.org";
+// Unified swap proxy (Li.Fi + 0x) - use worker in production to hide API keys
+const SWAP_PROXY_BASE = process.env.NEXT_PUBLIC_LIFI_PROXY_URL || "https://lifi-proxy.orimolty.workers.dev";
+const LIFI_API_BASE = SWAP_PROXY_BASE;
+const ZEROX_PROXY_BASE = SWAP_PROXY_BASE;
 
 // Relay API (no key needed, rate limited)
 const RELAY_API_BASE = "https://api.relay.link";
@@ -424,23 +422,7 @@ export async function getLifiSwapQuote(
 // ============ 0x API FUNCTIONS (backup) ============
 
 /**
- * Get chain-specific 0x API URL
- */
-function get0xApiUrl(chainId: number): string {
-  const chainUrls: Record<number, string> = {
-    1: "https://api.0x.org",
-    8453: "https://api.0x.org",
-    10: "https://api.0x.org",
-    42161: "https://api.0x.org",
-    137: "https://api.0x.org",
-    56: "https://api.0x.org",
-    43114: "https://api.0x.org",
-  };
-  return chainUrls[chainId] || ZEROX_BASE_URL;
-}
-
-/**
- * Get 0x swap quote for EVM chains
+ * Get 0x swap quote for EVM chains (via proxy worker)
  */
 export async function get0xSwapQuote(
   takerAddress: string,
@@ -451,10 +433,9 @@ export async function get0xSwapQuote(
   slippageBps: number = 100 // 1%
 ): Promise<SwapQuote> {
   try {
-    const baseUrl = get0xApiUrl(chainId);
     const slippagePercent = slippageBps / 10000;
 
-    const url = new URL(`${baseUrl}/swap/allowance-holder/quote`);
+    const url = new URL(`${ZEROX_PROXY_BASE}/0x/swap/allowance-holder/quote`);
     url.searchParams.set("sellToken", sellToken);
     url.searchParams.set("buyToken", buyToken);
     url.searchParams.set("sellAmount", sellAmount);
@@ -463,14 +444,18 @@ export async function get0xSwapQuote(
     url.searchParams.set("slippagePercentage", String(slippagePercent));
     url.searchParams.set("swapFeeRecipient", AFFILIATE_FEE_RECIPIENT);
     url.searchParams.set("swapFeeBps", String(AFFILIATE_FEE_BPS));
-    url.searchParams.set("swapFeeToken", buyToken);
 
-    console.log("[0x] Fetching quote:", url.toString());
-    
+    // Prefer fee in sell token when possible; if selling native, use buy token.
+    const feeToken = sellToken !== NATIVE_ETH ? sellToken : buyToken;
+    if (feeToken !== NATIVE_ETH) {
+      url.searchParams.set("swapFeeToken", feeToken);
+    }
+
+    console.log("[0x] Fetching quote via proxy:", url.toString());
+
     const response = await fetch(url.toString(), {
       headers: {
-        "0x-api-key": ZEROX_API_KEY,
-        "0x-version": "v2",
+        Accept: "application/json",
       },
     });
 
@@ -747,7 +732,7 @@ export async function prepareRelayRoute(params: {
 
 /**
  * Execute swap using Universal Account
- * - EVM tokens: Li.Fi quote (integrator fee); `get0xSwapQuote` exists but is not wired here
+ * - EVM tokens: 0x primary for same-chain swaps; Li.Fi fallback and cross-chain orchestration
  * - Solana tokens: Relay.link (EVM → Solana cross-chain)
  */
 export async function executeSwap(params: SwapParams): Promise<SwapResult> {
@@ -851,9 +836,41 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
         toChain: toTokenChainId 
       });
 
-      // Get Li.Fi quote
-      let quote;
-      try {
+      // 0x first for same-chain EVM swaps, Li.Fi fallback for failures/cross-chain routes
+      let quote: SwapQuote;
+      let quoteSource: "0x" | "lifi" = "lifi";
+
+      const canUse0xPrimary = sourceChainId === toTokenChainId;
+
+      if (canUse0xPrimary) {
+        quoteSource = "0x";
+        quote = await get0xSwapQuote(
+          evmSmartAccount,
+          sellToken,
+          toTokenAddress,
+          sellAmount,
+          sourceChainId,
+          safeSlippageBps
+        );
+
+        console.log("[Swap] 0x quote result:", quote);
+
+        if (!quote.success || !quote.transaction) {
+          console.warn("[Swap] 0x quote failed, falling back to Li.Fi", quote.error);
+          quoteSource = "lifi";
+          quote = await getLifiSwapQuote(
+            evmSmartAccount,
+            sourceChainId,
+            toTokenChainId,
+            sellToken,
+            toTokenAddress,
+            sellAmount,
+            safeSlippageBps
+          );
+          console.log("[Swap] Li.Fi fallback quote result:", quote);
+        }
+      } else {
+        // Cross-chain route requires Li.Fi orchestration
         quote = await getLifiSwapQuote(
           evmSmartAccount,
           sourceChainId,
@@ -863,23 +880,18 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
           sellAmount,
           safeSlippageBps
         );
-      } catch (e) {
-        console.error("[Swap] Li.Fi quote failed:", e);
-        return { success: false, error: "Failed to get swap quote - token may not be supported" };
+        console.log("[Swap] Li.Fi quote result:", quote);
       }
 
-      console.log("[Swap] Li.Fi quote result:", quote);
-
       if (!quote.success) {
-        // Provide user-friendly error
         if (quote.error?.includes("liquidity") || quote.error?.includes("No available")) {
           return { success: false, error: "No liquidity available for this token" };
         }
         return { success: false, error: quote.error || "Token not available for swap" };
       }
-      
+
       if (!quote.transaction) {
-        return { success: false, error: "No swap route found" };
+        return { success: false, error: `No swap route found (${quoteSource})` };
       }
 
       // Build transactions array (approval + swap)
