@@ -303,6 +303,9 @@ interface SwapResult {
   transactionId?: string;
   explorerUrl?: string;
   outputAmount?: string;
+  // Runtime route metric
+  route?: "0x" | "lifi" | "relay";
+  fallbackUsed?: boolean;
   // For wallet signing flow
   transaction?: unknown;
   rootHash?: string;
@@ -732,7 +735,7 @@ export async function prepareRelayRoute(params: {
 
 /**
  * Execute swap using Universal Account
- * - EVM tokens: 0x primary for same-chain swaps; Li.Fi fallback and cross-chain orchestration
+ * - EVM tokens: 0x primary on destination EVM chain; Li.Fi fallback
  * - Solana tokens: Relay.link (EVM → Solana cross-chain)
  */
 export async function executeSwap(params: SwapParams): Promise<SwapResult> {
@@ -812,14 +815,19 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
         transaction: uaTx,
         rootHash: uaTx.rootHash,
         outputAmount: relayResult.outputAmount,
+        route: "relay",
+        fallbackUsed: false,
         requiresSignature: true,
       };
     } else {
       // ========== EVM SWAP VIA LI.FI ==========
       console.log("[Swap] EVM swap via Li.Fi, chain:", toTokenChainId);
       
-      // Determine sell token - always use USDC on Base (UA will aggregate)
-      const sourceChainId = RELAY_CHAIN_IDS.BASE;
+      // Determine sell token on destination EVM chain first (UA can source funds via universal tx)
+      const targetEvmChainId = toTokenChainId;
+      const sourceChainId = USDC_ADDRESSES[targetEvmChainId]
+        ? targetEvmChainId
+        : RELAY_CHAIN_IDS.BASE;
       const sellToken = USDC_ADDRESSES[sourceChainId];
       if (!sellToken) {
         return { success: false, error: "USDC not available" };
@@ -836,41 +844,27 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
         toChain: toTokenChainId 
       });
 
-      // 0x first for same-chain EVM swaps, Li.Fi fallback for failures/cross-chain routes
+      // 0x first for EVM swaps on selected execution chain, Li.Fi fallback on failures
       let quote: SwapQuote;
-      let quoteSource: "0x" | "lifi" = "lifi";
+      let quoteSource: "0x" | "lifi" = "0x";
+      let fallbackUsed = false;
 
-      const canUse0xPrimary = sourceChainId === toTokenChainId;
+      // 0x is primary venue for EVM swaps on the chain where swap executes.
+      quote = await get0xSwapQuote(
+        evmSmartAccount,
+        sellToken,
+        toTokenAddress,
+        sellAmount,
+        sourceChainId,
+        safeSlippageBps
+      );
 
-      if (canUse0xPrimary) {
-        quoteSource = "0x";
-        quote = await get0xSwapQuote(
-          evmSmartAccount,
-          sellToken,
-          toTokenAddress,
-          sellAmount,
-          sourceChainId,
-          safeSlippageBps
-        );
+      console.log("[Swap] 0x quote result:", quote);
 
-        console.log("[Swap] 0x quote result:", quote);
-
-        if (!quote.success || !quote.transaction) {
-          console.warn("[Swap] 0x quote failed, falling back to Li.Fi", quote.error);
-          quoteSource = "lifi";
-          quote = await getLifiSwapQuote(
-            evmSmartAccount,
-            sourceChainId,
-            toTokenChainId,
-            sellToken,
-            toTokenAddress,
-            sellAmount,
-            safeSlippageBps
-          );
-          console.log("[Swap] Li.Fi fallback quote result:", quote);
-        }
-      } else {
-        // Cross-chain route requires Li.Fi orchestration
+      if (!quote.success || !quote.transaction) {
+        console.warn("[Swap] 0x quote failed, falling back to Li.Fi", quote.error);
+        quoteSource = "lifi";
+        fallbackUsed = true;
         quote = await getLifiSwapQuote(
           evmSmartAccount,
           sourceChainId,
@@ -880,7 +874,7 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
           sellAmount,
           safeSlippageBps
         );
-        console.log("[Swap] Li.Fi quote result:", quote);
+        console.log("[Swap] Li.Fi fallback quote result:", quote);
       }
 
       if (!quote.success) {
@@ -925,10 +919,10 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
         },
       ];
 
-      // Always use Base as source chain (UA aggregates from all chains anyway)
-      const uaChainId = CHAIN_ID.BASE_MAINNET;
+      // Execute on the selected EVM source chain (target chain preferred).
+      const uaChainId = sourceChainId as CHAIN_ID;
 
-      console.log("[Swap] Creating UA transaction on chain:", uaChainId);
+      console.log("[Swap] Creating UA transaction on chain:", uaChainId, "route:", quoteSource, "fallback:", fallbackUsed);
 
       // Create UA transaction
       const uaTx = await ua.createUniversalTransaction({
@@ -947,6 +941,8 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
         transaction: uaTx,
         rootHash: uaTx.rootHash,
         outputAmount: quote.outputAmount,
+        route: quoteSource,
+        fallbackUsed,
         requiresSignature: true,
       };
     }
