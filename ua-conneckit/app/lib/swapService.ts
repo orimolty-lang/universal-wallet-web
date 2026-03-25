@@ -17,7 +17,7 @@ const ZEROX_PROXY_BASE = SWAP_PROXY_BASE;
 const RELAY_API_BASE = "https://api.relay.link";
 
 // Affiliate fee
-const AFFILIATE_FEE_RECIPIENT = "0x8Ffb38d9E7D843B6AaC1599Df40f09fa152876eF";
+const AFFILIATE_FEE_RECIPIENT = "0x40D57fdEa9EE39ec5e644E83975Dcbb97eE7De80";
 const AFFILIATE_FEE_BPS = 35; // 0.35%
 
 // Chain IDs
@@ -295,6 +295,7 @@ interface SwapQuote {
     value: string;
   };
   allowanceTarget?: string;
+  raw?: unknown;
 }
 
 interface SwapResult {
@@ -342,6 +343,61 @@ function normalizeSlippagePct(value?: number, fallbackPct: number = 1): number {
   if (!Number.isFinite(value)) return normalizeSlippageBps(fallbackPct * 100, 100);
   const clamped = Math.max(0.1, Math.min(10, Number((value as number).toFixed(2))));
   return normalizeSlippageBps(Math.round(clamped * 100), 100);
+}
+
+function weiToEthString(wei: bigint): string {
+  const base = BigInt("1000000000000000000");
+  const int = wei / base;
+  const frac = (wei % base).toString().padStart(18, "0").replace(/0+$/, "");
+  return frac ? `${int.toString()}.${frac}` : int.toString();
+}
+
+type ZeroXQuoteRaw = {
+  transaction?: { value?: string };
+  totalNetworkFee?: string;
+  fees?: {
+    integratorFee?: { amount?: string };
+    zeroExFee?: { amount?: string };
+  };
+  issues?: {
+    balance?: { token?: string; expected?: string; actual?: string };
+    allowance?: { actual?: string };
+  };
+};
+
+function get0xRequiredNativeWei(raw: unknown): bigint {
+  const q = (raw || {}) as ZeroXQuoteRaw;
+  try {
+    const balanceIssue = q.issues?.balance;
+    const token = String(balanceIssue?.token || "").toLowerCase();
+    if (token === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee") {
+      const expected = BigInt(balanceIssue?.expected || "0");
+      const actual = BigInt(balanceIssue?.actual || "0");
+      if (expected > actual) return expected - actual;
+      return expected;
+    }
+  } catch {
+    // ignore and fallback below
+  }
+
+  const txValue = BigInt(q.transaction?.value || "0");
+  const integratorFee = BigInt(q.fees?.integratorFee?.amount || "0");
+  const zeroExFee = BigInt(q.fees?.zeroExFee?.amount || "0");
+  const networkFee = BigInt(q.totalNetworkFee || "0");
+  return txValue + integratorFee + zeroExFee + networkFee;
+}
+
+function shouldAddApproval(raw: unknown, sellAmount: string): boolean {
+  const q = (raw || {}) as ZeroXQuoteRaw;
+  try {
+    const allowanceIssue = q.issues?.allowance;
+    if (!allowanceIssue) return true;
+    const actual = BigInt(allowanceIssue.actual || "0");
+    const needed = BigInt(sellAmount || "0");
+    return actual < needed;
+  } catch {
+    return true;
+  }
 }
 
 // ============ LI.FI API FUNCTIONS ============
@@ -433,7 +489,8 @@ export async function get0xSwapQuote(
   buyToken: string,
   sellAmount: string, // In base units (wei)
   chainId: number,
-  slippageBps: number = 100 // 1%
+  slippageBps: number = 100, // 1%
+  txOrigin?: string
 ): Promise<SwapQuote> {
   try {
     const slippagePercent = slippageBps / 10000;
@@ -444,6 +501,7 @@ export async function get0xSwapQuote(
     url.searchParams.set("sellAmount", sellAmount);
     url.searchParams.set("chainId", String(chainId));
     url.searchParams.set("taker", takerAddress);
+    url.searchParams.set("txOrigin", txOrigin || takerAddress);
     url.searchParams.set("slippagePercentage", String(slippagePercent));
     url.searchParams.set("swapFeeRecipient", AFFILIATE_FEE_RECIPIENT);
     url.searchParams.set("swapFeeBps", String(AFFILIATE_FEE_BPS));
@@ -488,6 +546,7 @@ export async function get0xSwapQuote(
       estimatedGas: data.gas,
       transaction: data.transaction,
       allowanceTarget: data.allowanceTarget,
+      raw: data,
     };
   } catch (error) {
     console.error("[0x] Error:", error);
@@ -856,7 +915,8 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
         toTokenAddress,
         sellAmount,
         sourceChainId,
-        safeSlippageBps
+        safeSlippageBps,
+        evmSmartAccount
       );
 
       console.log("[Swap] 0x quote result:", quote);
@@ -891,14 +951,17 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
       // Build transactions array (approval + swap)
       const transactions: Array<{ to: string; data: string; value: string }> = [];
 
-      // Add approval if needed (for ERC20, not native ETH)
+      // Add approval if needed (OmniUA parity: check 0x reported allowance issue)
       if (quote.allowanceTarget && sellToken !== NATIVE_ETH) {
-        const approveData = encodeApprove(quote.allowanceTarget, sellAmount);
-        transactions.push({
-          to: sellToken,
-          data: approveData,
-          value: "0",
-        });
+        const needApproval = shouldAddApproval(quote.raw, sellAmount);
+        if (needApproval) {
+          const approveData = encodeApprove(quote.allowanceTarget, sellAmount);
+          transactions.push({
+            to: sellToken,
+            data: approveData,
+            value: "0",
+          });
+        }
       }
 
       // Add swap transaction
@@ -915,9 +978,30 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
           type: tokenType,
           tokenType: tokenType,
           amount: String(amountUsd),
-          chainId: toTokenChainId,
+          chainId: sourceChainId,
         },
       ];
+
+      // OmniUA parity: if 0x indicates native balance requirement, size ETH expect token from quote.
+      if (quoteSource === "0x") {
+        const requiredWeiBase = get0xRequiredNativeWei(quote.raw);
+        if (requiredWeiBase > BigInt(0)) {
+          let requiredWei = (requiredWeiBase * BigInt(112) + BigInt(99)) / BigInt(100); // +12% cushion
+          const roundUnit = BigInt("1000000000000");
+          if (requiredWei % roundUnit !== BigInt(0)) {
+            requiredWei = ((requiredWei / roundUnit) + BigInt(1)) * roundUnit;
+          }
+          const needEth = weiToEthString(requiredWei);
+          if (needEth && needEth !== "0") {
+            expectTokens.splice(0, expectTokens.length, {
+              type: TOKEN_TYPE.ETH,
+              tokenType: TOKEN_TYPE.ETH,
+              amount: needEth,
+              chainId: sourceChainId,
+            });
+          }
+        }
+      }
 
       // Execute on the selected EVM source chain (target chain preferred).
       const uaChainId = sourceChainId as CHAIN_ID;
@@ -1023,7 +1107,7 @@ export async function executeSell(params: SellParams): Promise<SwapResult> {
       };
     }
 
-    // EVM: use Li.Fi (captures integrator fee revenue)
+    // EVM: 0x primary, Li.Fi fallback
     const evmSmartAccount = (await ua.getSmartAccountOptions())?.smartAccountAddress;
     if (!evmSmartAccount) return { success: false, error: "EVM smart account not available" };
 
@@ -1033,17 +1117,35 @@ export async function executeSell(params: SellParams): Promise<SwapResult> {
     const sellAmount = amountRaw || "0";
     if (BigInt(sellAmount) <= BigInt(0)) return { success: false, error: "Invalid sell amount" };
 
-    console.log("[Sell] Li.Fi quote:", { fromToken: tokenAddress, toToken: buyToken, sellAmount, chainId: tokenChainId });
+    let route: "0x" | "lifi" = "0x";
+    let fallbackUsed = false;
 
-    const quote = await getLifiSwapQuote(
+    console.log("[Sell] 0x quote:", { fromToken: tokenAddress, toToken: buyToken, sellAmount, chainId: tokenChainId });
+
+    let quote = await get0xSwapQuote(
       evmSmartAccount,
-      tokenChainId,
-      tokenChainId,
       tokenAddress,
       buyToken,
       sellAmount,
-      safeSlippageBps
+      tokenChainId,
+      safeSlippageBps,
+      evmSmartAccount
     );
+
+    if (!quote.success || !quote.transaction) {
+      route = "lifi";
+      fallbackUsed = true;
+      console.warn("[Sell] 0x failed, using Li.Fi fallback", quote.error);
+      quote = await getLifiSwapQuote(
+        evmSmartAccount,
+        tokenChainId,
+        tokenChainId,
+        tokenAddress,
+        buyToken,
+        sellAmount,
+        safeSlippageBps
+      );
+    }
 
     if (!quote.success) {
       if (quote.error?.includes("liquidity") || quote.error?.includes("No available")) {
@@ -1055,11 +1157,14 @@ export async function executeSell(params: SellParams): Promise<SwapResult> {
 
     const transactions: Array<{ to: string; data: string; value: string }> = [];
     if (quote.allowanceTarget && tokenAddress !== NATIVE_ETH) {
-      transactions.push({
-        to: tokenAddress,
-        data: encodeApprove(quote.allowanceTarget, sellAmount),
-        value: "0",
-      });
+      const needApproval = route === "0x" ? shouldAddApproval(quote.raw, sellAmount) : true;
+      if (needApproval) {
+        transactions.push({
+          to: tokenAddress,
+          data: encodeApprove(quote.allowanceTarget, sellAmount),
+          value: "0",
+        });
+      }
     }
     transactions.push({
       to: quote.transaction.to,
@@ -1067,10 +1172,29 @@ export async function executeSell(params: SellParams): Promise<SwapResult> {
       value: quote.transaction.value || "0",
     });
 
+    const expectTokens: Array<{ type: SUPPORTED_TOKEN_TYPE; tokenType?: SUPPORTED_TOKEN_TYPE; amount: string; chainId: number }> = [];
+    if (route === "0x") {
+      const needWeiBase = get0xRequiredNativeWei(quote.raw);
+      if (needWeiBase > BigInt(0)) {
+        let needWei = (needWeiBase * BigInt(110) + BigInt(99)) / BigInt(100);
+        const roundUnit = BigInt("1000000000000");
+        if (needWei % roundUnit !== BigInt(0)) needWei = ((needWei / roundUnit) + BigInt(1)) * roundUnit;
+        const needEth = weiToEthString(needWei);
+        if (needEth && needEth !== "0") {
+          expectTokens.push({
+            type: TOKEN_TYPE.ETH as SUPPORTED_TOKEN_TYPE,
+            tokenType: TOKEN_TYPE.ETH as SUPPORTED_TOKEN_TYPE,
+            amount: needEth,
+            chainId: tokenChainId,
+          });
+        }
+      }
+    }
+
     const uaTx = await ua.createUniversalTransaction({
       chainId: tokenChainId,
       transactions,
-      expectTokens: [{ type: TOKEN_TYPE.USDC, amount: "0" }],
+      expectTokens,
     });
 
     if (!uaTx?.rootHash) return { success: false, error: "Failed to create UA transaction" };
@@ -1080,6 +1204,8 @@ export async function executeSell(params: SellParams): Promise<SwapResult> {
       transaction: uaTx,
       rootHash: uaTx.rootHash,
       outputAmount: quote.outputAmount,
+      route,
+      fallbackUsed,
       requiresSignature: true,
     };
   } catch (error) {
