@@ -19,6 +19,7 @@ import {
   CHAIN_ID,
   type IAssetsResponse,
   type IUniversalAccountConfig,
+  type ITransaction,
 } from "@particle-network/universal-account-sdk";
 import DepositDialog from "./components/DepositDialog";
 import AssetBreakdownDialog from "./components/AssetBreakdownDialog";
@@ -1231,6 +1232,7 @@ const SendModal = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [txResult, setTxResult] = useState<{ txId: string } | null>(null);
+  const [sendPreview, setSendPreview] = useState<string | null>(null);
 
   // Flatten primary + external rows; symbol from tokenType or Mobula/Particle symbol
   const transferOptions = useMemo(() => {
@@ -1241,6 +1243,7 @@ const SendModal = ({
       chainId: number;
       address: string;
       balance: number;
+      usdValue: number;
       chainLabel: string;
     }> = [];
     for (const a of assets.assets) {
@@ -1261,7 +1264,9 @@ const SendModal = ({
         const chainId = Number(c.token?.chainId);
         const tokenAddr = (c.token?.address || "").trim();
         const bal = typeof c.amount === "string" ? parseFloat(c.amount) : Number(c.amount || 0);
-        if (!Number.isFinite(chainId) || bal < 0.0001) continue;
+        const usdValue = Number((c as { amountInUSD?: number | string }).amountInUSD || 0);
+        // Hide dust/spam rows under $1 from send selection.
+        if (!Number.isFinite(chainId) || bal < 0.0001 || !Number.isFinite(usdValue) || usdValue < 1) continue;
         const addrKey = tokenAddr ? tokenAddr.toLowerCase() : "native";
         const key = `${asset.assetKey ?? sym}|${chainId}|${addrKey}|${i}`;
         out.push({
@@ -1270,6 +1275,7 @@ const SendModal = ({
           chainId,
           address: tokenAddr,
           balance: bal,
+          usdValue,
           chainLabel: CHAIN_ID_TO_NAME_SEND[chainId] || `Chain ${chainId}`,
         });
       }
@@ -1289,6 +1295,44 @@ const SendModal = ({
 
   const selected = transferOptions.find((o) => o.key === selectedOption);
   const canSend = selected && recipient.trim() && amount && parseFloat(amount) > 0 && parseFloat(amount) <= (selected?.balance ?? 0);
+
+  // Transaction preview for send (fees/metadata) before slide confirmation.
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!universalAccount || !selected || !recipient.trim() || !amount || Number(amount) <= 0) {
+        setSendPreview(null);
+        return;
+      }
+      try {
+        const uaChainId = CHAIN_ID_MAP[selected.chainId] ?? selected.chainId;
+        const tokenAddr = selected.address || "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+        const tx = await universalAccount.createTransferTransaction({
+          token: { chainId: uaChainId, address: tokenAddr },
+          amount,
+          receiver: recipient.trim(),
+        });
+        const feeQuote = (tx as { feeQuotes?: Array<{ fees?: { totals?: { feeTokenAmountInUSD?: string; gasFeeTokenAmountInUSD?: string; transactionServiceFeeTokenAmountInUSD?: string; transactionLPFeeTokenAmountInUSD?: string } } }> })?.feeQuotes?.[0];
+        const totals = feeQuote?.fees?.totals;
+        if (totals) {
+          const total = Number(formatUnits(BigInt(totals.feeTokenAmountInUSD || '0'), 18));
+          const gas = Number(formatUnits(BigInt(totals.gasFeeTokenAmountInUSD || '0'), 18));
+          const service = Number(formatUnits(BigInt(totals.transactionServiceFeeTokenAmountInUSD || '0'), 18));
+          const lp = Number(formatUnits(BigInt(totals.transactionLPFeeTokenAmountInUSD || '0'), 18));
+          if (!cancelled) setSendPreview(`Total ~$${total.toFixed(2)} (Gas ~$${gas.toFixed(2)} · Service ~$${service.toFixed(2)} · LP ~$${lp.toFixed(2)})`);
+        } else if (!cancelled) {
+          setSendPreview("Fee preview unavailable");
+        }
+      } catch {
+        if (!cancelled) setSendPreview(null);
+      }
+    };
+    const t = setTimeout(run, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [universalAccount, selected, recipient, amount]);
 
   const handleSend = async () => {
     if (!universalAccount || !primaryWallet || !address || !selected || !canSend) return;
@@ -1408,7 +1452,7 @@ const SendModal = ({
                         </div>
                         <span className="text-sm font-medium">{selected.symbol}</span>
                         <span className="text-gray-500 text-xs">
-                          — {selected.chainLabel} — {selected.balance.toFixed(4)}
+                          {selected.balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 6 })}
                         </span>
                       </>
                     ) : (
@@ -1436,8 +1480,7 @@ const SendModal = ({
                         <div className="flex-1 min-w-0">
                           <div className="text-white text-sm">{o.symbol}</div>
                           <div className="text-gray-500 text-xs">
-                            {o.chainLabel} ·{" "}
-                            {o.balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 6 })}
+                            {o.balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 6 })} · ${o.usdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </div>
                         </div>
                       </button>
@@ -1477,6 +1520,13 @@ const SendModal = ({
                 </button>
               )}
             </div>
+
+            {sendPreview && (
+              <div className="flex justify-between items-center text-xs mb-2 px-1">
+                <span className="text-gray-500">Transaction Preview</span>
+                <span className="text-gray-400">{sendPreview}</span>
+              </div>
+            )}
 
             <SlideToConfirm
               label="Slide to send"
@@ -1549,17 +1599,13 @@ const ConvertModal = ({
   const [estimatedFee, setEstimatedFee] = useState<string | null>(null);
   /** CoinGecko spot USD for majors; preferred over UA primary `price` when converting (UA can lag). */
   const [spotUsdBySymbol, setSpotUsdBySymbol] = useState<Record<string, number>>({});
-  const [debugOpen, setDebugOpen] = useState(false);
-  const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const [previewTx, setPreviewTx] = useState<ITransaction | null>(null);
   const addDebug = useCallback((msg: string) => {
-    const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
-    setDebugLogs(prev => [...prev.slice(-79), line]);
     console.log('[ConvertDebug]', msg);
   }, []);
-  
+
   useEffect(() => {
     if (isOpen && universalAccount) {
-      setDebugLogs([]);
       addDebug('Convert modal opened');
       getEIP7702Deployments(universalAccount).then((d) => {
         if (d) addDebug(`7702 deployments: ${JSON.stringify(d).slice(0, 120)}...`);
@@ -1690,6 +1736,89 @@ const ConvertModal = ({
     }
   }, [amount, fromAsset, toAsset, selectedFromBalance, spotUsdBySymbol, uaToAssetPrice]);
 
+  // Pre-build convert transaction for preview (fees + metadata) before slide confirmation.
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (!universalAccount || !fromAsset || !fromChain || !toAsset || !toChain || !amount) {
+        setPreviewTx(null);
+        setEstimatedFee(null);
+        return;
+      }
+      const amtNum = parseFloat(amount);
+      if (!Number.isFinite(amtNum) || amtNum <= 0 || !selectedFromBalance?.balanceUSD || !selectedFromBalance?.balance) {
+        setPreviewTx(null);
+        setEstimatedFee(null);
+        return;
+      }
+
+      const tokenTypeMap: Record<string, SUPPORTED_TOKEN_TYPE> = {
+        'USDC': SUPPORTED_TOKEN_TYPE.USDC,
+        'USDT': SUPPORTED_TOKEN_TYPE.USDT,
+        'ETH': SUPPORTED_TOKEN_TYPE.ETH,
+        'SOL': SUPPORTED_TOKEN_TYPE.SOL,
+        'BNB': SUPPORTED_TOKEN_TYPE.BNB,
+        'BTC': SUPPORTED_TOKEN_TYPE.BTC,
+      };
+
+      const targetTokenType = tokenTypeMap[toAsset.toUpperCase()];
+      if (!targetTokenType) {
+        setPreviewTx(null);
+        setEstimatedFee(null);
+        return;
+      }
+
+      const usdValue = amtNum * (selectedFromBalance.balanceUSD / selectedFromBalance.balance);
+      const spot = spotPriceForSymbol(spotUsdBySymbol, toAsset);
+      const rate = [SUPPORTED_TOKEN_TYPE.USDC, SUPPORTED_TOKEN_TYPE.USDT].includes(targetTokenType)
+        ? 1
+        : (spot > 0 ? spot : uaToAssetPrice);
+      if (!Number.isFinite(rate) || rate <= 0) {
+        setPreviewTx(null);
+        setEstimatedFee(null);
+        return;
+      }
+      const outputAmount = [SUPPORTED_TOKEN_TYPE.USDC, SUPPORTED_TOKEN_TYPE.USDT].includes(targetTokenType)
+        ? usdValue
+        : (usdValue / rate);
+      if (!Number.isFinite(outputAmount) || outputAmount <= 0) {
+        setPreviewTx(null);
+        setEstimatedFee(null);
+        return;
+      }
+
+      try {
+        const tx = await universalAccount.createConvertTransaction({
+          chainId: toChain,
+          expectToken: { type: targetTokenType, amount: outputAmount.toFixed(8) },
+        });
+        const feeQuote = (tx as { feeQuotes?: Array<{ fees?: { totals?: { feeTokenAmountInUSD?: string; gasFeeTokenAmountInUSD?: string; transactionServiceFeeTokenAmountInUSD?: string; transactionLPFeeTokenAmountInUSD?: string } } }> })?.feeQuotes?.[0];
+        const totals = feeQuote?.fees?.totals;
+        if (totals) {
+          const total = Number(formatUnits(BigInt(totals.feeTokenAmountInUSD || '0'), 18));
+          const gas = Number(formatUnits(BigInt(totals.gasFeeTokenAmountInUSD || '0'), 18));
+          const service = Number(formatUnits(BigInt(totals.transactionServiceFeeTokenAmountInUSD || '0'), 18));
+          const lp = Number(formatUnits(BigInt(totals.transactionLPFeeTokenAmountInUSD || '0'), 18));
+          if (!cancelled) setEstimatedFee(`Total ~$${total.toFixed(2)} (Gas ~$${gas.toFixed(2)} · Service ~$${service.toFixed(2)} · LP ~$${lp.toFixed(2)})`);
+        } else if (!cancelled) {
+          setEstimatedFee(null);
+        }
+        if (!cancelled) setPreviewTx(tx);
+      } catch {
+        if (!cancelled) {
+          setPreviewTx(null);
+          setEstimatedFee(null);
+        }
+      }
+    };
+
+    const t = setTimeout(run, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [universalAccount, fromAsset, fromChain, toAsset, toChain, amount, selectedFromBalance, spotUsdBySymbol, uaToAssetPrice]);
+
   const handleConvert = async () => {
     if (!universalAccount || !fromAsset || !fromChain || !toAsset || !toChain || !amount) {
       setError('Please fill all fields');
@@ -1787,53 +1916,21 @@ const ConvertModal = ({
         ? { usePrimaryTokens: [sourceTokenType] }
         : undefined;
 
-      // Create convert transaction via UA SDK
-      // chainId = destination chain, expectToken = what we want to receive
+      // Use prebuilt preview transaction when available.
       setLoadingStatus('Creating transaction...');
-      const tx = await universalAccount.createConvertTransaction({
+      const tx = previewTx ?? await universalAccount.createConvertTransaction({
         chainId: toChain,
         expectToken: {
           type: targetTokenType,
-          amount: outputAmount.toFixed(8), // Amount in target token units
+          amount: outputAmount.toFixed(8),
         },
       }, tradeConfig);
 
       console.log('[Convert] Transaction created:', tx);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const userOps = (tx as any)?.userOps || [];
+      const userOps = (tx as { userOps?: Array<{ chainId?: number | string; eip7702Delegated?: boolean; eip7702Auth?: { nonce?: number | string } }> })?.userOps || [];
       addDebug(`UA tx created: userOps=${userOps.length}`);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      userOps.forEach((u: any, i: number) => addDebug(`userOp[${i}] chain=${u?.chainId} delegated=${!!u?.eip7702Delegated} hasAuth=${!!u?.eip7702Auth} nonce=${u?.eip7702Auth?.nonce}`));
-      
-      // Extract and display fees from transaction (prefer feeQuotes breakdown)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const feeQuote = (tx as any)?.feeQuotes?.[0];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const totals = feeQuote?.fees?.totals as any;
-      if (totals) {
-        const total = Number(formatUnits(BigInt(totals.feeTokenAmountInUSD || '0'), 18));
-        const gas = Number(formatUnits(BigInt(totals.gasFeeTokenAmountInUSD || '0'), 18));
-        const service = Number(formatUnits(BigInt(totals.transactionServiceFeeTokenAmountInUSD || '0'), 18));
-        const lp = Number(formatUnits(BigInt(totals.transactionLPFeeTokenAmountInUSD || '0'), 18));
-        setEstimatedFee(
-          `Total ~$${total.toFixed(2)} (Gas ~$${gas.toFixed(2)} · Service ~$${service.toFixed(2)} · LP ~$${lp.toFixed(2)})`
-        );
-      } else {
-        // Backward compatibility fallback
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const txFees = (tx as any).transactionFees;
-        if (txFees) {
-          const serviceFee = parseFloat(txFees.transactionServiceFeeAmountInUSD || '0');
-          const lpFee = parseFloat(txFees.transactionLPFeeAmountInUSD || '0');
-          const totalFee = serviceFee + lpFee;
-          if (totalFee > 0) {
-            setEstimatedFee(`~$${totalFee.toFixed(2)}`);
-          } else if (txFees.freeGasFee && txFees.freeServiceFee) {
-            setEstimatedFee('Free');
-          }
-        }
-      }
-      
+      userOps.forEach((u, i) => addDebug(`userOp[${i}] chain=${u?.chainId} delegated=${!!u?.eip7702Delegated} hasAuth=${!!u?.eip7702Auth} nonce=${u?.eip7702Auth?.nonce}`));
+
       if (onTransactionCreated) {
         onTransactionCreated(tx);
       }
@@ -1951,12 +2048,6 @@ const ConvertModal = ({
       <div className="px-5 pb-5">
         <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#252525]">
           <h2 className="text-white text-xl font-bold">Convert</h2>
-          <button
-            onClick={() => setDebugOpen(true)}
-            className="text-xs px-2 py-1 rounded bg-zinc-800 text-gray-300 hover:bg-zinc-700"
-          >
-            Debug
-          </button>
         </div>
 
         {error && (
@@ -2181,21 +2272,7 @@ const ConvertModal = ({
           variant="accent"
         />
 
-        {debugOpen && (
-          <div className="fixed inset-0 z-[120] bg-black/70 flex items-end" onClick={() => setDebugOpen(false)}>
-            <div className="w-full max-h-[75vh] rounded-t-2xl bg-[#1a1a1a] border-t border-[#333] p-3" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-white font-semibold">Convert Debug</div>
-                <button onClick={() => setDebugOpen(false)} className="text-xs px-2 py-1 rounded bg-zinc-800 text-gray-300">Close</button>
-              </div>
-              <div className="text-[11px] text-gray-400 mb-2">Suggested chain ids: Base 8453, OP 10, Arbitrum 42161, Solana 101 (UI) / Relay 792703809</div>
-              <div className="bg-black/40 border border-[#333] rounded p-2 h-[52vh] overflow-auto text-[11px] text-gray-300 space-y-1">
-                {debugLogs.length === 0 ? <div className="text-gray-500">No logs yet.</div> : debugLogs.map((l, i) => <div key={i}>{l}</div>)}
-              </div>
-            </div>
-          </div>
-        )}
-        
+
         {/* Transaction Result - Spinner/Checkmark Animation */}
       </div>
     </BottomSheet>

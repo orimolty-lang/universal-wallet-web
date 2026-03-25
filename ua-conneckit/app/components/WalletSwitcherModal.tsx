@@ -224,7 +224,7 @@ export default function WalletSwitcherModal({ isOpen, onClose, balanceByAddress 
     <BottomSheet isOpen={isOpen} onClose={onClose} dark>
       <div className="px-4 pb-8 max-h-[min(78vh,560px)] overflow-y-auto">
         <h2 className="text-white text-xl font-bold mb-1 text-center pt-1 pb-3 border-b border-[#252525]">
-          Your wallets
+          Wallets
         </h2>
 
         <div className="flex flex-col gap-2 mb-4 mt-3">
@@ -295,17 +295,10 @@ export default function WalletSwitcherModal({ isOpen, onClose, balanceByAddress 
                     <div className="text-gray-500 text-[11px] font-mono truncate">{row.address}</div>
                     {bal?.loading ? (
                       <div className="text-gray-600 text-[10px] mt-1">Loading balances…</div>
-                    ) : bal &&
-                      bal.combinedUsd !== null &&
-                      bal.unifiedUsd !== null &&
-                      bal.externalUsd !== null ? (
-                      <div className="mt-1 space-y-0.5">
+                    ) : bal && bal.combinedUsd !== null ? (
+                      <div className="mt-1">
                         <div className="text-white text-sm font-semibold tabular-nums">
-                          ${bal.combinedUsd.toFixed(2)}
-                          <span className="text-gray-500 font-normal text-[10px] ml-1">total</span>
-                        </div>
-                        <div className="text-gray-500 text-[10px] tabular-nums leading-tight">
-                          Unified ${bal.unifiedUsd.toFixed(2)} · External ${bal.externalUsd.toFixed(2)}
+                          ${bal.combinedUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
                       </div>
                     ) : null}
