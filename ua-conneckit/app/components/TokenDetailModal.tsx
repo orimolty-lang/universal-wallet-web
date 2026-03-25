@@ -1,6 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 import { useEffect, useState, useRef } from "react";
+import ClickerComments from "./ClickerComments";
 
 // Types
 interface TokenContract {
@@ -642,6 +643,22 @@ export const TokenDetailModal = ({
                 )}
               </div>
             </ExpandableSection>
+
+            {/* Clicker Trader Comments — only show for supported chains */}
+            {(primaryContract && ["ethereum", "base", "solana"].includes(normalizeBlockchain(primaryContract.blockchain))) && (
+              <ExpandableSection
+                icon={<span>💬</span>}
+                title="Trader Comments"
+                defaultExpanded={false}
+              >
+                <div className="px-1">
+                  <ClickerComments
+                    tokenAddress={primaryContract?.address}
+                    blockchain={primaryContract?.blockchain}
+                  />
+                </div>
+              </ExpandableSection>
+            )}
 
             {/* Contracts */}
             {token.contracts && token.contracts.length > 0 && (
