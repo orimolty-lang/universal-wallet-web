@@ -293,7 +293,7 @@ export const SwapModal = ({
   const getTokenAddressAndChain = useCallback(() => {
     if (!targetToken) {
       console.log("[SwapModal] No target token");
-      return { address: "", chainId: 8453 };
+      return { address: "", chainId: 0 };
     }
     
     console.log("[SwapModal] getTokenAddressAndChain for:", targetToken.symbol, "contracts:", targetToken.contracts);
@@ -353,7 +353,7 @@ export const SwapModal = ({
             console.log("[SwapModal] Using chainAggregation address:", chainData.token.address);
             return {
               address: chainData.token.address,
-              chainId: chainData.token.chainId || 8453,
+              chainId: chainData.token.chainId || 0,
             };
           }
         }
@@ -361,7 +361,7 @@ export const SwapModal = ({
     }
     
     console.log("[SwapModal] No address found for token:", targetToken.symbol);
-    return { address: "", chainId: 8453 };
+    return { address: "", chainId: 0 };
   }, [targetToken, assetsForTokenLookup]);
 
   // Get wallet for signing
@@ -376,8 +376,8 @@ export const SwapModal = ({
     }
 
     const { address, chainId: targetChainId } = getTokenAddressAndChain();
-    if (!address) {
-      setError("Token address not found");
+    if (!address || !targetChainId) {
+      setError("Token address/chain not found");
       return;
     }
     
@@ -394,7 +394,7 @@ export const SwapModal = ({
         // BUY: USD → Token
         result = await executeSwap({
           ua: universalAccount,
-          fromToken: "USDC",
+          fromToken: "ETH",
           toTokenAddress: address,
           toTokenChainId: targetChainId,
           amountUsd: amountUsd,

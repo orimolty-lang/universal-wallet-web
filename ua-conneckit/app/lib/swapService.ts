@@ -478,7 +478,42 @@ export async function getLifiSwapQuote(
   }
 }
 
-// ============ 0x API FUNCTIONS (backup) ============
+// ============ 0x API FUNCTIONS (primary EVM venue) ============
+
+/**
+ * Convert USD notional to native sell amount by quoting USDC -> native on the same chain.
+ */
+async function getNativeSellAmountForUsd(
+  takerAddress: string,
+  chainId: number,
+  amountUsd: number,
+  slippageBps: number
+): Promise<{ success: boolean; sellAmountWei?: string; error?: string }> {
+  const usdc = USDC_ADDRESSES[chainId];
+  if (!usdc) return { success: false, error: `USDC not configured for chain ${chainId}` };
+
+  const usdcAmount = String(Math.floor(amountUsd * 1e6));
+  if (Number(usdcAmount) <= 0) return { success: false, error: "Invalid USD amount" };
+
+  const quote = await get0xSwapQuote(
+    takerAddress,
+    usdc,
+    NATIVE_ETH,
+    usdcAmount,
+    chainId,
+    slippageBps,
+    takerAddress
+  );
+
+  if (!quote.success || !quote.outputAmount) {
+    return { success: false, error: quote.error || "Failed to derive native amount" };
+  }
+
+  // Add small cushion to reduce under-sizing risk.
+  let nativeWei = BigInt(quote.outputAmount);
+  nativeWei = (nativeWei * BigInt(102) + BigInt(99)) / BigInt(100);
+  return { success: true, sellAmountWei: nativeWei.toString() };
+}
 
 /**
  * Get 0x swap quote for EVM chains (via proxy worker)
@@ -882,18 +917,24 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
       // ========== EVM SWAP VIA LI.FI ==========
       console.log("[Swap] EVM swap via Li.Fi, chain:", toTokenChainId);
       
-      // Determine sell token on destination EVM chain first (UA can source funds via universal tx)
-      const targetEvmChainId = toTokenChainId;
-      const sourceChainId = USDC_ADDRESSES[targetEvmChainId]
-        ? targetEvmChainId
-        : RELAY_CHAIN_IDS.BASE;
-      const sellToken = USDC_ADDRESSES[sourceChainId];
-      if (!sellToken) {
-        return { success: false, error: "USDC not available" };
+      // Execute on destination EVM chain (strict; no Base fallback)
+      const sourceChainId = toTokenChainId;
+      if (!USDC_ADDRESSES[sourceChainId]) {
+        return { success: false, error: `Unsupported chain for swap: ${sourceChainId}` };
       }
 
-      // Convert USD to USDC units (6 decimals)
-      const sellAmount = String(Math.floor(amountUsd * 1e6));
+      // Native-per-chain funding model: derive native sell amount from USD notional.
+      const sellToken = NATIVE_ETH;
+      const nativeSizing = await getNativeSellAmountForUsd(
+        evmSmartAccount,
+        sourceChainId,
+        amountUsd,
+        safeSlippageBps
+      );
+      if (!nativeSizing.success || !nativeSizing.sellAmountWei) {
+        return { success: false, error: nativeSizing.error || "Failed to size native sell amount" };
+      }
+      const sellAmount = nativeSizing.sellAmountWei;
       
       console.log("[Swap] Quote params:", { 
         sellToken, 
@@ -1066,7 +1107,7 @@ export function getChainIdFromBlockchain(blockchain: string): number {
     avalanche: 43114,
     solana: 101,
   };
-  return mapping[blockchain.toLowerCase()] || 8453; // Default to Base
+  return mapping[blockchain.toLowerCase()] || 0;
 }
 
 /**
