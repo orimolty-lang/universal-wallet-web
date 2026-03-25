@@ -48,6 +48,7 @@ import {
 } from "./lib/mobulaAssetIdentity";
 import { fetchWalletPortfolioSnapshot } from "./lib/fetchWalletPortfolioSnapshot";
 import type { WalletSwitcherBalanceEntry } from "./components/WalletSwitcherModal";
+import { fetchMajorSpotUsdPrices, spotPriceForSymbol } from "../lib/spotUsdPrices";
 
 // Mobula: proxied via Cloudflare worker (no frontend API key)
 const MOBULA_PROXY_BASE = process.env.NEXT_PUBLIC_LIFI_PROXY_URL || "https://lifi-proxy.orimolty.workers.dev";
@@ -1546,6 +1547,8 @@ const ConvertModal = ({
   const [estimatedOutput, setEstimatedOutput] = useState<string | null>(null);
   const [loadingStatus, setLoadingStatus] = useState<string>('');
   const [estimatedFee, setEstimatedFee] = useState<string | null>(null);
+  /** CoinGecko spot USD for majors; preferred over UA primary `price` when converting (UA can lag). */
+  const [spotUsdBySymbol, setSpotUsdBySymbol] = useState<Record<string, number>>({});
   const [debugOpen, setDebugOpen] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const addDebug = useCallback((msg: string) => {
@@ -1563,6 +1566,17 @@ const ConvertModal = ({
       });
     }
   }, [isOpen, addDebug, universalAccount]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    fetchMajorSpotUsdPrices().then((m) => {
+      if (!cancelled && Object.keys(m).length > 0) setSpotUsdBySymbol(m);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
 
   // Dropdown visibility states
   const [fromAssetOpen, setFromAssetOpen] = useState(false);
@@ -1641,7 +1655,14 @@ const ConvertModal = ({
     setToChain(null);
   }, [toAsset]);
 
-  // Estimate output (simplified - same amount for stablecoins, rough rate for others)
+  const uaToAssetPrice = useMemo(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const a = uaAssets.find((x: any) => (x.tokenType || "").toLowerCase() === toAsset.toLowerCase());
+    const p = Number((a as { price?: number } | undefined)?.price || 0);
+    return Number.isFinite(p) && p > 0 ? p : 0;
+  }, [uaAssets, toAsset]);
+
+  // Estimate output: USD from source leg; target rate = CoinGecko spot (majors) else UA primary price.
   useEffect(() => {
     if (!amount || !fromAsset || !toAsset) {
       setEstimatedOutput(null);
@@ -1652,24 +1673,22 @@ const ConvertModal = ({
       setEstimatedOutput(null);
       return;
     }
-    // For simplicity, use USD value - in production, get actual quote from UA SDK
     if (selectedFromBalance?.balanceUSD && amtNum > 0) {
       const pricePerUnit = selectedFromBalance.balanceUSD / selectedFromBalance.balance;
       const usdValue = amtNum * pricePerUnit;
-      // Rough conversion - in production, call getTokenPair for actual rates
-      if (['USDC', 'USDT'].includes(toAsset)) {
+      if (["USDC", "USDT"].includes(toAsset)) {
         setEstimatedOutput(`~${usdValue.toFixed(2)} ${toAsset}`);
-      } else if (toAsset === 'ETH') {
-        setEstimatedOutput(`~${(usdValue / 3500).toFixed(6)} ${toAsset}`); // Rough ETH price
-      } else if (toAsset === 'SOL') {
-        setEstimatedOutput(`~${(usdValue / 150).toFixed(4)} ${toAsset}`); // Rough SOL price
-      } else if (toAsset === 'BNB') {
-        setEstimatedOutput(`~${(usdValue / 600).toFixed(4)} ${toAsset}`); // Rough BNB price
+        return;
+      }
+      const spot = spotPriceForSymbol(spotUsdBySymbol, toAsset);
+      const rate = spot > 0 ? spot : uaToAssetPrice;
+      if (rate > 0) {
+        setEstimatedOutput(`~${(usdValue / rate).toFixed(toAsset === "ETH" ? 6 : 4)} ${toAsset}`);
       } else {
         setEstimatedOutput(`~$${usdValue.toFixed(2)} worth`);
       }
     }
-  }, [amount, fromAsset, toAsset, selectedFromBalance]);
+  }, [amount, fromAsset, toAsset, selectedFromBalance, spotUsdBySymbol, uaToAssetPrice]);
 
   const handleConvert = async () => {
     if (!universalAccount || !fromAsset || !fromChain || !toAsset || !toChain || !amount) {
@@ -1682,6 +1701,8 @@ const ConvertModal = ({
     addDebug(`Input from=${fromAsset}@${fromChain} to=${toAsset}@${toChain} amount=${amount}`);
 
     try {
+      const spotMap = { ...spotUsdBySymbol, ...(await fetchMajorSpotUsdPrices()) };
+
       // Calculate the amount in the target token
       // For simplicity, use USD value and estimate
       const amtNum = parseFloat(amount);
@@ -1745,19 +1766,15 @@ const ConvertModal = ({
       } else {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const freshToAsset = freshAssets?.assets?.find((a: any) => a.tokenType === toAsset.toLowerCase()) as any;
-        const targetPrice = Number(freshToAsset?.price || 0);
+        const targetPriceUa = Number(freshToAsset?.price || 0);
+        const targetPriceSpot = spotPriceForSymbol(spotMap, toAsset);
+        const targetPrice = targetPriceSpot > 0 ? targetPriceSpot : targetPriceUa;
         if (targetPrice > 0) {
           outputAmount = usdValue / targetPrice;
-        } else if (targetTokenType === SUPPORTED_TOKEN_TYPE.ETH) {
-          outputAmount = usdValue / 3500;
-        } else if (targetTokenType === SUPPORTED_TOKEN_TYPE.SOL) {
-          outputAmount = usdValue / 150;
-        } else if (targetTokenType === SUPPORTED_TOKEN_TYPE.BNB) {
-          outputAmount = usdValue / 600;
-        } else if (targetTokenType === SUPPORTED_TOKEN_TYPE.BTC) {
-          outputAmount = usdValue / 95000;
         } else {
-          outputAmount = usdValue;
+          throw new Error(
+            `No live USD price for ${toAsset}. Open Convert again to refresh, or try again in a moment.`,
+          );
         }
       }
       if (!Number.isFinite(outputAmount) || outputAmount <= 0) {
