@@ -2,7 +2,7 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type { IAssetsResponse, UniversalAccount } from "@particle-network/universal-account-sdk";
-import { executeSwap, executeSell, getChainIdFromBlockchain, pollTransactionDetails } from "../lib/swapService";
+import { executeSwap, executeSell, getSellQuotePreview, getChainIdFromBlockchain, pollTransactionDetails } from "../lib/swapService";
 import { mergedAssetMatchesContractKeys, tokenContractKeySet } from "../lib/mobulaAssetIdentity";
 import { useWallets, useSign7702AuthorizationCompat } from "@/app/lib/connectkit-compat";
 import { getUserOpsFromTx, handleEIP7702Authorizations } from "@/lib/eip7702";
@@ -129,6 +129,8 @@ export const SwapModal = ({
   const [customSlippageInput, setCustomSlippageInput] = useState<string>(DEFAULT_SLIPPAGE_PCT.toString());
   const [showPayloadDebug, setShowPayloadDebug] = useState(false);
   const [payloadDebug, setPayloadDebug] = useState<Record<string, unknown> | null>(null);
+  const [sellQuoteUsd, setSellQuoteUsd] = useState<number | null>(null);
+  const [sellQuoteStatus, setSellQuoteStatus] = useState<"idle" | "loading" | "error">("idle");
 
   /** Buy cap: primary UA unified USD (sum amountInUSD), not combined Mobula total. */
   const unifiedUaBuyBalance = useMemo(() => {
@@ -184,6 +186,8 @@ export const SwapModal = ({
       setShowSlippageSettings(false);
       setShowPayloadDebug(false);
       setPayloadDebug(null);
+      setSellQuoteUsd(null);
+      setSellQuoteStatus("idle");
     }
   }, [isOpen]);
 
@@ -214,6 +218,87 @@ export const SwapModal = ({
   }, [assetsForTokenLookup, targetToken]);
 
   const tokenBalance = getTokenBalance();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      if (!isOpen || !universalAccount || direction !== "sell") {
+        setSellQuoteStatus("idle");
+        setSellQuoteUsd(null);
+        return;
+      }
+
+      let address = "";
+      let targetChainId = 0;
+      if (targetToken?.address && targetToken?.chainId) {
+        address = targetToken.address;
+        targetChainId = targetToken.chainId;
+      } else if (targetToken?.contracts?.length) {
+        const pref = targetToken.contracts.find((c) => c.blockchain.toLowerCase() === "base") || targetToken.contracts[0];
+        if (pref) {
+          address = pref.address;
+          targetChainId = getChainIdFromBlockchain(pref.blockchain);
+        }
+      }
+
+      if (!address || !targetChainId || tokenBalance <= 0 || sliderValue <= 0) {
+        setSellQuoteStatus("idle");
+        setSellQuoteUsd(null);
+        return;
+      }
+
+      const isSolanaToken = targetChainId === 101;
+      const rawDecimals = targetToken?.decimals || (isSolanaToken ? 9 : 18);
+      const decimals = isSolanaToken ? Math.min(rawDecimals, 9) : rawDecimals;
+      const tokenAmountToSell = Math.min(Math.max(0, tokenBalance * sliderValue / 100), tokenBalance);
+      const amountRaw = humanToRawUnits(tokenAmountToSell, decimals).toString();
+
+      if (!amountRaw || BigInt(amountRaw) <= BigInt(0)) {
+        setSellQuoteStatus("idle");
+        setSellQuoteUsd(null);
+        return;
+      }
+
+      setSellQuoteStatus("loading");
+      const quote = await getSellQuotePreview({
+        ua: universalAccount,
+        tokenAddress: address,
+        tokenChainId: targetChainId,
+        amountRaw,
+        slippagePct,
+      });
+
+      if (cancelled) return;
+
+      if (!quote.success || !quote.outputAmount) {
+        setSellQuoteStatus("error");
+        setSellQuoteUsd(null);
+        return;
+      }
+
+      const asNum = Number(quote.outputAmount) / 1e6;
+      setSellQuoteUsd(Number.isFinite(asNum) ? asNum : null);
+      setSellQuoteStatus("idle");
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isOpen,
+    universalAccount,
+    direction,
+    tokenBalance,
+    sliderValue,
+    slippagePct,
+    targetToken?.decimals,
+    targetToken?.address,
+    targetToken?.chainId,
+    targetToken?.contracts,
+  ]);
 
   // Update amount based on slider - ONLY when user drags slider, not when typing
   useEffect(() => {
@@ -372,6 +457,13 @@ export const SwapModal = ({
   const [primaryWallet] = useWallets();
   const sign7702 = useSign7702AuthorizationCompat();
 
+  const sellTokenHuman =
+    direction === "sell" && (targetToken?.price || 0) > 0
+      ? Math.min(Math.max(0, amountNum / (targetToken?.price || 1)), tokenBalance)
+      : tokenBalance * sliderValue / 100;
+
+  const sellUsdPreview = sellQuoteUsd ?? (amountNum * Math.max(0, 1 - slippagePct / 100));
+
   // Handle swap execution (buy or sell based on direction)
   const handleSwap = async () => {
     if (!targetToken || amountNum <= 0 || !universalAccount) {
@@ -418,9 +510,7 @@ export const SwapModal = ({
         const isSolanaToken = targetChainId === 101;
         const rawDecimals = targetToken.decimals || (isSolanaToken ? 9 : 18);
         const decimals = isSolanaToken ? Math.min(rawDecimals, 9) : rawDecimals;
-        const price = targetToken.price || 0;
-        const tokenAmountToSell =
-          price > 0 ? Math.min(Math.max(0, amountNum / price), tokenBalance) : 0;
+        const tokenAmountToSell = Math.min(Math.max(0, sellTokenHuman), tokenBalance);
         if (tokenAmountToSell <= 0) {
           setError("Invalid sell amount");
           setIsLoading(false);
@@ -601,11 +691,6 @@ export const SwapModal = ({
     }
   };
 
-  const sellTokenHuman =
-    direction === "sell" && (targetToken?.price || 0) > 0
-      ? Math.min(Math.max(0, amountNum / (targetToken?.price || 1)), tokenBalance)
-      : tokenBalance * sliderValue / 100;
-  const sellUsdPreview = amountNum * Math.max(0, 1 - slippagePct / 100);
 
   const hasInsufficientBalance = direction === "buy" ? amountNum > totalBalance : tokenBalance <= 0;
   const canSwap =
@@ -738,6 +823,13 @@ export const SwapModal = ({
                         <div className="flex items-center gap-1">
                           <span className="text-gray-400 text-2xl">$</span>
                           <span className="text-white text-3xl font-bold">{sellUsdPreview.toFixed(2)}</span>
+                        </div>
+                        <div className="text-[11px] text-gray-500 mt-1">
+                          {sellQuoteStatus === "loading"
+                            ? "0x quote…"
+                            : sellQuoteStatus === "error"
+                              ? "0x quote unavailable"
+                              : "0x quote"}
                         </div>
                       </>
                     )}

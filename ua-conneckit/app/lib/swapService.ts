@@ -332,6 +332,12 @@ interface SellParams {
   slippagePct?: number;
 }
 
+export interface SellQuotePreview {
+  success: boolean;
+  outputAmount?: string; // USDC raw units output as decimal string when available
+  error?: string;
+}
+
 function normalizeSlippageBps(value?: number, fallback: number = 100): number {
   if (!Number.isFinite(value)) return fallback;
   const rounded = Math.round(value as number);
@@ -1136,6 +1142,55 @@ export function getChainIdFromBlockchain(blockchain: string): number {
 /**
  * Execute SELL via Li.Fi (EVM) for integrator fee revenue, or UA createSellTransaction (Solana fallback)
  */
+export async function getSellQuotePreview(params: {
+  ua: UniversalAccount;
+  tokenAddress: string;
+  tokenChainId: number;
+  amountRaw: string;
+  slippagePct?: number;
+}): Promise<SellQuotePreview> {
+  const { ua, tokenAddress, tokenChainId, amountRaw, slippagePct = 1 } = params;
+  const safeSlippageBps = normalizeSlippagePct(slippagePct, 1);
+
+  try {
+    const isSolana = tokenChainId === 101 || tokenChainId === RELAY_CHAIN_IDS.SOLANA;
+    if (isSolana) {
+      return { success: false, error: "Preview quote currently supports EVM via 0x" };
+    }
+
+    const evmSmartAccount = (await ua.getSmartAccountOptions())?.smartAccountAddress;
+    if (!evmSmartAccount) return { success: false, error: "EVM smart account not available" };
+
+    const buyToken = USDC_ADDRESSES[tokenChainId];
+    if (!buyToken) return { success: false, error: "USDC not available on this chain" };
+
+    const sellAmount = amountRaw || "0";
+    if (BigInt(sellAmount) <= BigInt(0)) return { success: false, error: "Invalid sell amount" };
+
+    // Source of truth for preview: 0x quote.
+    const quote = await get0xSwapQuote(
+      evmSmartAccount,
+      tokenAddress,
+      buyToken,
+      sellAmount,
+      tokenChainId,
+      safeSlippageBps,
+      evmSmartAccount
+    );
+
+    if (!quote.success || !quote.outputAmount) {
+      return { success: false, error: quote.error || "No 0x quote" };
+    }
+
+    return { success: true, outputAmount: quote.outputAmount };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to fetch quote",
+    };
+  }
+}
+
 export async function executeSell(params: SellParams): Promise<SwapResult> {
   const { ua, tokenAddress, tokenChainId, amountRaw, amount, tokenDecimals, slippagePct = 1 } = params;
   const safeSlippageBps = normalizeSlippagePct(slippagePct, 1);
