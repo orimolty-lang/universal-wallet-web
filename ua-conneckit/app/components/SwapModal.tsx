@@ -127,6 +127,8 @@ export const SwapModal = ({
   const [showSlippageSettings, setShowSlippageSettings] = useState(false);
   const [slippagePct, setSlippagePct] = useState<number>(DEFAULT_SLIPPAGE_PCT);
   const [customSlippageInput, setCustomSlippageInput] = useState<string>(DEFAULT_SLIPPAGE_PCT.toString());
+  const [showPayloadDebug, setShowPayloadDebug] = useState(false);
+  const [payloadDebug, setPayloadDebug] = useState<Record<string, unknown> | null>(null);
 
   /** Buy cap: primary UA unified USD (sum amountInUSD), not combined Mobula total. */
   const unifiedUaBuyBalance = useMemo(() => {
@@ -180,6 +182,8 @@ export const SwapModal = ({
       setDirection("buy"); // Default to buy mode
       setIsTyping(false); // Reset typing state
       setShowSlippageSettings(false);
+      setShowPayloadDebug(false);
+      setPayloadDebug(null);
     }
   }, [isOpen]);
 
@@ -389,7 +393,16 @@ export const SwapModal = ({
     
     try {
       let result;
-      
+      const debugRequest: Record<string, unknown> = {
+        direction,
+        token: targetToken?.symbol,
+        targetTokenAddress: address,
+        targetChainId,
+        amountUsd,
+        slippagePct,
+        slippageBps,
+      };
+
       if (direction === "buy") {
         // BUY: USD → Token
         result = await executeSwap({
@@ -423,6 +436,12 @@ export const SwapModal = ({
         const amountRaw = wantRaw.toString();
 
         console.log("[Sell] Amount calc:", { tokenAmountToSell, decimals, amountRaw, chainId: targetChainId });
+        debugRequest.sell = {
+          tokenAmountToSell,
+          tokenDecimals: decimals,
+          amountRaw,
+          sliderValue,
+        };
 
         result = await executeSell({
           ua: universalAccount,
@@ -434,6 +453,21 @@ export const SwapModal = ({
           slippagePct,
         });
       }
+
+      const resultView = result as unknown as Record<string, unknown>;
+      setPayloadDebug({
+        request: debugRequest,
+        result: {
+          success: result.success,
+          error: result.error,
+          route: resultView?.route,
+          fallbackUsed: resultView?.fallbackUsed,
+          requiresSignature: resultView?.requiresSignature,
+          rootHash: result.rootHash,
+          transactionId: result.transactionId,
+          transaction: resultView?.transaction,
+        },
+      });
 
       if (!result.success) {
         setError(result.error || "Failed to prepare swap");
@@ -556,6 +590,10 @@ export const SwapModal = ({
       }
     } catch (err) {
       console.error("Swap error:", err);
+      setPayloadDebug((prev) => ({
+        ...(prev || {}),
+        exception: err instanceof Error ? { message: err.message, stack: err.stack } : { value: String(err) },
+      }));
       setError(err instanceof Error ? err.message : "Swap failed");
     } finally {
       setIsLoading(false);
@@ -598,18 +636,27 @@ export const SwapModal = ({
             <span className="text-lg">✕</span>
           </button>
           <span className="text-white font-bold text-lg">Swap</span>
-          <button
-            onClick={() => setShowSlippageSettings((prev) => !prev)}
-            className={`w-10 h-10 rounded-full flex items-center justify-center ${
-              showSlippageSettings ? "bg-accent-dynamic/30 border border-accent-dynamic/50" : "bg-gray-800"
-            }`}
-            title="Swap settings"
-          >
-            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-            </svg>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowPayloadDebug(true)}
+              className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center"
+              title="Payload debug"
+            >
+              <span className="text-gray-300 text-sm font-bold">{"{}"}</span>
+            </button>
+            <button
+              onClick={() => setShowSlippageSettings((prev) => !prev)}
+              className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                showSlippageSettings ? "bg-accent-dynamic/30 border border-accent-dynamic/50" : "bg-gray-800"
+              }`}
+              title="Swap settings"
+            >
+              <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+              </svg>
+            </button>
+          </div>
         </div>
 
         <>
@@ -859,6 +906,42 @@ export const SwapModal = ({
             <p className="text-[11px] text-gray-500">
               Applied to Li.Fi quotes for buy and sell.
             </p>
+          </div>
+        </>
+      )}
+
+      {showPayloadDebug && (
+        <>
+          <div
+            className="fixed inset-0 z-[100] bg-black/80"
+            onClick={() => setShowPayloadDebug(false)}
+            aria-hidden
+          />
+          <div
+            className="fixed left-4 right-4 top-[10%] z-[101] max-h-[78vh] overflow-y-auto rounded-2xl border border-white/15 bg-[#101010] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.85)]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="swap-payload-debug-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h3 id="swap-payload-debug-title" className="text-white font-semibold text-lg">
+                Swap Payload Debug
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowPayloadDebug(false)}
+                className="rounded-full bg-white/10 px-3 py-1 text-sm text-gray-200"
+              >
+                Close
+              </button>
+            </div>
+            <p className="text-[11px] text-gray-500 mb-2">
+              Latest request/result payload captured from this modal.
+            </p>
+            <pre className="text-[11px] text-gray-300 whitespace-pre-wrap break-all bg-black/40 border border-white/10 rounded-lg p-3">
+              {JSON.stringify(payloadDebug || { info: "No swap payload yet in this session." }, null, 2)}
+            </pre>
           </div>
         </>
       )}

@@ -1025,7 +1025,8 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
         value: quote.transaction.value || "0",
       });
 
-      // Build expectTokens for UA balance aggregation (primary funding token first).
+      // Build expectTokens for UA balance aggregation.
+      // Keep funding token expectation, but prefer native ETH for fees on buy flow.
       const tokenType = fromToken === "ETH" ? TOKEN_TYPE.ETH : TOKEN_TYPE.USDC;
       const fundingAmount = tokenType === TOKEN_TYPE.USDC
         ? String(Math.floor(Math.max(0, amountUsd) * 1e6) / 1e6)
@@ -1050,13 +1051,18 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
           }
           const needEth = weiToEthString(requiredWei);
           if (needEth && needEth !== "0") {
-            // Keep primary funding expectation (e.g. USDC) and add ETH only as supplemental requirement.
-            expectTokens.push({
+            // Prefer native token for swap fees on 0x buy path.
+            // Put ETH first so UA fee abstraction chooses native fee token when available.
+            const nativeFeeToken = {
               type: TOKEN_TYPE.ETH,
               tokenType: TOKEN_TYPE.ETH,
               amount: needEth,
               chainId: sourceChainId,
-            });
+            };
+            const alreadyEth = expectTokens.some((t) => t.type === TOKEN_TYPE.ETH);
+            if (!alreadyEth) {
+              expectTokens.unshift(nativeFeeToken);
+            }
           }
         }
       }
