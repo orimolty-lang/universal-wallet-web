@@ -2839,74 +2839,115 @@ const PerpsModal = ({
     '1m': 60 * 1 * 24,
   };
 
-  const resolveTvSymbol = useCallback(async (pairName: string): Promise<string | null> => {
-    const prefixes = ['Crypto.', 'Forex.', 'Metal.', 'Commodities.', 'Equity.', ''];
-    for (const p of prefixes) {
-      const candidate = `${p}${pairName}`;
+  const resolveTvSymbols = useCallback(async (pairName: string): Promise<string[]> => {
+    const base = (pairName.split('/')[0] || pairName).toUpperCase();
+    const candidates = [
+      `${base}USD`,
+      `Crypto.${base}/USD`,
+      `Forex.${base}/USD`,
+      `Metal.${base}/USD`,
+      `Commodities.${base}/USD`,
+      `Equity.${base}/USD`,
+      pairName,
+      `Crypto.${pairName}`,
+    ];
+
+    const out: string[] = [];
+    for (const candidate of candidates) {
       try {
         const r = await fetch(`${TV_BASE}/symbols?symbol=${encodeURIComponent(candidate)}`);
         if (!r.ok) continue;
         const j = await r.json() as { s?: string; ticker?: string; name?: string };
         if (j?.s === 'error') continue;
-        if (j?.ticker) return j.ticker;
-        if (j?.name) return candidate;
+        const resolved = j?.ticker || (j?.name ? candidate : '');
+        if (resolved && !out.includes(resolved)) out.push(resolved);
       } catch {
         // continue
       }
     }
-    return null;
-  }, []);
+
+    // Search fallback for stubborn symbols.
+    try {
+      const s = await fetch(`${TV_BASE}/search?query=${encodeURIComponent(base)}&type=&exchange=&limit=20`);
+      if (s.ok) {
+        const arr = await s.json() as Array<{ symbol?: string; full_name?: string; ticker?: string }>;
+        for (const row of arr || []) {
+          const v = row?.ticker || row?.full_name || row?.symbol;
+          if (!v) continue;
+          if (String(v).toUpperCase().includes(base) && String(v).includes('USD') && !out.includes(v)) out.push(v);
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return out;
+  }, [TV_BASE]);
 
   const fetchPerpsHistory = useCallback(async (pairName: string, tf: '1D'|'12H'|'4H'|'1H'|'15m'|'5m'|'1m') => {
     setPerpsChartLoading(true);
     try {
-      const symbol = await resolveTvSymbol(pairName);
-      if (!symbol) {
+      const symbols = await resolveTvSymbols(pairName);
+      if (!symbols.length) {
         setPerpsChart([]);
         return;
       }
       const now = Math.floor(Date.now() / 1000);
       const from = now - tfToLookbackSec[tf];
       const res = tfToResolution[tf];
-      const url = `${TV_BASE}/history?symbol=${encodeURIComponent(symbol)}&resolution=${encodeURIComponent(res)}&from=${from}&to=${now}`;
-      const r = await fetch(url);
-      if (!r.ok) {
-        setPerpsChart([]);
-        return;
+
+      for (const symbol of symbols) {
+        try {
+          const url = `${TV_BASE}/history?symbol=${encodeURIComponent(symbol)}&resolution=${encodeURIComponent(res)}&from=${from}&to=${now}`;
+          const r = await fetch(url);
+          if (!r.ok) continue;
+          const j = await r.json() as { s?: string; t?: number[]; o?: number[]; h?: number[]; l?: number[]; c?: number[] };
+          if (j?.s !== 'ok' || !Array.isArray(j.t) || !Array.isArray(j.o) || !Array.isArray(j.h) || !Array.isArray(j.l) || !Array.isArray(j.c)) continue;
+          const points = j.t.map((t, i) => ({
+            t: t * 1000,
+            o: Number(j.o?.[i] ?? 0),
+            h: Number(j.h?.[i] ?? 0),
+            l: Number(j.l?.[i] ?? 0),
+            c: Number(j.c?.[i] ?? 0),
+          })).filter((p) => Number.isFinite(p.o) && Number.isFinite(p.h) && Number.isFinite(p.l) && Number.isFinite(p.c) && p.c > 0 && p.h > 0 && p.l > 0);
+          if (points.length >= 2) {
+            setPerpsChart(points.slice(-220));
+            return;
+          }
+        } catch {
+          // try next symbol
+        }
       }
-      const j = await r.json() as { s?: string; t?: number[]; o?: number[]; h?: number[]; l?: number[]; c?: number[] };
-      if (j?.s !== 'ok' || !Array.isArray(j.t) || !Array.isArray(j.o) || !Array.isArray(j.h) || !Array.isArray(j.l) || !Array.isArray(j.c)) {
-        setPerpsChart([]);
-        return;
-      }
-      const points = j.t.map((t, i) => ({
-        t: t * 1000,
-        o: Number(j.o?.[i] ?? 0),
-        h: Number(j.h?.[i] ?? 0),
-        l: Number(j.l?.[i] ?? 0),
-        c: Number(j.c?.[i] ?? 0),
-      })).filter((p) => Number.isFinite(p.o) && Number.isFinite(p.h) && Number.isFinite(p.l) && Number.isFinite(p.c) && p.c > 0 && p.h > 0 && p.l > 0);
-      setPerpsChart(points.slice(-220));
+
+      setPerpsChart([]);
     } finally {
       setPerpsChartLoading(false);
     }
-  }, [resolveTvSymbol]);
+  }, [TV_BASE, resolveTvSymbols, tfToLookbackSec, tfToResolution]);
 
   const fetchPair24hChange = useCallback(async (pairName: string): Promise<number | null> => {
-    const symbol = await resolveTvSymbol(pairName);
-    if (!symbol) return null;
+    const symbols = await resolveTvSymbols(pairName);
+    if (!symbols.length) return null;
     const now = Math.floor(Date.now() / 1000);
     const from = now - (3 * 24 * 60 * 60);
-    const url = `${TV_BASE}/history?symbol=${encodeURIComponent(symbol)}&resolution=1D&from=${from}&to=${now}`;
-    const r = await fetch(url);
-    if (!r.ok) return null;
-    const j = await r.json() as { s?: string; c?: number[] };
-    if (j?.s !== 'ok' || !Array.isArray(j.c) || j.c.length < 2) return null;
-    const prev = Number(j.c[j.c.length - 2]);
-    const last = Number(j.c[j.c.length - 1]);
-    if (!Number.isFinite(prev) || !Number.isFinite(last) || prev <= 0) return null;
-    return ((last - prev) / prev) * 100;
-  }, [resolveTvSymbol]);
+
+    for (const symbol of symbols) {
+      try {
+        const url = `${TV_BASE}/history?symbol=${encodeURIComponent(symbol)}&resolution=1D&from=${from}&to=${now}`;
+        const r = await fetch(url);
+        if (!r.ok) continue;
+        const j = await r.json() as { s?: string; c?: number[] };
+        if (j?.s !== 'ok' || !Array.isArray(j.c) || j.c.length < 2) continue;
+        const prev = Number(j.c[j.c.length - 2]);
+        const last = Number(j.c[j.c.length - 1]);
+        if (!Number.isFinite(prev) || !Number.isFinite(last) || prev <= 0) continue;
+        return ((last - prev) / prev) * 100;
+      } catch {
+        // next symbol
+      }
+    }
+    return null;
+  }, [TV_BASE, resolveTvSymbols]);
   const availableMarkets = useMemo<PerpsMarket[]>(() => {
     const dynamicMarkets: PerpsMarket[] = Object.entries(pairLeverageLimits).map(([pairName, limits], idx) => {
       const symbol = (limits.fromSymbol || pairName.split('/')[0] || pairName).toUpperCase();
