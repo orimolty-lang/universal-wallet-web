@@ -2787,7 +2787,7 @@ const PerpsModal = ({
   const [perpsChart, setPerpsChart] = useState<Array<{ t: number; o: number; h: number; l: number; c: number }>>([]);
   const [perpsChartLoading, setPerpsChartLoading] = useState(false);
   const [perpsChartError, setPerpsChartError] = useState<string | null>(null);
-  const [tvSymbolCatalog, setTvSymbolCatalog] = useState<string[]>([]);
+  const resolvedSymbolsRef = useRef<Record<string, string[]>>({});
 
   const lastDebugAtRef = useRef<Record<string, number>>({});
   // Helper to add debug messages (throttled to keep logs readable)
@@ -2856,22 +2856,9 @@ const PerpsModal = ({
     '1m': 60 * 1 * 24,
   };
 
-  useEffect(() => {
-    let cancelled = false;
-    const loadCatalog = async () => {
-      try {
-        const j = await fetchJsonWithTimeout(`${TV_BASE}/symbol_info`, 12000) as { symbol?: string[] };
-        const list = Array.isArray(j?.symbol) ? j.symbol : [];
-        if (!cancelled && list.length > 0) setTvSymbolCatalog(list);
-      } catch {
-        // ignore; resolver has other fallbacks
-      }
-    };
-    if (isOpen) loadCatalog();
-    return () => { cancelled = true; };
-  }, [isOpen, TV_BASE, fetchJsonWithTimeout]);
-
   const resolveTvSymbols = useCallback(async (pairName: string): Promise<string[]> => {
+    if (resolvedSymbolsRef.current[pairName]?.length) return resolvedSymbolsRef.current[pairName];
+
     const base = (pairName.split('/')[0] || pairName).toUpperCase();
     const out: string[] = [];
 
@@ -2883,15 +2870,6 @@ const PerpsModal = ({
     };
     const override = overrideMap[base];
     if (override) out.push(override);
-
-    // Catalog-based candidates (fast path, matches Avantis frontend data source family).
-    if (tvSymbolCatalog.length > 0) {
-      const fromCatalog = tvSymbolCatalog.filter((s) => {
-        const u = String(s).toUpperCase();
-        return u.includes(base) && u.includes('USD');
-      }).slice(0, 8);
-      for (const s of fromCatalog) if (!out.includes(s)) out.push(s);
-    }
 
     // Direct symbol endpoint fallback candidates.
     const candidates = [
@@ -2928,8 +2906,9 @@ const PerpsModal = ({
       // ignore
     }
 
+    resolvedSymbolsRef.current[pairName] = out;
     return out;
-  }, [TV_BASE, tvSymbolCatalog, fetchJsonWithTimeout]);
+  }, [TV_BASE, fetchJsonWithTimeout]);
 
   const fetchPerpsHistory = useCallback(async (pairName: string, tf: '1D'|'12H'|'4H'|'1H'|'15m'|'5m'|'1m') => {
     setPerpsChartLoading(true);

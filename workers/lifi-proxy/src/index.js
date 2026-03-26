@@ -52,7 +52,7 @@ export default {
         });
       }
 
-      // Pyth TradingView shim proxy path: /pyth-tv/*
+      // Pyth TradingView shim proxy path: /pyth-tv/* (with edge cache to avoid upstream 429)
       if (url.pathname.startsWith("/pyth-tv/")) {
         const pythPath = url.pathname.replace("/pyth-tv", "");
         const pythUrl = new URL(`${PYTH_TV_BASE}${pythPath}`);
@@ -60,22 +60,46 @@ export default {
           pythUrl.searchParams.set(key, value);
         });
 
+        const isGet = request.method === "GET";
+        const cache = caches.default;
+        const cacheKey = new Request(pythUrl.toString(), { method: "GET" });
+
+        if (isGet) {
+          const hit = await cache.match(cacheKey);
+          if (hit) {
+            return new Response(await hit.text(), {
+              status: hit.status,
+              headers: {
+                "Content-Type": hit.headers.get("Content-Type") || "application/json",
+                ...corsHeaders(env),
+              },
+            });
+          }
+        }
+
         const pythResponse = await fetch(pythUrl.toString(), {
           method: request.method,
           headers: {
             Accept: "application/json",
           },
-          body: request.method !== "GET" ? await request.text() : undefined,
+          body: isGet ? undefined : await request.text(),
         });
 
         const text = await pythResponse.text();
-        return new Response(text, {
+        const out = new Response(text, {
           status: pythResponse.status,
           headers: {
-            "Content-Type": "application/json",
+            "Content-Type": pythResponse.headers.get("Content-Type") || "application/json",
+            "Cache-Control": "public, s-maxage=30, max-age=15",
             ...corsHeaders(env),
           },
         });
+
+        if (isGet && pythResponse.status === 200) {
+          await cache.put(cacheKey, out.clone());
+        }
+
+        return out;
       }
 
       // 0x proxy path: /0x/*
