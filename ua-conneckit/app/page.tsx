@@ -54,8 +54,72 @@ import { fetchMajorSpotUsdPrices, spotPriceForSymbol } from "../lib/spotUsdPrice
 
 // Mobula: proxied via Cloudflare worker (no frontend API key)
 const MOBULA_PROXY_BASE = process.env.NEXT_PUBLIC_LIFI_PROXY_URL || "https://lifi-proxy.orimolty.workers.dev";
+const MORALIS_API_KEY = process.env.NEXT_PUBLIC_MORALIS_API_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6ImM3NzRhN2EyLThjMDItNDlhOS04ZDdlLTdiMmI3YWM5OTJlMSIsIm9yZ0lkIjoiNDQwODQxIiwidXNlcklkIjoiNDUzNTQ1IiwidHlwZUlkIjoiN2Y3NjRlZGMtMzI3Ni00NTQ3LTkzNWYtYzQ2NmVjNzJmNTYwIiwidHlwZSI6IlBST0pFQ1QiLCJpYXQiOjE3NDQyNDE4MjYsImV4cCI6NDkwMDAwMTgyNn0.jDl4YJnGYbEPp4zARV71TZupZBZmbHx4FABNIwT-CNc";
 
 type MobulaAsset = MobulaPortfolioAsset;
+
+async function fetchMoralisWalletBalances(address: string): Promise<MobulaAsset[]> {
+  if (!address || !address.startsWith("0x")) return [];
+  if (!MORALIS_API_KEY) return [];
+
+  try {
+    const url = `https://deep-index.moralis.io/api/v2.2/wallets/${address}/tokens?chain=base&token_prices=true&exclude_spam=true`;
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "X-API-Key": MORALIS_API_KEY,
+      },
+    });
+
+    if (!response.ok) {
+      console.error("[Moralis] Wallet fetch failed:", response.status);
+      return [];
+    }
+
+    const data = await response.json();
+    const result = Array.isArray(data?.result) ? data.result : [];
+
+    const mapped: MobulaAsset[] = result
+      .map((row: Record<string, unknown>) => {
+        const tokenBalance = Number(row?.balance_formatted || 0);
+        const price = Number(row?.usd_price || 0);
+        const estimated = Number(row?.usd_value ?? tokenBalance * price);
+        const tokenAddress = typeof row?.token_address === "string" ? row.token_address : undefined;
+
+        return {
+          asset: {
+            name: row?.name || row?.symbol || "Unknown",
+            symbol: row?.symbol || "?",
+            logo: row?.logo || row?.thumbnail,
+            contracts: tokenAddress ? [tokenAddress] : [],
+            blockchains: ["base"],
+          },
+          token_balance: Number.isFinite(tokenBalance) ? tokenBalance : 0,
+          price: Number.isFinite(price) ? price : 0,
+          estimated_balance: Number.isFinite(estimated) ? estimated : 0,
+          contracts_balances: tokenAddress ? [{ address: tokenAddress, chainId: "8453" }] : [],
+          cross_chain_balances: tokenAddress
+            ? {
+                base: {
+                  address: tokenAddress,
+                  balance: Number.isFinite(tokenBalance) ? tokenBalance : 0,
+                  balanceRaw: String(row?.balance || "0"),
+                  chainId: 8453,
+                },
+              }
+            : {},
+        } as MobulaAsset;
+      })
+      .filter((a: MobulaAsset) => (a.token_balance || 0) > 0 || (a.estimated_balance || 0) > 0);
+
+    console.log("[Moralis] Fallback assets:", mapped.length);
+    return mapped;
+  } catch (error) {
+    console.error("[Moralis] Error fetching wallet:", error);
+    return [];
+  }
+}
 
 // Fetch wallet balances from Mobula API
 async function fetchMobulaWalletBalances(address: string): Promise<MobulaAsset[]> {
@@ -82,7 +146,8 @@ async function fetchMobulaWalletBalances(address: string): Promise<MobulaAsset[]
     if (!response.ok) {
       const errorText = await response.text();
       console.error("[Mobula] Wallet fetch failed:", response.status, errorText);
-      return [];
+      // Fallback to Moralis when Mobula is rate-limited / quota-limited / unavailable.
+      return await fetchMoralisWalletBalances(address);
     }
     
     const data = await response.json();
@@ -95,7 +160,7 @@ async function fetchMobulaWalletBalances(address: string): Promise<MobulaAsset[]
     return assets;
   } catch (error) {
     console.error("[Mobula] Error fetching wallet:", error);
-    return [];
+    return await fetchMoralisWalletBalances(address);
   }
 }
 
