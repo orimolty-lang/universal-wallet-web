@@ -2067,16 +2067,22 @@ const ConvertModal = ({
           </div>
         )}
 
+        {fromChain === 101 && toChain && toChain !== 101 && (
+          <div className="bg-amber-900/20 border border-amber-600/50 rounded-lg p-2 mb-2 text-amber-200 text-xs">
+            Solana→EVM: Delegate the destination chain in Settings first for best results.
+          </div>
+        )}
+
         {/* From Section - Compact */}
-        <div className="mb-3">
-          <div className="text-gray-400 text-xs mb-2">From</div>
+        <div className="mb-1">
+          <div className="text-gray-400 text-xs mb-1">From</div>
           
-          <div className="flex gap-2 mb-3">
+          <div className="flex gap-2 mb-1">
             {/* Asset Dropdown - Compact */}
             <div className="flex-1 relative">
               <button
                 onClick={() => { setFromAssetOpen(!fromAssetOpen); setFromChainOpen(false); }}
-                className="w-full bg-[#1a1a1a] rounded-lg px-2 py-2 text-white text-left flex items-center justify-between border border-[#333]"
+                className="w-full bg-[#1a1a1a] rounded-lg px-2 py-1.5 text-white text-left flex items-center justify-between border border-[#333]"
               >
                 <div className="flex items-center gap-2">
                   {fromAsset ? (
@@ -2112,7 +2118,7 @@ const ConvertModal = ({
             <div className="w-28 relative">
               <button
                 onClick={() => { if (fromAsset) { setFromChainOpen(!fromChainOpen); setFromAssetOpen(false); }}}
-                className={`w-full bg-[#1a1a1a] rounded-lg px-2 py-2 text-left flex items-center justify-between border border-[#333] ${!fromAsset ? 'opacity-50' : ''}`}
+                className={`w-full bg-[#1a1a1a] rounded-lg px-2 py-1.5 text-left flex items-center justify-between border border-[#333] ${!fromAsset ? 'opacity-50' : ''}`}
                 disabled={!fromAsset}
               >
                 <div className="flex items-center gap-1">
@@ -2153,11 +2159,11 @@ const ConvertModal = ({
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0.00"
-              className="flex-1 bg-[#1a1a1a] rounded-lg px-3 py-2.5 text-white outline-none border border-[#333]"
+              className="flex-1 bg-[#1a1a1a] rounded-lg px-2 py-1.5 text-white outline-none border border-[#333]"
             />
             <button 
               onClick={handleMax}
-              className="bg-[#1a1a1a] px-2 py-2 rounded-lg text-accent-dynamic text-xs hover:bg-[#252525] border border-[#333] self-stretch flex items-center"
+              className="bg-[#1a1a1a] px-2 py-1.5 rounded-lg text-accent-dynamic text-xs hover:bg-[#252525] border border-[#333]"
             >
               MAX
             </button>
@@ -2167,23 +2173,23 @@ const ConvertModal = ({
           </div>
         </div>
 
-        {/* Direction indicator — padded so it sits between amount row and “To” picks */}
-        <div className="flex justify-center py-3" aria-hidden>
-          <div className="w-9 h-9 shrink-0 rounded-full bg-[#1a1a1a] border border-[#333] flex items-center justify-center text-gray-400 text-lg leading-none">
+        {/* Swap Arrow */}
+        <div className="flex justify-center -my-1 relative z-10">
+          <div className="w-8 h-8 rounded-full bg-[#1a1a1a] border border-[#333] flex items-center justify-center text-gray-400">
             ↓
           </div>
         </div>
 
         {/* To Section - Compact */}
-        <div className="mb-3">
-          <div className="text-gray-400 text-xs mb-2">To</div>
+        <div className="mb-2">
+          <div className="text-gray-400 text-xs mb-1">To</div>
           
           <div className="flex gap-2">
             {/* To Asset Dropdown - Compact */}
             <div className="flex-1 relative">
               <button
                 onClick={() => { setToAssetOpen(!toAssetOpen); setToChainOpen(false); }}
-                className="w-full bg-[#1a1a1a] rounded-lg px-2 py-2 text-white text-left flex items-center justify-between border border-[#333]"
+                className="w-full bg-[#1a1a1a] rounded-lg px-2 py-1.5 text-white text-left flex items-center justify-between border border-[#333]"
               >
                 <div className="flex items-center gap-2">
                   {toAsset ? (
@@ -2217,7 +2223,7 @@ const ConvertModal = ({
             <div className="w-28 relative">
               <button
                 onClick={() => { if (toAsset) { setToChainOpen(!toChainOpen); setToAssetOpen(false); }}}
-                className={`w-full bg-[#1a1a1a] rounded-lg px-2 py-2 text-left flex items-center justify-between border border-[#333] ${!toAsset ? 'opacity-50' : ''}`}
+                className={`w-full bg-[#1a1a1a] rounded-lg px-2 py-1.5 text-left flex items-center justify-between border border-[#333] ${!toAsset ? 'opacity-50' : ''}`}
                 disabled={!toAsset}
               >
                 <div className="flex items-center gap-1">
@@ -2930,7 +2936,6 @@ const PerpsModal = ({
     try {
       const symbols = await resolveTvSymbols(pairName);
       if (!symbols.length) {
-        setPerpsChart([]);
         setPerpsChartError('No symbol mapping');
         return;
       }
@@ -2941,9 +2946,7 @@ const PerpsModal = ({
       for (const symbol of symbols) {
         try {
           const url = `${TV_BASE}/history?symbol=${encodeURIComponent(symbol)}&resolution=${encodeURIComponent(res)}&from=${from}&to=${now}`;
-          const r = await fetch(url);
-          if (!r.ok) continue;
-          const j = await r.json() as { s?: string; t?: number[]; o?: number[]; h?: number[]; l?: number[]; c?: number[] };
+          const j = await fetchJsonWithTimeout(url, 9000) as { s?: string; t?: number[]; o?: number[]; h?: number[]; l?: number[]; c?: number[] };
           if (j?.s !== 'ok' || !Array.isArray(j.t) || !Array.isArray(j.o) || !Array.isArray(j.h) || !Array.isArray(j.l) || !Array.isArray(j.c)) continue;
           const points = j.t.map((t, i) => ({
             t: t * 1000,
@@ -2961,12 +2964,12 @@ const PerpsModal = ({
         }
       }
 
-      setPerpsChart([]);
+      // Keep last good chart to avoid UI flicker loops.
       setPerpsChartError('History unavailable');
     } finally {
       setPerpsChartLoading(false);
     }
-  }, [TV_BASE, resolveTvSymbols, tfToLookbackSec, tfToResolution]);
+  }, [TV_BASE, resolveTvSymbols, tfToLookbackSec, tfToResolution, fetchJsonWithTimeout]);
 
   const fetchPair24hChange = useCallback(async (pairName: string): Promise<number | null> => {
     const symbols = await resolveTvSymbols(pairName);
@@ -2977,9 +2980,7 @@ const PerpsModal = ({
     for (const symbol of symbols) {
       try {
         const url = `${TV_BASE}/history?symbol=${encodeURIComponent(symbol)}&resolution=1D&from=${from}&to=${now}`;
-        const r = await fetch(url);
-        if (!r.ok) continue;
-        const j = await r.json() as { s?: string; c?: number[] };
+        const j = await fetchJsonWithTimeout(url, 9000) as { s?: string; c?: number[] };
         if (j?.s !== 'ok' || !Array.isArray(j.c) || j.c.length < 2) continue;
         const prev = Number(j.c[j.c.length - 2]);
         const last = Number(j.c[j.c.length - 1]);
@@ -2990,7 +2991,7 @@ const PerpsModal = ({
       }
     }
     return null;
-  }, [TV_BASE, resolveTvSymbols]);
+  }, [TV_BASE, resolveTvSymbols, fetchJsonWithTimeout]);
   const availableMarkets = useMemo<PerpsMarket[]>(() => {
     const dynamicMarkets: PerpsMarket[] = Object.entries(pairLeverageLimits).map(([pairName, limits], idx) => {
       const symbol = (limits.fromSymbol || pairName.split('/')[0] || pairName).toUpperCase();
@@ -4506,11 +4507,12 @@ const PerpsModal = ({
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
+
     const run = async () => {
       const targets = marketsListForUi
         .map((m) => m.pairName)
-        .filter((pair) => !Number.isFinite(marketPrices[pair]?.change24h))
-        .slice(0, 24);
+        .filter((pair) => !Number.isFinite(marketPricesRef.current[pair]?.change24h))
+        .slice(0, 16);
       if (!targets.length) return;
       const updates: Record<string, { price: number; change24h: number }> = {};
       for (const pair of targets) {
@@ -4531,8 +4533,13 @@ const PerpsModal = ({
         setMarketPrices((prev) => ({ ...prev, ...updates }));
       }
     };
+
     run();
-    return () => { cancelled = true; };
+    const id = setInterval(run, 12000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, [isOpen, marketsListForUi, fetchPair24hChange]);
 
   const totalOpenCollateralUsd = displayOpenPositions.reduce((sum, p) => sum + p.collateralUsd, 0);
@@ -6340,32 +6347,18 @@ const SearchTab = ({
 
       {/* Search bar at top - below header */}
       <div className="shrink-0 px-4 py-3 bg-[#0a0a0a]">
-        <div className="relative flex items-center gap-2 bg-gray-800 rounded-full px-4 py-2.5">
+        <div className="relative flex items-center bg-gray-800 rounded-full px-4 py-2.5">
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search for anything..."
-            className="flex-1 min-w-0 bg-transparent text-white placeholder-gray-500 outline-none text-sm"
+            className="flex-1 bg-transparent text-white placeholder-gray-500 outline-none text-sm"
           />
-          {query.trim() ? (
-            <button
-              type="button"
-              onClick={() => {
-                setQuery("");
-                setResults([]);
-                setError(null);
-              }}
-              className="shrink-0 w-8 h-8 rounded-full bg-gray-700 text-gray-200 text-lg leading-none flex items-center justify-center hover:bg-gray-600 transition-colors"
-              aria-label="Clear search"
-            >
-              ×
-            </button>
-          ) : null}
           <button
             type="button"
             onClick={handlePaste}
-            className="shrink-0 ml-0 px-3 py-1 rounded-lg bg-gray-700 text-white text-sm font-medium hover:bg-gray-600 transition-colors"
+            className="ml-2 px-3 py-1 rounded-lg bg-gray-700 text-white text-sm font-medium hover:bg-gray-600 transition-colors"
           >
             Paste
           </button>
