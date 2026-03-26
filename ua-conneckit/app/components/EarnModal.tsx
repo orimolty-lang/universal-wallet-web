@@ -391,9 +391,12 @@ export default function EarnModal({
             <div className="bg-[#1a1a1a] rounded-xl p-4 border border-[#333]">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-white font-medium">{selectedMarket.name}</span>
-                <div className="flex items-center gap-1.5 text-gray-400 text-xs capitalize">
-                  <img src={getChainLogo(selectedMarket.chainId)} alt="" className="w-4 h-4 object-contain" title={selectedMarket.chainName} />
-                  <img src={protocolMeta[selectedMarket.protocol]?.logo} alt="" className="w-4 h-4 object-contain" title={protocolMeta[selectedMarket.protocol]?.name} />
+                <div className="flex flex-col items-end gap-1 text-gray-400 text-xs capitalize">
+                  <div className="flex items-center gap-1.5">
+                    <img src={getChainLogo(selectedMarket.chainId)} alt="" className="w-4 h-4 object-contain" title={selectedMarket.chainName} />
+                    <img src={getAssetLogo(selectedMarket.assetSymbol)} alt="" className="w-4 h-4 object-contain" title={selectedMarket.assetSymbol} />
+                  </div>
+                  <img src={protocolMeta[selectedMarket.protocol]?.logo} alt="" className="w-3 h-3 object-contain" title={protocolMeta[selectedMarket.protocol]?.name} />
                 </div>
               </div>
               {(selectedMarket.description ?? "").trim().length > 0 && (
@@ -648,19 +651,18 @@ export default function EarnModal({
                     className="w-full flex items-start justify-between gap-3 py-3.5 text-left border-b border-[#252525] last:border-b-0 transition-colors hover:bg-white/[0.03]"
                   >
                     <div className="flex items-start gap-3 min-w-0">
-                      <div className="flex items-center gap-2 shrink-0">
-                        <img src={getChainLogo(m.chainId)} alt="" className="w-7 h-7 object-contain" title={m.chainName} />
-                        <img src={getAssetLogo(m.assetSymbol)} alt="" className="w-7 h-7 object-contain" />
+                      <div className="flex flex-col items-center gap-1 shrink-0">
+                        <div className="flex items-center gap-2">
+                          <img src={getChainLogo(m.chainId)} alt="" className="w-7 h-7 object-contain" title={m.chainName} />
+                          <img src={getAssetLogo(m.assetSymbol)} alt="" className="w-7 h-7 object-contain" />
+                        </div>
+                        <img src={protocolMeta[m.protocol]?.logo} alt="" className="w-3 h-3 object-contain" title={protocolMeta[m.protocol]?.name} />
                       </div>
                       <div className="min-w-0">
                         <div className="text-white font-semibold text-[15px] truncate">{m.name}</div>
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] mt-1 text-gray-500">
                           <span className="uppercase tracking-wide">TVL</span>
                           <span className="text-accent-dynamic-light font-medium">{m.tvl > 0 ? formatTvl(m.tvl) : "—"}</span>
-                          <span className="text-accent-dynamic/40" aria-hidden>
-                            •
-                          </span>
-                          <img src={protocolMeta[m.protocol]?.logo} alt="" className="w-3.5 h-3.5 object-contain inline" title={protocolMeta[m.protocol]?.name} />
                         </div>
                       </div>
                     </div>

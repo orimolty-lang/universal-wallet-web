@@ -324,8 +324,8 @@ export default function PolymarketModal({
         return m.active && !m.closed && m.accepting_orders === true && notExpired;
       });
 
-      const minLiquidity = 10_000;
-      const minVolume = 10_000;
+      const minLiquidity = 50_000;
+      const minVolume = 50_000;
       const liquidTradable = tradable.filter((m) => {
         if (isTestMarket(m)) return false;
         const liq = Number(m.liquidity || "0");
@@ -334,9 +334,7 @@ export default function PolymarketModal({
       });
 
       const openMarkets = normalized.filter((m) => m.active && !m.closed);
-      const filteredTradable = tradable.filter((m) => !isTestMarket(m));
-      const filteredOpen = openMarkets.filter((m) => !isTestMarket(m));
-      const finalMarkets = liquidTradable.length > 0 ? liquidTradable : (filteredTradable.length > 0 ? filteredTradable : filteredOpen);
+      const finalMarkets = liquidTradable;
 
       setDebugInfo({
         endpoint: `${base}/markets + events`,
@@ -379,13 +377,13 @@ export default function PolymarketModal({
         ? events.flatMap((e) => Array.isArray(e?.markets) ? e.markets : [])
         : [];
       const normalized = list.map(normalizeMarket).filter((m): m is Market => !!m);
-      const minLiq = 10_000;
-      const minVol = 10_000;
+      const minLiq = 50_000;
+      const minVol = 50_000;
       const liquid = normalized.filter((m) => {
         if (isTestMarket(m)) return false;
         return Number(m.liquidity || "0") >= minLiq && Number(m.volume || "0") >= minVol;
       });
-      setSearchResults(liquid.length > 0 ? liquid : normalized);
+      setSearchResults(liquid);
     } catch (err) {
       console.error("[Polymarket] Search failed, falling back to local filter:", err);
       // Fallback: client-side filter on allMarkets when API unavailable
@@ -1298,7 +1296,7 @@ export default function PolymarketModal({
                               ?
                             </div>
                           )}
-                          <h3 className="text-white font-medium text-xs line-clamp-2 flex-1 min-w-0">{market.question}</h3>
+                          <h3 className="text-white font-medium text-xs whitespace-normal break-words leading-snug flex-1 min-w-0">{market.question}</h3>
                         </div>
                         <div className="mt-auto space-y-1">
                           {market.outcomes?.slice(0, 2).map((outcome, i) => (

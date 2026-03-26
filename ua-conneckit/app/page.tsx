@@ -291,9 +291,18 @@ const TradeHubOverlay = ({
           className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl border text-left transition active:opacity-90 bg-[#0d0d0d] border-amber-500/30 shadow-[0_0_28px_rgba(245,158,11,0.1)]"
         >
           <div className="shrink-0 w-14 h-14 rounded-full flex items-center justify-center bg-black/70 border border-amber-500/25 shadow-[0_0_20px_rgba(245,158,11,0.18)]">
-            <svg className="w-7 h-7 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-            </svg>
+            <div className="relative w-10 h-10">
+              <img
+                src="https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9/logo.png"
+                alt="Aave"
+                className="absolute left-0 top-0 w-6 h-6 object-contain"
+              />
+              <img
+                src="https://morpho.org/favicon.ico"
+                alt="Morpho"
+                className="absolute right-0 bottom-0 w-5 h-5 object-contain rounded-full bg-black"
+              />
+            </div>
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-white font-bold text-lg tracking-tight">Earn</div>
@@ -353,6 +362,8 @@ interface PairLeverageLimits {
   fromSymbol?: string;
   toSymbol?: string;
   displayName?: string;
+  priceChange24h?: number;
+  markPrice?: number;
 }
 
 type PerpsMarketGroup = 'crypto' | 'forex' | 'commodities' | 'equity' | 'other';
@@ -1265,8 +1276,8 @@ const SendModal = ({
         const tokenAddr = (c.token?.address || "").trim();
         const bal = typeof c.amount === "string" ? parseFloat(c.amount) : Number(c.amount || 0);
         const usdValue = Number((c as { amountInUSD?: number | string }).amountInUSD || 0);
-        // Hide dust/spam rows under $1 from send selection.
-        if (!Number.isFinite(chainId) || bal < 0.0001 || !Number.isFinite(usdValue) || usdValue < 1) continue;
+        // Hide dust/spam rows under $0.10 from send selection.
+        if (!Number.isFinite(chainId) || bal < 0.0001 || !Number.isFinite(usdValue) || usdValue < 0.1) continue;
         const addrKey = tokenAddr ? tokenAddr.toLowerCase() : "native";
         const key = `${asset.assetKey ?? sym}|${chainId}|${addrKey}|${i}`;
         out.push({
@@ -3208,6 +3219,11 @@ const PerpsModal = ({
             from?: string;
             to?: string;
             lazerFeed?: { state?: string };
+            priceChange24h?: number | string;
+            priceChange?: number | string;
+            change24h?: number | string;
+            markPrice?: number | string;
+            price?: number | string;
           };
           const symbol = info.feed?.attributes?.symbol;
           const leverages = info.leverages;
@@ -3241,11 +3257,36 @@ const PerpsModal = ({
             fromSymbol: (info.from || '').toUpperCase() || undefined,
             toSymbol: (info.to || '').toUpperCase() || undefined,
             displayName: (info.from && info.to) ? `${info.from}/${info.to}` : undefined,
+            priceChange24h: Number.isFinite(Number(info.priceChange24h ?? info.priceChange ?? info.change24h))
+              ? Number(info.priceChange24h ?? info.priceChange ?? info.change24h)
+              : undefined,
+            markPrice: Number.isFinite(Number(info.markPrice ?? info.price))
+              ? Number(info.markPrice ?? info.price)
+              : undefined,
           };
         }
 
         if (!cancelled && Object.keys(limitsMap).length > 0) {
           setPairLeverageLimits(limitsMap);
+          setMarketPrices((prev) => {
+            const next = { ...prev };
+            for (const [pairName, meta] of Object.entries(limitsMap)) {
+              const seededChange = meta.priceChange24h;
+              const seededPrice = meta.markPrice;
+              const cur = next[pairName];
+              const curChange = cur?.change24h;
+              const curPrice = cur?.price;
+              const useChange = Number.isFinite(seededChange) ? (seededChange as number) : curChange;
+              const usePrice = Number.isFinite(seededPrice) && (seededPrice as number) > 0 ? (seededPrice as number) : (curPrice || 0);
+              if (Number.isFinite(useChange) || usePrice > 0) {
+                next[pairName] = {
+                  price: usePrice,
+                  change24h: Number.isFinite(useChange) ? (useChange as number) : Number.NaN,
+                };
+              }
+            }
+            return next;
+          });
         }
       } catch (e) {
         addDebug(`Avantis Socket pair limits fetch failed: ${e instanceof Error ? e.message : String(e)}`);
