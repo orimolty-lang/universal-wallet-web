@@ -321,7 +321,9 @@ export default function PolymarketModal({
       const tradable = normalized.filter((m) => {
         const endTs = m.endDate ? Date.parse(m.endDate) : Number.NaN;
         const notExpired = Number.isNaN(endTs) ? true : endTs > now;
-        return m.active && !m.closed && m.accepting_orders === true && notExpired;
+        // Gamma/proxy often omits accepting_orders; treat undefined as eligible.
+        const accepting = m.accepting_orders !== false;
+        return m.active && !m.closed && accepting && notExpired;
       });
 
       const minLiquidity = 50_000;
