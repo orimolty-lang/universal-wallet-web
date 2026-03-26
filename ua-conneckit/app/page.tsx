@@ -2934,11 +2934,29 @@ const PerpsModal = ({
     setPerpsChartLoading(true);
     setPerpsChartError(null);
     try {
-      const symbols = await resolveTvSymbols(pairName);
+      const base = (pairName.split('/')[0] || pairName).toUpperCase();
+      const directMap: Record<string, string[]> = {
+        BTC: ['Crypto.BTC/USD', 'BTCUSD'],
+        ETH: ['Crypto.ETH/USD', 'ETHUSD'],
+        SOL: ['Crypto.SOL/USD', 'SOLUSD'],
+        BNB: ['Crypto.BNB/USD', 'BNBUSD'],
+        AVAX: ['Crypto.AVAX/USD', 'AVAXUSD'],
+        OP: ['Crypto.OP/USD', 'OPUSD'],
+        ARB: ['Crypto.ARB/USD', 'ARBUSD'],
+        XRP: ['Crypto.XRP/USD', 'XRPUSD'],
+        DOGE: ['Crypto.DOGE/USD', 'DOGEUSD'],
+        AAVE: ['Crypto.AAVE/USD', 'AAVEUSD'],
+      };
+
+      const directCandidates = directMap[base] || [`${base}USD`, `Crypto.${base}/USD`, pairName];
+      const resolved = await resolveTvSymbols(pairName);
+      const symbols = Array.from(new Set([...directCandidates, ...resolved]));
+
       if (!symbols.length) {
         setPerpsChartError('No symbol mapping');
         return;
       }
+
       const now = Math.floor(Date.now() / 1000);
       const from = now - tfToLookbackSec[tf];
       const res = tfToResolution[tf];
@@ -2946,7 +2964,7 @@ const PerpsModal = ({
       for (const symbol of symbols) {
         try {
           const url = `${TV_BASE}/history?symbol=${encodeURIComponent(symbol)}&resolution=${encodeURIComponent(res)}&from=${from}&to=${now}`;
-          const j = await fetchJsonWithTimeout(url, 9000) as { s?: string; t?: number[]; o?: number[]; h?: number[]; l?: number[]; c?: number[] };
+          const j = await fetchJsonWithTimeout(url, 20000) as { s?: string; t?: number[]; o?: number[]; h?: number[]; l?: number[]; c?: number[] };
           if (j?.s !== 'ok' || !Array.isArray(j.t) || !Array.isArray(j.o) || !Array.isArray(j.h) || !Array.isArray(j.l) || !Array.isArray(j.c)) continue;
           const points = j.t.map((t, i) => ({
             t: t * 1000,
