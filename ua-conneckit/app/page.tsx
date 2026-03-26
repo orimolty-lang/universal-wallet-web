@@ -2782,6 +2782,9 @@ const PerpsModal = ({
   const [showPerpsHistoryModal, setShowPerpsHistoryModal] = useState(false);
   const [showPerpsExplainerModal, setShowPerpsExplainerModal] = useState(false);
   const [perpsExplainerStep, setPerpsExplainerStep] = useState(0);
+  const [perpsChartTf, setPerpsChartTf] = useState<'1D'|'12H'|'4H'|'1H'|'15m'|'5m'|'1m'>('1H');
+  const [perpsChart, setPerpsChart] = useState<Array<{ t: number; c: number }>>([]);
+  const [perpsChartLoading, setPerpsChartLoading] = useState(false);
 
   const lastDebugAtRef = useRef<Record<string, number>>({});
   // Helper to add debug messages (throttled to keep logs readable)
@@ -2815,6 +2818,89 @@ const PerpsModal = ({
     if (abs >= 1_000) return `${(value / 1_000).toFixed(2)}K`;
     return value.toFixed(2);
   };
+
+  const TV_BASE = 'https://benchmarks.pyth.network/v1/shims/tradingview';
+  const tfToResolution: Record<'1D'|'12H'|'4H'|'1H'|'15m'|'5m'|'1m', string> = {
+    '1D': '1D',
+    '12H': '720',
+    '4H': '240',
+    '1H': '60',
+    '15m': '15',
+    '5m': '5',
+    '1m': '1',
+  };
+  const tfToLookbackSec: Record<'1D'|'12H'|'4H'|'1H'|'15m'|'5m'|'1m', number> = {
+    '1D': 60 * 60 * 24 * 90,
+    '12H': 60 * 60 * 12 * 90,
+    '4H': 60 * 60 * 4 * 90,
+    '1H': 60 * 60 * 1 * 30,
+    '15m': 60 * 15 * 7 * 24,
+    '5m': 60 * 5 * 4 * 24,
+    '1m': 60 * 1 * 24,
+  };
+
+  const resolveTvSymbol = useCallback(async (pairName: string): Promise<string | null> => {
+    const prefixes = ['Crypto.', 'Forex.', 'Metal.', 'Commodities.', 'Equity.', ''];
+    for (const p of prefixes) {
+      const candidate = `${p}${pairName}`;
+      try {
+        const r = await fetch(`${TV_BASE}/symbols?symbol=${encodeURIComponent(candidate)}`);
+        if (!r.ok) continue;
+        const j = await r.json() as { s?: string; ticker?: string; name?: string };
+        if (j?.s === 'error') continue;
+        if (j?.ticker) return j.ticker;
+        if (j?.name) return candidate;
+      } catch {
+        // continue
+      }
+    }
+    return null;
+  }, []);
+
+  const fetchPerpsHistory = useCallback(async (pairName: string, tf: '1D'|'12H'|'4H'|'1H'|'15m'|'5m'|'1m') => {
+    setPerpsChartLoading(true);
+    try {
+      const symbol = await resolveTvSymbol(pairName);
+      if (!symbol) {
+        setPerpsChart([]);
+        return;
+      }
+      const now = Math.floor(Date.now() / 1000);
+      const from = now - tfToLookbackSec[tf];
+      const res = tfToResolution[tf];
+      const url = `${TV_BASE}/history?symbol=${encodeURIComponent(symbol)}&resolution=${encodeURIComponent(res)}&from=${from}&to=${now}`;
+      const r = await fetch(url);
+      if (!r.ok) {
+        setPerpsChart([]);
+        return;
+      }
+      const j = await r.json() as { s?: string; t?: number[]; c?: number[] };
+      if (j?.s !== 'ok' || !Array.isArray(j.t) || !Array.isArray(j.c)) {
+        setPerpsChart([]);
+        return;
+      }
+      const points = j.t.map((t, i) => ({ t: t * 1000, c: Number(j.c?.[i] ?? 0) })).filter((p) => Number.isFinite(p.c) && p.c > 0);
+      setPerpsChart(points.slice(-320));
+    } finally {
+      setPerpsChartLoading(false);
+    }
+  }, [resolveTvSymbol]);
+
+  const fetchPair24hChange = useCallback(async (pairName: string): Promise<number | null> => {
+    const symbol = await resolveTvSymbol(pairName);
+    if (!symbol) return null;
+    const now = Math.floor(Date.now() / 1000);
+    const from = now - (3 * 24 * 60 * 60);
+    const url = `${TV_BASE}/history?symbol=${encodeURIComponent(symbol)}&resolution=1D&from=${from}&to=${now}`;
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const j = await r.json() as { s?: string; c?: number[] };
+    if (j?.s !== 'ok' || !Array.isArray(j.c) || j.c.length < 2) return null;
+    const prev = Number(j.c[j.c.length - 2]);
+    const last = Number(j.c[j.c.length - 1]);
+    if (!Number.isFinite(prev) || !Number.isFinite(last) || prev <= 0) return null;
+    return ((last - prev) / prev) * 100;
+  }, [resolveTvSymbol]);
   const availableMarkets = useMemo<PerpsMarket[]>(() => {
     const dynamicMarkets: PerpsMarket[] = Object.entries(pairLeverageLimits).map(([pairName, limits], idx) => {
       const symbol = (limits.fromSymbol || pairName.split('/')[0] || pairName).toUpperCase();
@@ -3325,6 +3411,38 @@ const PerpsModal = ({
       });
     }
   }, [availableMarkets, selectedMarket.pairName]);
+
+  useEffect(() => {
+    if (!isOpen || !selectedMarket?.pairName) return;
+    fetchPerpsHistory(selectedMarket.pairName, perpsChartTf);
+  }, [isOpen, selectedMarket?.pairName, perpsChartTf, fetchPerpsHistory]);
+
+  // Live chart tick: append/update latest point from current mark feed.
+  useEffect(() => {
+    if (!isOpen || !Number.isFinite(currentPrice || Number.NaN) || !currentPrice) return;
+    setPerpsChart((prev) => {
+      if (!prev.length) return prev;
+      const next = [...prev];
+      const now = Date.now();
+      const stepMsMap: Record<typeof perpsChartTf, number> = {
+        '1D': 24 * 60 * 60 * 1000,
+        '12H': 12 * 60 * 60 * 1000,
+        '4H': 4 * 60 * 60 * 1000,
+        '1H': 60 * 60 * 1000,
+        '15m': 15 * 60 * 1000,
+        '5m': 5 * 60 * 1000,
+        '1m': 60 * 1000,
+      };
+      const step = stepMsMap[perpsChartTf];
+      const last = next[next.length - 1];
+      if (now - last.t < step) {
+        next[next.length - 1] = { ...last, c: currentPrice };
+      } else {
+        next.push({ t: now, c: currentPrice });
+      }
+      return next.slice(-320);
+    });
+  }, [isOpen, currentPrice, perpsChartTf]);
 
   const fetchOwnerBalances = useCallback(async (eoa: string) => {
     const [ethRes, usdcRes] = await Promise.all([
@@ -4288,6 +4406,40 @@ const PerpsModal = ({
     if (hasSearch || showAllMarkets) return filteredSortedMarkets;
     return marketsTopFiveByVolume;
   }, [marketSearch, showAllMarkets, filteredSortedMarkets, marketsTopFiveByVolume]);
+
+  // Backfill market-list 24h change using same historical source Avantis frontend references.
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    const run = async () => {
+      const targets = marketsListForUi
+        .map((m) => m.pairName)
+        .filter((pair) => !Number.isFinite(marketPrices[pair]?.change24h))
+        .slice(0, 24);
+      if (!targets.length) return;
+      const updates: Record<string, { price: number; change24h: number }> = {};
+      for (const pair of targets) {
+        try {
+          const change = await fetchPair24hChange(pair);
+          if (change != null && Number.isFinite(change)) {
+            const cur = marketPricesRef.current[pair];
+            updates[pair] = {
+              price: cur?.price || 0,
+              change24h: change,
+            };
+          }
+        } catch {
+          // skip per pair
+        }
+      }
+      if (!cancelled && Object.keys(updates).length > 0) {
+        setMarketPrices((prev) => ({ ...prev, ...updates }));
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [isOpen, marketsListForUi, fetchPair24hChange]);
+
   const totalOpenCollateralUsd = displayOpenPositions.reduce((sum, p) => sum + p.collateralUsd, 0);
   const totalOpenPnlUsd = displayOpenPositions.reduce((sum, p) => sum + p.pnlUsd, 0);
 
@@ -4791,6 +4943,57 @@ const PerpsModal = ({
                     <span className="text-white text-sm font-medium">{currentPrice != null ? currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 }) : '...'}</span>
                     <span className="text-gray-500 text-xs">USD</span>
                   </div>
+                </div>
+              </div>
+
+              <div className="mb-4 bg-[#111111] border border-[#2a2a2a] rounded-xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-white text-sm font-medium">Chart</span>
+                  <div className="flex items-center gap-1.5 overflow-x-auto">
+                    {(['1D','12H','4H','1H','15m','5m','1m'] as const).map((tf) => (
+                      <button
+                        key={tf}
+                        type="button"
+                        onClick={() => setPerpsChartTf(tf)}
+                        className={`px-2 py-1 rounded text-[10px] border ${perpsChartTf === tf ? 'bg-accent-dynamic text-black border-accent-dynamic font-semibold' : 'bg-[#1a1a1a] text-gray-400 border-[#333]'}`}
+                      >
+                        {tf}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="h-28 rounded-lg bg-[#0c0c0c] border border-[#222] p-2">
+                  {perpsChartLoading ? (
+                    <div className="w-full h-full flex items-center justify-center text-xs text-gray-500">Loading chart…</div>
+                  ) : perpsChart.length < 2 ? (
+                    <div className="w-full h-full flex items-center justify-center text-xs text-gray-500">No chart data</div>
+                  ) : (
+                    (() => {
+                      const width = 100;
+                      const height = 40;
+                      const values = perpsChart.map((p) => p.c);
+                      const min = Math.min(...values);
+                      const max = Math.max(...values);
+                      const range = Math.max(max - min, 1e-9);
+                      const points = perpsChart.map((p, i) => {
+                        const x = (i / (perpsChart.length - 1)) * width;
+                        const y = height - ((p.c - min) / range) * height;
+                        return `${x},${y}`;
+                      }).join(' ');
+                      const first = values[0];
+                      const last = values[values.length - 1];
+                      const pct = first > 0 ? ((last - first) / first) * 100 : 0;
+                      const up = pct >= 0;
+                      return (
+                        <div className="w-full h-full flex flex-col">
+                          <div className={`text-[11px] mb-1 ${up ? 'text-green-400' : 'text-red-400'}`}>{up ? '+' : ''}{pct.toFixed(2)}%</div>
+                          <svg viewBox={`0 0 ${width} ${height}`} className="w-full flex-1">
+                            <polyline fill="none" stroke={up ? '#22c55e' : '#ef4444'} strokeWidth="1.3" points={points} />
+                          </svg>
+                        </div>
+                      );
+                    })()
+                  )}
                 </div>
               </div>
 
