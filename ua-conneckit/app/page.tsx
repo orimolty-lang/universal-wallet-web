@@ -27,6 +27,7 @@ import TokenDetailModal from "./components/TokenDetailModal";
 import SwapModal from "./components/SwapModal";
 import PolymarketModal from "./components/PolymarketModal";
 import EarnModal from "./components/EarnModal";
+import PerpsCandleChart from "./components/PerpsCandleChart";
 import WalletActivityToast, { type WalletActivityToastKind, type WalletToastPayload } from "./components/WalletActivityToast";
 import BottomSheet from "../components/BottomSheet";
 import SlideToConfirm from "../components/SlideToConfirm";
@@ -5082,62 +5083,12 @@ const PerpsModal = ({
                     ))}
                   </div>
                 </div>
-                <div className="h-28 rounded-lg bg-[#0c0c0c] border border-[#222] p-2">
-                  {perpsChartLoading ? (
-                    <div className="w-full h-full flex items-center justify-center text-xs text-gray-500">Loading chart…</div>
-                  ) : perpsChart.length < 2 ? (
-                    <div className="w-full h-full flex flex-col items-center justify-center text-xs text-gray-500 gap-2">
-                      <div>No chart data{perpsChartError ? ` (${perpsChartError})` : ''}</div>
-                      <button
-                        type="button"
-                        onClick={() => fetchPerpsHistory(selectedMarket.pairName, perpsChartTf)}
-                        className="px-2 py-1 rounded border border-[#333] text-[10px] text-gray-300"
-                      >
-                        Retry
-                      </button>
-                    </div>
-                  ) : (
-                    (() => {
-                      const width = 100;
-                      const height = 40;
-                      const highs = perpsChart.map((p) => p.h);
-                      const lows = perpsChart.map((p) => p.l);
-                      const min = Math.min(...lows);
-                      const max = Math.max(...highs);
-                      const range = Math.max(max - min, 1e-9);
-                      const first = perpsChart[0].c;
-                      const last = perpsChart[perpsChart.length - 1].c;
-                      const pct = first > 0 ? ((last - first) / first) * 100 : 0;
-                      const up = pct >= 0;
-                      const n = perpsChart.length;
-                      const candleW = Math.max(0.35, Math.min(1.6, 80 / n));
-                      return (
-                        <div className="w-full h-full flex flex-col">
-                          <div className={`text-[11px] mb-1 ${up ? 'text-green-400' : 'text-red-400'}`}>{up ? '+' : ''}{pct.toFixed(2)}%</div>
-                          <svg viewBox={`0 0 ${width} ${height}`} className="w-full flex-1">
-                            {perpsChart.map((p, i) => {
-                              const x = (i / Math.max(n - 1, 1)) * width;
-                              const yH = height - ((p.h - min) / range) * height;
-                              const yL = height - ((p.l - min) / range) * height;
-                              const yO = height - ((p.o - min) / range) * height;
-                              const yC = height - ((p.c - min) / range) * height;
-                              const bullish = p.c >= p.o;
-                              const bodyTop = Math.min(yO, yC);
-                              const bodyH = Math.max(Math.abs(yC - yO), 0.4);
-                              const color = bullish ? '#22c55e' : '#ef4444';
-                              return (
-                                <g key={i}>
-                                  <line x1={x} y1={yH} x2={x} y2={yL} stroke={color} strokeWidth={0.35} />
-                                  <rect x={x - candleW / 2} y={bodyTop} width={candleW} height={bodyH} fill={color} rx={0.1} />
-                                </g>
-                              );
-                            })}
-                          </svg>
-                        </div>
-                      );
-                    })()
-                  )}
-                </div>
+                <PerpsCandleChart
+                  data={perpsChart}
+                  loading={perpsChartLoading}
+                  error={perpsChartError}
+                  onRetry={() => fetchPerpsHistory(selectedMarket.pairName, perpsChartTf)}
+                />
               </div>
 
               <div className="mb-4">
