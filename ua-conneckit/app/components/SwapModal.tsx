@@ -2,7 +2,7 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type { IAssetsResponse, UniversalAccount } from "@particle-network/universal-account-sdk";
-import { executeSwap, executeSell, getSellQuotePreview, getChainIdFromBlockchain, pollTransactionDetails } from "../lib/swapService";
+import { executeSwap, executeSell, getChainIdFromBlockchain, pollTransactionDetails } from "../lib/swapService";
 import { mergedAssetMatchesContractKeys, tokenContractKeySet } from "../lib/mobulaAssetIdentity";
 import { useWallets, useSign7702AuthorizationCompat } from "@/app/lib/connectkit-compat";
 import { getUserOpsFromTx, handleEIP7702Authorizations } from "@/lib/eip7702";
@@ -127,10 +127,6 @@ export const SwapModal = ({
   const [showSlippageSettings, setShowSlippageSettings] = useState(false);
   const [slippagePct, setSlippagePct] = useState<number>(DEFAULT_SLIPPAGE_PCT);
   const [customSlippageInput, setCustomSlippageInput] = useState<string>(DEFAULT_SLIPPAGE_PCT.toString());
-  const [showPayloadDebug, setShowPayloadDebug] = useState(false);
-  const [payloadDebug, setPayloadDebug] = useState<Record<string, unknown> | null>(null);
-  const [sellQuoteUsd, setSellQuoteUsd] = useState<number | null>(null);
-  const [sellQuoteStatus, setSellQuoteStatus] = useState<"idle" | "loading" | "error">("idle");
 
   /** Buy cap: primary UA unified USD (sum amountInUSD), not combined Mobula total. */
   const unifiedUaBuyBalance = useMemo(() => {
@@ -184,10 +180,6 @@ export const SwapModal = ({
       setDirection("buy"); // Default to buy mode
       setIsTyping(false); // Reset typing state
       setShowSlippageSettings(false);
-      setShowPayloadDebug(false);
-      setPayloadDebug(null);
-      setSellQuoteUsd(null);
-      setSellQuoteStatus("idle");
     }
   }, [isOpen]);
 
@@ -218,87 +210,6 @@ export const SwapModal = ({
   }, [assetsForTokenLookup, targetToken]);
 
   const tokenBalance = getTokenBalance();
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const run = async () => {
-      if (!isOpen || !universalAccount || direction !== "sell") {
-        setSellQuoteStatus("idle");
-        setSellQuoteUsd(null);
-        return;
-      }
-
-      let address = "";
-      let targetChainId = 0;
-      if (targetToken?.address && targetToken?.chainId) {
-        address = targetToken.address;
-        targetChainId = targetToken.chainId;
-      } else if (targetToken?.contracts?.length) {
-        const pref = targetToken.contracts.find((c) => c.blockchain.toLowerCase() === "base") || targetToken.contracts[0];
-        if (pref) {
-          address = pref.address;
-          targetChainId = getChainIdFromBlockchain(pref.blockchain);
-        }
-      }
-
-      if (!address || !targetChainId || tokenBalance <= 0 || sliderValue <= 0) {
-        setSellQuoteStatus("idle");
-        setSellQuoteUsd(null);
-        return;
-      }
-
-      const isSolanaToken = targetChainId === 101;
-      const rawDecimals = targetToken?.decimals || (isSolanaToken ? 9 : 18);
-      const decimals = isSolanaToken ? Math.min(rawDecimals, 9) : rawDecimals;
-      const tokenAmountToSell = Math.min(Math.max(0, tokenBalance * sliderValue / 100), tokenBalance);
-      const amountRaw = humanToRawUnits(tokenAmountToSell, decimals).toString();
-
-      if (!amountRaw || BigInt(amountRaw) <= BigInt(0)) {
-        setSellQuoteStatus("idle");
-        setSellQuoteUsd(null);
-        return;
-      }
-
-      setSellQuoteStatus("loading");
-      const quote = await getSellQuotePreview({
-        ua: universalAccount,
-        tokenAddress: address,
-        tokenChainId: targetChainId,
-        amountRaw,
-        slippagePct,
-      });
-
-      if (cancelled) return;
-
-      if (!quote.success || !quote.outputAmount) {
-        setSellQuoteStatus("error");
-        setSellQuoteUsd(null);
-        return;
-      }
-
-      const asNum = Number(quote.outputAmount) / 1e6;
-      setSellQuoteUsd(Number.isFinite(asNum) ? asNum : null);
-      setSellQuoteStatus("idle");
-    };
-
-    run();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    isOpen,
-    universalAccount,
-    direction,
-    tokenBalance,
-    sliderValue,
-    slippagePct,
-    targetToken?.decimals,
-    targetToken?.address,
-    targetToken?.chainId,
-    targetToken?.contracts,
-  ]);
 
   // Update amount based on slider - ONLY when user drags slider, not when typing
   useEffect(() => {
@@ -462,7 +373,7 @@ export const SwapModal = ({
       ? Math.min(Math.max(0, amountNum / (targetToken?.price || 1)), tokenBalance)
       : tokenBalance * sliderValue / 100;
 
-  const sellUsdPreview = sellQuoteUsd ?? (amountNum * Math.max(0, 1 - slippagePct / 100));
+  const sellUsdPreview = amountNum * Math.max(0, 1 - slippagePct / 100);
 
   // Handle swap execution (buy or sell based on direction)
   const handleSwap = async () => {
@@ -485,15 +396,6 @@ export const SwapModal = ({
     
     try {
       let result;
-      const debugRequest: Record<string, unknown> = {
-        direction,
-        token: targetToken?.symbol,
-        targetTokenAddress: address,
-        targetChainId,
-        amountUsd,
-        slippagePct,
-        slippageBps,
-      };
 
       if (direction === "buy") {
         // BUY: USD → Token
@@ -526,12 +428,6 @@ export const SwapModal = ({
         const amountRaw = wantRaw.toString();
 
         console.log("[Sell] Amount calc:", { tokenAmountToSell, decimals, amountRaw, chainId: targetChainId });
-        debugRequest.sell = {
-          tokenAmountToSell,
-          tokenDecimals: decimals,
-          amountRaw,
-          sliderValue,
-        };
 
         result = await executeSell({
           ua: universalAccount,
@@ -543,21 +439,6 @@ export const SwapModal = ({
           slippagePct,
         });
       }
-
-      const resultView = result as unknown as Record<string, unknown>;
-      setPayloadDebug({
-        request: debugRequest,
-        result: {
-          success: result.success,
-          error: result.error,
-          route: resultView?.route,
-          fallbackUsed: resultView?.fallbackUsed,
-          requiresSignature: resultView?.requiresSignature,
-          rootHash: result.rootHash,
-          transactionId: result.transactionId,
-          transaction: resultView?.transaction,
-        },
-      });
 
       if (!result.success) {
         setError(result.error || "Failed to prepare swap");
@@ -680,10 +561,6 @@ export const SwapModal = ({
       }
     } catch (err) {
       console.error("Swap error:", err);
-      setPayloadDebug((prev) => ({
-        ...(prev || {}),
-        exception: err instanceof Error ? { message: err.message, stack: err.stack } : { value: String(err) },
-      }));
       setError(err instanceof Error ? err.message : "Swap failed");
     } finally {
       setIsLoading(false);
@@ -721,27 +598,18 @@ export const SwapModal = ({
             <span className="text-lg">✕</span>
           </button>
           <span className="text-white font-bold text-lg">Swap</span>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowPayloadDebug(true)}
-              className="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center"
-              title="Payload debug"
-            >
-              <span className="text-gray-300 text-sm font-bold">{"{}"}</span>
-            </button>
-            <button
-              onClick={() => setShowSlippageSettings((prev) => !prev)}
-              className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                showSlippageSettings ? "bg-accent-dynamic/30 border border-accent-dynamic/50" : "bg-gray-800"
-              }`}
-              title="Swap settings"
-            >
-              <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-              </svg>
-            </button>
-          </div>
+          <button
+            onClick={() => setShowSlippageSettings((prev) => !prev)}
+            className={`w-10 h-10 rounded-full flex items-center justify-center ${
+              showSlippageSettings ? "bg-accent-dynamic/30 border border-accent-dynamic/50" : "bg-gray-800"
+            }`}
+            title="Swap settings"
+          >
+            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+          </button>
         </div>
 
         <>
@@ -824,13 +692,7 @@ export const SwapModal = ({
                           <span className="text-gray-400 text-2xl">$</span>
                           <span className="text-white text-3xl font-bold">{sellUsdPreview.toFixed(2)}</span>
                         </div>
-                        <div className="text-[11px] text-gray-500 mt-1">
-                          {sellQuoteStatus === "loading"
-                            ? "0x quote…"
-                            : sellQuoteStatus === "error"
-                              ? "0x quote unavailable"
-                              : "0x quote"}
-                        </div>
+
                       </>
                     )}
                   </div>
@@ -998,42 +860,6 @@ export const SwapModal = ({
             <p className="text-[11px] text-gray-500">
               Applied to Li.Fi quotes for buy and sell.
             </p>
-          </div>
-        </>
-      )}
-
-      {showPayloadDebug && (
-        <>
-          <div
-            className="fixed inset-0 z-[100] bg-black/80"
-            onClick={() => setShowPayloadDebug(false)}
-            aria-hidden
-          />
-          <div
-            className="fixed left-4 right-4 top-[10%] z-[101] max-h-[78vh] overflow-y-auto rounded-2xl border border-white/15 bg-[#101010] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.85)]"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="swap-payload-debug-title"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <h3 id="swap-payload-debug-title" className="text-white font-semibold text-lg">
-                Swap Payload Debug
-              </h3>
-              <button
-                type="button"
-                onClick={() => setShowPayloadDebug(false)}
-                className="rounded-full bg-white/10 px-3 py-1 text-sm text-gray-200"
-              >
-                Close
-              </button>
-            </div>
-            <p className="text-[11px] text-gray-500 mb-2">
-              Latest request/result payload captured from this modal.
-            </p>
-            <pre className="text-[11px] text-gray-300 whitespace-pre-wrap break-all bg-black/40 border border-white/10 rounded-lg p-3">
-              {JSON.stringify(payloadDebug || { info: "No swap payload yet in this session." }, null, 2)}
-            </pre>
           </div>
         </>
       )}

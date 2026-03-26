@@ -548,10 +548,11 @@ export async function get0xSwapQuote(
     url.searchParams.set("swapFeeBps", String(AFFILIATE_FEE_BPS));
 
     // OmniUA-style fee preference:
-    // - Prefer stable/native rails, avoid charging affiliate fee in volatile/scam sell tokens.
-    // - For most flows, buyToken is USDC and this keeps fees in USDC.
-    // - If buy is native, skip swapFeeToken so venue-native behavior applies.
-    const feeToken = buyToken;
+    // - If either side is native, collect in native token.
+    // - Otherwise collect in buy token (typically USDC rails for sells).
+    const feeToken = sellToken === NATIVE_ETH
+      ? sellToken
+      : (buyToken === NATIVE_ETH ? buyToken : buyToken);
     if (feeToken !== NATIVE_ETH) {
       url.searchParams.set("swapFeeToken", feeToken);
     }
