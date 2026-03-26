@@ -2785,6 +2785,7 @@ const PerpsModal = ({
   const [perpsChartTf, setPerpsChartTf] = useState<'1D'|'12H'|'4H'|'1H'|'15m'|'5m'|'1m'>('1H');
   const [perpsChart, setPerpsChart] = useState<Array<{ t: number; o: number; h: number; l: number; c: number }>>([]);
   const [perpsChartLoading, setPerpsChartLoading] = useState(false);
+  const [perpsChartError, setPerpsChartError] = useState<string | null>(null);
 
   const lastDebugAtRef = useRef<Record<string, number>>({});
   // Helper to add debug messages (throttled to keep logs readable)
@@ -2820,6 +2821,18 @@ const PerpsModal = ({
   };
 
   const TV_BASE = `${process.env.NEXT_PUBLIC_LIFI_PROXY_URL || 'https://lifi-proxy.orimolty.workers.dev'}/pyth-tv`;
+  const TV_SYMBOL_OVERRIDES: Record<string, string> = {
+    BTC: 'Crypto.BTC/USD',
+    ETH: 'Crypto.ETH/USD',
+    SOL: 'Crypto.SOL/USD',
+    BNB: 'Crypto.BNB/USD',
+    AVAX: 'Crypto.AVAX/USD',
+    OP: 'Crypto.OP/USD',
+    ARB: 'Crypto.ARB/USD',
+    XRP: 'Crypto.XRP/USD',
+    DOGE: 'Crypto.DOGE/USD',
+    AAVE: 'Crypto.AAVE/USD',
+  };
   const tfToResolution: Record<'1D'|'12H'|'4H'|'1H'|'15m'|'5m'|'1m', string> = {
     '1D': '1D',
     '12H': '720',
@@ -2842,6 +2855,7 @@ const PerpsModal = ({
   const resolveTvSymbols = useCallback(async (pairName: string): Promise<string[]> => {
     const base = (pairName.split('/')[0] || pairName).toUpperCase();
     const candidates = [
+      TV_SYMBOL_OVERRIDES[base],
       `${base}USD`,
       `Crypto.${base}/USD`,
       `Forex.${base}/USD`,
@@ -2850,7 +2864,7 @@ const PerpsModal = ({
       `Equity.${base}/USD`,
       pairName,
       `Crypto.${pairName}`,
-    ];
+    ].filter(Boolean) as string[];
 
     const out: string[] = [];
     for (const candidate of candidates) {
@@ -2886,10 +2900,12 @@ const PerpsModal = ({
 
   const fetchPerpsHistory = useCallback(async (pairName: string, tf: '1D'|'12H'|'4H'|'1H'|'15m'|'5m'|'1m') => {
     setPerpsChartLoading(true);
+    setPerpsChartError(null);
     try {
       const symbols = await resolveTvSymbols(pairName);
       if (!symbols.length) {
         setPerpsChart([]);
+        setPerpsChartError('No symbol mapping');
         return;
       }
       const now = Math.floor(Date.now() / 1000);
@@ -2920,6 +2936,7 @@ const PerpsModal = ({
       }
 
       setPerpsChart([]);
+      setPerpsChartError('History unavailable');
     } finally {
       setPerpsChartLoading(false);
     }
@@ -5018,7 +5035,16 @@ const PerpsModal = ({
                   {perpsChartLoading ? (
                     <div className="w-full h-full flex items-center justify-center text-xs text-gray-500">Loading chart…</div>
                   ) : perpsChart.length < 2 ? (
-                    <div className="w-full h-full flex items-center justify-center text-xs text-gray-500">No chart data</div>
+                    <div className="w-full h-full flex flex-col items-center justify-center text-xs text-gray-500 gap-2">
+                      <div>No chart data{perpsChartError ? ` (${perpsChartError})` : ''}</div>
+                      <button
+                        type="button"
+                        onClick={() => fetchPerpsHistory(selectedMarket.pairName, perpsChartTf)}
+                        className="px-2 py-1 rounded border border-[#333] text-[10px] text-gray-300"
+                      >
+                        Retry
+                      </button>
+                    </div>
                   ) : (
                     (() => {
                       const width = 100;
