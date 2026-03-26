@@ -1231,23 +1231,12 @@ export async function executeSell(params: SellParams): Promise<SwapResult> {
     });
 
     const expectTokens: Array<{ type: SUPPORTED_TOKEN_TYPE; tokenType?: SUPPORTED_TOKEN_TYPE; amount: string; chainId: number }> = [];
-    if (route === "0x") {
-      const needWeiBase = get0xRequiredNativeWei(quote.raw);
-      if (needWeiBase > BigInt(0)) {
-        let needWei = (needWeiBase * BigInt(110) + BigInt(99)) / BigInt(100);
-        const roundUnit = BigInt("1000000000000");
-        if (needWei % roundUnit !== BigInt(0)) needWei = ((needWei / roundUnit) + BigInt(1)) * roundUnit;
-        const needEth = weiToEthString(needWei);
-        if (needEth && needEth !== "0") {
-          expectTokens.push({
-            type: TOKEN_TYPE.ETH as SUPPORTED_TOKEN_TYPE,
-            tokenType: TOKEN_TYPE.ETH as SUPPORTED_TOKEN_TYPE,
-            amount: needEth,
-            chainId: tokenChainId,
-          });
-        }
-      }
-    }
+    // IMPORTANT: For ERC20 sells (token -> USDC), do NOT force ETH as a primary expectToken.
+    // 0x fee hints can be conservative/noisy and may trigger false
+    // "Insufficient primary token balance" despite having sell-token balance.
+    // Keep sell path funded by sell token + normal gas handling only.
+    // If native-token sell support is added here later, revisit this branch.
+
 
     const uaTx = await ua.createUniversalTransaction({
       chainId: tokenChainId,
