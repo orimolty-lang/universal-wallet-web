@@ -62,6 +62,10 @@ export default function PerpsCandleChart({
         borderVisible: false,
         timeVisible: true,
         secondsVisible: false,
+        barSpacing: 6,
+        rightOffset: 2,
+        fixLeftEdge: true,
+        fixRightEdge: true,
       },
       crosshair: {
         vertLine: { color: "#374151" },
@@ -76,9 +80,11 @@ export default function PerpsCandleChart({
     const series = chart.addSeries(CandlestickSeries, {
       upColor: "#22c55e",
       downColor: "#ef4444",
-      wickUpColor: "#22c55e",
-      wickDownColor: "#ef4444",
-      borderVisible: false,
+      wickUpColor: "#4ade80",
+      wickDownColor: "#f87171",
+      borderUpColor: "#4ade80",
+      borderDownColor: "#f87171",
+      borderVisible: true,
     });
 
     chartRef.current = chart;
@@ -104,6 +110,15 @@ export default function PerpsCandleChart({
     if (normalized.length > 1) {
       chartRef.current?.timeScale().fitContent();
     }
+
+    // iOS webview can report stale initial size; force a late resize pass.
+    const t = setTimeout(() => {
+      if (!containerRef.current || !chartRef.current) return;
+      chartRef.current.applyOptions({ width: containerRef.current.clientWidth });
+      chartRef.current.timeScale().fitContent();
+    }, 120);
+
+    return () => clearTimeout(t);
   }, [normalized]);
 
   const pct = useMemo(() => {

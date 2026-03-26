@@ -2975,7 +2975,16 @@ const PerpsModal = ({
             c: Number(j.c?.[i] ?? 0),
           })).filter((p) => Number.isFinite(p.o) && Number.isFinite(p.h) && Number.isFinite(p.l) && Number.isFinite(p.c) && p.c > 0 && p.h > 0 && p.l > 0);
           if (points.length >= 2) {
-            setPerpsChart(points.slice(-220));
+            const tfWindow: Record<'1D'|'12H'|'4H'|'1H'|'15m'|'5m'|'1m', number> = {
+              '1D': 90,
+              '12H': 100,
+              '4H': 120,
+              '1H': 140,
+              '15m': 160,
+              '5m': 180,
+              '1m': 180,
+            };
+            setPerpsChart(points.slice(-tfWindow[tf]));
             return;
           }
         } catch {
@@ -3555,7 +3564,16 @@ const PerpsModal = ({
       } else {
         next.push({ t: now, o: last.c, h: currentPrice, l: currentPrice, c: currentPrice });
       }
-      return next.slice(-220);
+      const tfWindow: Record<typeof perpsChartTf, number> = {
+        '1D': 90,
+        '12H': 100,
+        '4H': 120,
+        '1H': 140,
+        '15m': 160,
+        '5m': 180,
+        '1m': 180,
+      };
+      return next.slice(-tfWindow[perpsChartTf]);
     });
   }, [isOpen, currentPrice, perpsChartTf]);
 
