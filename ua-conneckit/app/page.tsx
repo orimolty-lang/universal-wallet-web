@@ -5650,7 +5650,7 @@ const HomeTab = ({
           {[
             { icon: "↓", label: "Receive", action: onReceive },
             { icon: "↑", label: "Send", action: onSend },
-            { icon: "⇄", label: "Convert", action: onConvert },
+            { icon: "⇄", label: "Swap", action: onConvert },
             { icon: "↗", label: "Earn", action: onEarn },
           ].map(({ icon, label, action }, idx, arr) => (
             <div key={label} className="flex items-center">
@@ -8033,7 +8033,7 @@ const App = () => {
           onShowProfilePicker={() => setShowProfilePicker(true)}
           onReceive={() => setShowReceiveModal(true)}
           onSend={() => setShowSendModal(true)}
-          onConvert={() => setShowConvertModal(true)}
+          onConvert={() => setActiveTab('search')}
           onEarn={() => setShowEarnModal(true)}
           onTokenSelect={(token) => setHomeSelectedToken(token)}
           onRefresh={async () => {
