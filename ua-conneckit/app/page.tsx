@@ -2067,22 +2067,16 @@ const ConvertModal = ({
           </div>
         )}
 
-        {fromChain === 101 && toChain && toChain !== 101 && (
-          <div className="bg-amber-900/20 border border-amber-600/50 rounded-lg p-2 mb-2 text-amber-200 text-xs">
-            Solana→EVM: Delegate the destination chain in Settings first for best results.
-          </div>
-        )}
-
         {/* From Section - Compact */}
-        <div className="mb-1">
-          <div className="text-gray-400 text-xs mb-1">From</div>
+        <div className="mb-3">
+          <div className="text-gray-400 text-xs mb-2">From</div>
           
-          <div className="flex gap-2 mb-1">
+          <div className="flex gap-2 mb-3">
             {/* Asset Dropdown - Compact */}
             <div className="flex-1 relative">
               <button
                 onClick={() => { setFromAssetOpen(!fromAssetOpen); setFromChainOpen(false); }}
-                className="w-full bg-[#1a1a1a] rounded-lg px-2 py-1.5 text-white text-left flex items-center justify-between border border-[#333]"
+                className="w-full bg-[#1a1a1a] rounded-lg px-2 py-2 text-white text-left flex items-center justify-between border border-[#333]"
               >
                 <div className="flex items-center gap-2">
                   {fromAsset ? (
@@ -2118,7 +2112,7 @@ const ConvertModal = ({
             <div className="w-28 relative">
               <button
                 onClick={() => { if (fromAsset) { setFromChainOpen(!fromChainOpen); setFromAssetOpen(false); }}}
-                className={`w-full bg-[#1a1a1a] rounded-lg px-2 py-1.5 text-left flex items-center justify-between border border-[#333] ${!fromAsset ? 'opacity-50' : ''}`}
+                className={`w-full bg-[#1a1a1a] rounded-lg px-2 py-2 text-left flex items-center justify-between border border-[#333] ${!fromAsset ? 'opacity-50' : ''}`}
                 disabled={!fromAsset}
               >
                 <div className="flex items-center gap-1">
@@ -2159,11 +2153,11 @@ const ConvertModal = ({
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="0.00"
-              className="flex-1 bg-[#1a1a1a] rounded-lg px-2 py-1.5 text-white outline-none border border-[#333]"
+              className="flex-1 bg-[#1a1a1a] rounded-lg px-3 py-2.5 text-white outline-none border border-[#333]"
             />
             <button 
               onClick={handleMax}
-              className="bg-[#1a1a1a] px-2 py-1.5 rounded-lg text-accent-dynamic text-xs hover:bg-[#252525] border border-[#333]"
+              className="bg-[#1a1a1a] px-2 py-2 rounded-lg text-accent-dynamic text-xs hover:bg-[#252525] border border-[#333] self-stretch flex items-center"
             >
               MAX
             </button>
@@ -2173,23 +2167,23 @@ const ConvertModal = ({
           </div>
         </div>
 
-        {/* Swap Arrow */}
-        <div className="flex justify-center -my-1 relative z-10">
-          <div className="w-8 h-8 rounded-full bg-[#1a1a1a] border border-[#333] flex items-center justify-center text-gray-400">
+        {/* Direction indicator — padded so it sits between amount row and “To” picks */}
+        <div className="flex justify-center py-3" aria-hidden>
+          <div className="w-9 h-9 shrink-0 rounded-full bg-[#1a1a1a] border border-[#333] flex items-center justify-center text-gray-400 text-lg leading-none">
             ↓
           </div>
         </div>
 
         {/* To Section - Compact */}
-        <div className="mb-2">
-          <div className="text-gray-400 text-xs mb-1">To</div>
+        <div className="mb-3">
+          <div className="text-gray-400 text-xs mb-2">To</div>
           
           <div className="flex gap-2">
             {/* To Asset Dropdown - Compact */}
             <div className="flex-1 relative">
               <button
                 onClick={() => { setToAssetOpen(!toAssetOpen); setToChainOpen(false); }}
-                className="w-full bg-[#1a1a1a] rounded-lg px-2 py-1.5 text-white text-left flex items-center justify-between border border-[#333]"
+                className="w-full bg-[#1a1a1a] rounded-lg px-2 py-2 text-white text-left flex items-center justify-between border border-[#333]"
               >
                 <div className="flex items-center gap-2">
                   {toAsset ? (
@@ -2223,7 +2217,7 @@ const ConvertModal = ({
             <div className="w-28 relative">
               <button
                 onClick={() => { if (toAsset) { setToChainOpen(!toChainOpen); setToAssetOpen(false); }}}
-                className={`w-full bg-[#1a1a1a] rounded-lg px-2 py-1.5 text-left flex items-center justify-between border border-[#333] ${!toAsset ? 'opacity-50' : ''}`}
+                className={`w-full bg-[#1a1a1a] rounded-lg px-2 py-2 text-left flex items-center justify-between border border-[#333] ${!toAsset ? 'opacity-50' : ''}`}
                 disabled={!toAsset}
               >
                 <div className="flex items-center gap-1">
@@ -6346,18 +6340,32 @@ const SearchTab = ({
 
       {/* Search bar at top - below header */}
       <div className="shrink-0 px-4 py-3 bg-[#0a0a0a]">
-        <div className="relative flex items-center bg-gray-800 rounded-full px-4 py-2.5">
+        <div className="relative flex items-center gap-2 bg-gray-800 rounded-full px-4 py-2.5">
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search for anything..."
-            className="flex-1 bg-transparent text-white placeholder-gray-500 outline-none text-sm"
+            className="flex-1 min-w-0 bg-transparent text-white placeholder-gray-500 outline-none text-sm"
           />
+          {query.trim() ? (
+            <button
+              type="button"
+              onClick={() => {
+                setQuery("");
+                setResults([]);
+                setError(null);
+              }}
+              className="shrink-0 w-8 h-8 rounded-full bg-gray-700 text-gray-200 text-lg leading-none flex items-center justify-center hover:bg-gray-600 transition-colors"
+              aria-label="Clear search"
+            >
+              ×
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={handlePaste}
-            className="ml-2 px-3 py-1 rounded-lg bg-gray-700 text-white text-sm font-medium hover:bg-gray-600 transition-colors"
+            className="shrink-0 ml-0 px-3 py-1 rounded-lg bg-gray-700 text-white text-sm font-medium hover:bg-gray-600 transition-colors"
           >
             Paste
           </button>

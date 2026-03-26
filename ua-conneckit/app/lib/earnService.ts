@@ -206,6 +206,42 @@ const AAVE_NETWORK_TO_CHAIN_ID: Record<string, number> = {
   bnb: 56,
 };
 
+/** DefiLlama `currentChainTvls` keys → our numeric chainId (Aave V3 pools we list). */
+const DEFILLAMA_AAVE_CHAIN_TO_NUMERIC: Record<string, number> = {
+  Ethereum: 1,
+  Base: 8453,
+  Arbitrum: 42161,
+  Optimism: 10,
+  Polygon: 137,
+  Avalanche: 43114,
+  Binance: 56,
+  BSC: 56,
+};
+
+/**
+ * Per-chain Aave V3 TVL (all assets) from DefiLlama. Used for list display; Morpho still uses its own API TVL.
+ */
+async function fetchAaveV3TvlByChainUsd(): Promise<Record<number, number>> {
+  const out: Record<number, number> = {};
+  try {
+    const res = await fetch("https://api.llama.fi/protocol/aave-v3", { cache: "no-store" });
+    if (!res.ok) return out;
+    const data = (await res.json()) as { currentChainTvls?: Record<string, number> };
+    const tvls = data?.currentChainTvls;
+    if (!tvls || typeof tvls !== "object") return out;
+    for (const [name, raw] of Object.entries(tvls)) {
+      if (name.includes("borrowed") || name.includes("Borrowed")) continue;
+      const chainId = DEFILLAMA_AAVE_CHAIN_TO_NUMERIC[name];
+      if (!chainId) continue;
+      const n = typeof raw === "number" ? raw : parseFloat(String(raw));
+      if (Number.isFinite(n) && n > 0) out[chainId] = n;
+    }
+  } catch (err) {
+    console.error("[Earn] DefiLlama Aave TVL fetch failed:", err);
+  }
+  return out;
+}
+
 /**
  * Fetch Aave USDC supply APY from aave-v3-data (free, no key).
  */
@@ -233,10 +269,13 @@ async function fetchAaveUsdcApy(): Promise<Record<number, number>> {
 }
 
 /**
- * Build Aave supply markets from config. Enriches with APY from aave-v3-data.
+ * Build Aave supply markets from config. Enriches with APY from aave-v3-data and TVL from DefiLlama.
  */
 async function buildAaveMarkets(): Promise<EarnMarket[]> {
-  const [aaveApy] = await Promise.all([fetchAaveUsdcApy()]);
+  const [aaveApy, aaveTvlByChain] = await Promise.all([
+    fetchAaveUsdcApy(),
+    fetchAaveV3TvlByChainUsd(),
+  ]);
   const out: EarnMarket[] = [];
   const chainIdToUa = getChainIdToUaMap();
   const aaveMarkets: Array<{ chainId: number; pool: string; usdc: string; name: string }> = [
@@ -252,6 +291,7 @@ async function buildAaveMarkets(): Promise<EarnMarket[]> {
     137: "Polygon", 43114: "Avalanche",
   };
   for (const m of aaveMarkets) {
+    const chainTvl = aaveTvlByChain[m.chainId] ?? 0;
     out.push({
       id: `aave-${m.chainId}-usdc`,
       protocol: "aave",
@@ -265,7 +305,8 @@ async function buildAaveMarkets(): Promise<EarnMarket[]> {
       assetSymbol: "USDC",
       assetDecimals: 6,
       apy: aaveApy[m.chainId] ?? 0,
-      tvl: 0,
+      tvl: chainTvl,
+      totalAssetsUsd: chainTvl > 0 ? chainTvl : undefined,
     });
   }
   return out;
