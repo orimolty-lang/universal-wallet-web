@@ -2786,6 +2786,7 @@ const PerpsModal = ({
   const [perpsChart, setPerpsChart] = useState<Array<{ t: number; o: number; h: number; l: number; c: number }>>([]);
   const [perpsChartLoading, setPerpsChartLoading] = useState(false);
   const [perpsChartError, setPerpsChartError] = useState<string | null>(null);
+  const [tvSymbolCatalog, setTvSymbolCatalog] = useState<string[]>([]);
 
   const lastDebugAtRef = useRef<Record<string, number>>({});
   // Helper to add debug messages (throttled to keep logs readable)
@@ -2821,18 +2822,20 @@ const PerpsModal = ({
   };
 
   const TV_BASE = `${process.env.NEXT_PUBLIC_LIFI_PROXY_URL || 'https://lifi-proxy.orimolty.workers.dev'}/pyth-tv`;
-  const TV_SYMBOL_OVERRIDES: Record<string, string> = {
-    BTC: 'Crypto.BTC/USD',
-    ETH: 'Crypto.ETH/USD',
-    SOL: 'Crypto.SOL/USD',
-    BNB: 'Crypto.BNB/USD',
-    AVAX: 'Crypto.AVAX/USD',
-    OP: 'Crypto.OP/USD',
-    ARB: 'Crypto.ARB/USD',
-    XRP: 'Crypto.XRP/USD',
-    DOGE: 'Crypto.DOGE/USD',
-    AAVE: 'Crypto.AAVE/USD',
-  };
+
+  const fetchJsonWithTimeout = useCallback(async (url: string, timeoutMs = 9000): Promise<unknown> => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const r = await fetch(url, { signal: ctrl.signal });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return await r.json();
+    } finally {
+      clearTimeout(t);
+    }
+  }, []);
+
+
   const tfToResolution: Record<'1D'|'12H'|'4H'|'1H'|'15m'|'5m'|'1m', string> = {
     '1D': '1D',
     '12H': '720',
@@ -2852,10 +2855,45 @@ const PerpsModal = ({
     '1m': 60 * 1 * 24,
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    const loadCatalog = async () => {
+      try {
+        const j = await fetchJsonWithTimeout(`${TV_BASE}/symbol_info`, 12000) as { symbol?: string[] };
+        const list = Array.isArray(j?.symbol) ? j.symbol : [];
+        if (!cancelled && list.length > 0) setTvSymbolCatalog(list);
+      } catch {
+        // ignore; resolver has other fallbacks
+      }
+    };
+    if (isOpen) loadCatalog();
+    return () => { cancelled = true; };
+  }, [isOpen, TV_BASE, fetchJsonWithTimeout]);
+
   const resolveTvSymbols = useCallback(async (pairName: string): Promise<string[]> => {
     const base = (pairName.split('/')[0] || pairName).toUpperCase();
+    const out: string[] = [];
+
+    // Deterministic override first.
+    const overrideMap: Record<string, string> = {
+      BTC: 'Crypto.BTC/USD', ETH: 'Crypto.ETH/USD', SOL: 'Crypto.SOL/USD', BNB: 'Crypto.BNB/USD',
+      AVAX: 'Crypto.AVAX/USD', OP: 'Crypto.OP/USD', ARB: 'Crypto.ARB/USD', XRP: 'Crypto.XRP/USD',
+      DOGE: 'Crypto.DOGE/USD', AAVE: 'Crypto.AAVE/USD',
+    };
+    const override = overrideMap[base];
+    if (override) out.push(override);
+
+    // Catalog-based candidates (fast path, matches Avantis frontend data source family).
+    if (tvSymbolCatalog.length > 0) {
+      const fromCatalog = tvSymbolCatalog.filter((s) => {
+        const u = String(s).toUpperCase();
+        return u.includes(base) && u.includes('USD');
+      }).slice(0, 8);
+      for (const s of fromCatalog) if (!out.includes(s)) out.push(s);
+    }
+
+    // Direct symbol endpoint fallback candidates.
     const candidates = [
-      TV_SYMBOL_OVERRIDES[base],
       `${base}USD`,
       `Crypto.${base}/USD`,
       `Forex.${base}/USD`,
@@ -2864,14 +2902,11 @@ const PerpsModal = ({
       `Equity.${base}/USD`,
       pairName,
       `Crypto.${pairName}`,
-    ].filter(Boolean) as string[];
+    ];
 
-    const out: string[] = [];
     for (const candidate of candidates) {
       try {
-        const r = await fetch(`${TV_BASE}/symbols?symbol=${encodeURIComponent(candidate)}`);
-        if (!r.ok) continue;
-        const j = await r.json() as { s?: string; ticker?: string; name?: string };
+        const j = await fetchJsonWithTimeout(`${TV_BASE}/symbols?symbol=${encodeURIComponent(candidate)}`, 6000) as { s?: string; ticker?: string; name?: string };
         if (j?.s === 'error') continue;
         const resolved = j?.ticker || (j?.name ? candidate : '');
         if (resolved && !out.includes(resolved)) out.push(resolved);
@@ -2882,21 +2917,18 @@ const PerpsModal = ({
 
     // Search fallback for stubborn symbols.
     try {
-      const s = await fetch(`${TV_BASE}/search?query=${encodeURIComponent(base)}&type=&exchange=&limit=20`);
-      if (s.ok) {
-        const arr = await s.json() as Array<{ symbol?: string; full_name?: string; ticker?: string }>;
-        for (const row of arr || []) {
-          const v = row?.ticker || row?.full_name || row?.symbol;
-          if (!v) continue;
-          if (String(v).toUpperCase().includes(base) && String(v).includes('USD') && !out.includes(v)) out.push(v);
-        }
+      const arr = await fetchJsonWithTimeout(`${TV_BASE}/search?query=${encodeURIComponent(base)}&type=&exchange=&limit=20`, 7000) as Array<{ symbol?: string; full_name?: string; ticker?: string }>;
+      for (const row of arr || []) {
+        const v = row?.ticker || row?.full_name || row?.symbol;
+        if (!v) continue;
+        if (String(v).toUpperCase().includes(base) && String(v).includes('USD') && !out.includes(v)) out.push(v);
       }
     } catch {
       // ignore
     }
 
     return out;
-  }, [TV_BASE]);
+  }, [TV_BASE, tvSymbolCatalog, fetchJsonWithTimeout]);
 
   const fetchPerpsHistory = useCallback(async (pairName: string, tf: '1D'|'12H'|'4H'|'1H'|'15m'|'5m'|'1m') => {
     setPerpsChartLoading(true);
