@@ -923,18 +923,31 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
         return { success: false, error: `Unsupported chain for swap: ${sourceChainId}` };
       }
 
-      // Native-per-chain funding model: derive native sell amount from USD notional.
-      const sellToken = NATIVE_ETH;
-      const nativeSizing = await getNativeSellAmountForUsd(
-        evmSmartAccount,
-        sourceChainId,
-        amountUsd,
-        safeSlippageBps
-      );
-      if (!nativeSizing.success || !nativeSizing.sellAmountWei) {
-        return { success: false, error: nativeSizing.error || "Failed to size native sell amount" };
+      // OmniUA parity: default BUY funding from USDC on execution chain.
+      // ETH funding can be enabled by explicitly passing fromToken="ETH".
+      const useNativeFunding = fromToken === "ETH";
+      const sellToken = useNativeFunding ? NATIVE_ETH : (USDC_ADDRESSES[sourceChainId] || NATIVE_ETH);
+
+      let sellAmount: string;
+      if (useNativeFunding) {
+        const nativeSizing = await getNativeSellAmountForUsd(
+          evmSmartAccount,
+          sourceChainId,
+          amountUsd,
+          safeSlippageBps
+        );
+        if (!nativeSizing.success || !nativeSizing.sellAmountWei) {
+          return { success: false, error: nativeSizing.error || "Failed to size native sell amount" };
+        }
+        sellAmount = nativeSizing.sellAmountWei;
+      } else {
+        // USDC has 6 decimals on EVM chains in this app context.
+        const usdcRaw = Math.floor(Math.max(0, amountUsd) * 1e6);
+        if (!Number.isFinite(usdcRaw) || usdcRaw <= 0) {
+          return { success: false, error: "Invalid USDC sell amount" };
+        }
+        sellAmount = String(usdcRaw);
       }
-      const sellAmount = nativeSizing.sellAmountWei;
       
       console.log("[Swap] Quote params:", { 
         sellToken, 
@@ -1012,13 +1025,16 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
         value: quote.transaction.value || "0",
       });
 
-      // Build expectTokens for UA balance aggregation
+      // Build expectTokens for UA balance aggregation (primary funding token first).
       const tokenType = fromToken === "ETH" ? TOKEN_TYPE.ETH : TOKEN_TYPE.USDC;
-      const expectTokens = [
+      const fundingAmount = tokenType === TOKEN_TYPE.USDC
+        ? String(Math.floor(Math.max(0, amountUsd) * 1e6) / 1e6)
+        : String(amountUsd);
+      const expectTokens: Array<{ type: SUPPORTED_TOKEN_TYPE; tokenType?: SUPPORTED_TOKEN_TYPE; amount: string; chainId: number }> = [
         {
           type: tokenType,
           tokenType: tokenType,
-          amount: String(amountUsd),
+          amount: fundingAmount,
           chainId: sourceChainId,
         },
       ];
@@ -1034,7 +1050,8 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
           }
           const needEth = weiToEthString(requiredWei);
           if (needEth && needEth !== "0") {
-            expectTokens.splice(0, expectTokens.length, {
+            // Keep primary funding expectation (e.g. USDC) and add ETH only as supplemental requirement.
+            expectTokens.push({
               type: TOKEN_TYPE.ETH,
               tokenType: TOKEN_TYPE.ETH,
               amount: needEth,

@@ -394,7 +394,7 @@ export const SwapModal = ({
         // BUY: USD → Token
         result = await executeSwap({
           ua: universalAccount,
-          fromToken: "ETH",
+          fromToken: "USDC",
           toTokenAddress: address,
           toTokenChainId: targetChainId,
           amountUsd: amountUsd,
