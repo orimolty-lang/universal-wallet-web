@@ -6,6 +6,7 @@
 const LIFI_API_BASE = "https://li.quest/v1";
 const ZEROX_API_BASE = "https://api.0x.org";
 const MOBULA_API_BASE = "https://api.mobula.io/api/1";
+const PYTH_TV_BASE = "https://benchmarks.pyth.network/v1/shims/tradingview";
 
 const corsHeaders = (env) => ({
   "Access-Control-Allow-Origin": env.ALLOWED_ORIGIN || "*",
@@ -44,6 +45,32 @@ export default {
         const text = await mobulaResponse.text();
         return new Response(text, {
           status: mobulaResponse.status,
+          headers: {
+            "Content-Type": "application/json",
+            ...corsHeaders(env),
+          },
+        });
+      }
+
+      // Pyth TradingView shim proxy path: /pyth-tv/*
+      if (url.pathname.startsWith("/pyth-tv/")) {
+        const pythPath = url.pathname.replace("/pyth-tv", "");
+        const pythUrl = new URL(`${PYTH_TV_BASE}${pythPath}`);
+        url.searchParams.forEach((value, key) => {
+          pythUrl.searchParams.set(key, value);
+        });
+
+        const pythResponse = await fetch(pythUrl.toString(), {
+          method: request.method,
+          headers: {
+            Accept: "application/json",
+          },
+          body: request.method !== "GET" ? await request.text() : undefined,
+        });
+
+        const text = await pythResponse.text();
+        return new Response(text, {
+          status: pythResponse.status,
           headers: {
             "Content-Type": "application/json",
             ...corsHeaders(env),

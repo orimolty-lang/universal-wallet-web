@@ -2783,7 +2783,7 @@ const PerpsModal = ({
   const [showPerpsExplainerModal, setShowPerpsExplainerModal] = useState(false);
   const [perpsExplainerStep, setPerpsExplainerStep] = useState(0);
   const [perpsChartTf, setPerpsChartTf] = useState<'1D'|'12H'|'4H'|'1H'|'15m'|'5m'|'1m'>('1H');
-  const [perpsChart, setPerpsChart] = useState<Array<{ t: number; c: number }>>([]);
+  const [perpsChart, setPerpsChart] = useState<Array<{ t: number; o: number; h: number; l: number; c: number }>>([]);
   const [perpsChartLoading, setPerpsChartLoading] = useState(false);
 
   const lastDebugAtRef = useRef<Record<string, number>>({});
@@ -2819,7 +2819,7 @@ const PerpsModal = ({
     return value.toFixed(2);
   };
 
-  const TV_BASE = 'https://benchmarks.pyth.network/v1/shims/tradingview';
+  const TV_BASE = `${process.env.NEXT_PUBLIC_LIFI_PROXY_URL || 'https://lifi-proxy.orimolty.workers.dev'}/pyth-tv`;
   const tfToResolution: Record<'1D'|'12H'|'4H'|'1H'|'15m'|'5m'|'1m', string> = {
     '1D': '1D',
     '12H': '720',
@@ -2874,13 +2874,19 @@ const PerpsModal = ({
         setPerpsChart([]);
         return;
       }
-      const j = await r.json() as { s?: string; t?: number[]; c?: number[] };
-      if (j?.s !== 'ok' || !Array.isArray(j.t) || !Array.isArray(j.c)) {
+      const j = await r.json() as { s?: string; t?: number[]; o?: number[]; h?: number[]; l?: number[]; c?: number[] };
+      if (j?.s !== 'ok' || !Array.isArray(j.t) || !Array.isArray(j.o) || !Array.isArray(j.h) || !Array.isArray(j.l) || !Array.isArray(j.c)) {
         setPerpsChart([]);
         return;
       }
-      const points = j.t.map((t, i) => ({ t: t * 1000, c: Number(j.c?.[i] ?? 0) })).filter((p) => Number.isFinite(p.c) && p.c > 0);
-      setPerpsChart(points.slice(-320));
+      const points = j.t.map((t, i) => ({
+        t: t * 1000,
+        o: Number(j.o?.[i] ?? 0),
+        h: Number(j.h?.[i] ?? 0),
+        l: Number(j.l?.[i] ?? 0),
+        c: Number(j.c?.[i] ?? 0),
+      })).filter((p) => Number.isFinite(p.o) && Number.isFinite(p.h) && Number.isFinite(p.l) && Number.isFinite(p.c) && p.c > 0 && p.h > 0 && p.l > 0);
+      setPerpsChart(points.slice(-220));
     } finally {
       setPerpsChartLoading(false);
     }
@@ -3436,11 +3442,16 @@ const PerpsModal = ({
       const step = stepMsMap[perpsChartTf];
       const last = next[next.length - 1];
       if (now - last.t < step) {
-        next[next.length - 1] = { ...last, c: currentPrice };
+        next[next.length - 1] = {
+          ...last,
+          c: currentPrice,
+          h: Math.max(last.h, currentPrice),
+          l: Math.min(last.l, currentPrice),
+        };
       } else {
-        next.push({ t: now, c: currentPrice });
+        next.push({ t: now, o: last.c, h: currentPrice, l: currentPrice, c: currentPrice });
       }
-      return next.slice(-320);
+      return next.slice(-220);
     });
   }, [isOpen, currentPrice, perpsChartTf]);
 
@@ -4971,24 +4982,38 @@ const PerpsModal = ({
                     (() => {
                       const width = 100;
                       const height = 40;
-                      const values = perpsChart.map((p) => p.c);
-                      const min = Math.min(...values);
-                      const max = Math.max(...values);
+                      const highs = perpsChart.map((p) => p.h);
+                      const lows = perpsChart.map((p) => p.l);
+                      const min = Math.min(...lows);
+                      const max = Math.max(...highs);
                       const range = Math.max(max - min, 1e-9);
-                      const points = perpsChart.map((p, i) => {
-                        const x = (i / (perpsChart.length - 1)) * width;
-                        const y = height - ((p.c - min) / range) * height;
-                        return `${x},${y}`;
-                      }).join(' ');
-                      const first = values[0];
-                      const last = values[values.length - 1];
+                      const first = perpsChart[0].c;
+                      const last = perpsChart[perpsChart.length - 1].c;
                       const pct = first > 0 ? ((last - first) / first) * 100 : 0;
                       const up = pct >= 0;
+                      const n = perpsChart.length;
+                      const candleW = Math.max(0.35, Math.min(1.6, 80 / n));
                       return (
                         <div className="w-full h-full flex flex-col">
                           <div className={`text-[11px] mb-1 ${up ? 'text-green-400' : 'text-red-400'}`}>{up ? '+' : ''}{pct.toFixed(2)}%</div>
                           <svg viewBox={`0 0 ${width} ${height}`} className="w-full flex-1">
-                            <polyline fill="none" stroke={up ? '#22c55e' : '#ef4444'} strokeWidth="1.3" points={points} />
+                            {perpsChart.map((p, i) => {
+                              const x = (i / Math.max(n - 1, 1)) * width;
+                              const yH = height - ((p.h - min) / range) * height;
+                              const yL = height - ((p.l - min) / range) * height;
+                              const yO = height - ((p.o - min) / range) * height;
+                              const yC = height - ((p.c - min) / range) * height;
+                              const bullish = p.c >= p.o;
+                              const bodyTop = Math.min(yO, yC);
+                              const bodyH = Math.max(Math.abs(yC - yO), 0.4);
+                              const color = bullish ? '#22c55e' : '#ef4444';
+                              return (
+                                <g key={i}>
+                                  <line x1={x} y1={yH} x2={x} y2={yL} stroke={color} strokeWidth={0.35} />
+                                  <rect x={x - candleW / 2} y={bodyTop} width={candleW} height={bodyH} fill={color} rx={0.1} />
+                                </g>
+                              );
+                            })}
                           </svg>
                         </div>
                       );
