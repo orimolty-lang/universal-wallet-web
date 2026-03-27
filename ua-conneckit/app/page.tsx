@@ -58,12 +58,21 @@ const MORALIS_API_KEY = process.env.NEXT_PUBLIC_MORALIS_API_KEY || "eyJhbGciOiJI
 
 type MobulaAsset = MobulaPortfolioAsset;
 
+const isMoralisEvmAddress = (value: string): boolean => /^0x[a-fA-F0-9]{40}$/.test(value);
+const isMoralisSolAddress = (value: string): boolean => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value);
+
 async function fetchMoralisWalletBalances(address: string): Promise<MobulaAsset[]> {
-  if (!address || !address.startsWith("0x")) return [];
-  if (!MORALIS_API_KEY) return [];
+  if (!address || !MORALIS_API_KEY) return [];
 
   try {
-    const url = `https://deep-index.moralis.io/api/v2.2/wallets/${address}/tokens?chain=base&token_prices=true&exclude_spam=true`;
+    const isEvm = isMoralisEvmAddress(address);
+    const isSol = !isEvm && isMoralisSolAddress(address);
+    if (!isEvm && !isSol) return [];
+
+    const url = isEvm
+      ? `https://deep-index.moralis.io/api/v2.2/wallets/${address}/tokens?chain=base&token_prices=true&exclude_spam=true`
+      : `https://solana-gateway.moralis.io/account/mainnet/${address}/tokens?excludeSpam=true`;
+
     const response = await fetch(url, {
       method: "GET",
       headers: {
@@ -78,14 +87,24 @@ async function fetchMoralisWalletBalances(address: string): Promise<MobulaAsset[
     }
 
     const data = await response.json();
-    const result = Array.isArray(data?.result) ? data.result : [];
+    const result = isEvm
+      ? (Array.isArray(data?.result) ? data.result : [])
+      : (Array.isArray(data) ? data : (Array.isArray(data?.tokens) ? data.tokens : []));
 
     const mapped: MobulaAsset[] = result
       .map((row: Record<string, unknown>) => {
-        const tokenBalance = Number(row?.balance_formatted || 0);
-        const price = Number(row?.usd_price || 0);
-        const estimated = Number(row?.usd_value ?? tokenBalance * price);
-        const tokenAddress = typeof row?.token_address === "string" ? row.token_address : undefined;
+        const tokenAddress = String(
+          row?.token_address || row?.mint || row?.address || row?.tokenAddress || "",
+        ).trim();
+        const tokenBalance = Number(
+          row?.balance_formatted || row?.amount || row?.balanceFormatted || row?.balance || 0,
+        );
+        const price = Number(row?.usd_price || row?.usdPrice || row?.priceUsd || 0);
+        const estimated = Number(row?.usd_value || row?.usdValue || tokenBalance * price);
+
+        const blockchain = isEvm ? "base" : "solana";
+        const chainId = isEvm ? 8453 : 101;
+        const balanceRaw = String(row?.balance || row?.amountRaw || row?.amount_raw || "0");
 
         return {
           asset: {
@@ -93,19 +112,19 @@ async function fetchMoralisWalletBalances(address: string): Promise<MobulaAsset[
             symbol: row?.symbol || "?",
             logo: row?.logo || row?.thumbnail,
             contracts: tokenAddress ? [tokenAddress] : [],
-            blockchains: ["base"],
+            blockchains: [blockchain],
           },
           token_balance: Number.isFinite(tokenBalance) ? tokenBalance : 0,
           price: Number.isFinite(price) ? price : 0,
           estimated_balance: Number.isFinite(estimated) ? estimated : 0,
-          contracts_balances: tokenAddress ? [{ address: tokenAddress, chainId: "8453" }] : [],
+          contracts_balances: tokenAddress ? [{ address: tokenAddress, chainId: String(chainId) }] : [],
           cross_chain_balances: tokenAddress
             ? {
-                base: {
+                [blockchain]: {
                   address: tokenAddress,
                   balance: Number.isFinite(tokenBalance) ? tokenBalance : 0,
-                  balanceRaw: String(row?.balance || "0"),
-                  chainId: 8453,
+                  balanceRaw,
+                  chainId,
                 },
               }
             : {},
@@ -113,7 +132,7 @@ async function fetchMoralisWalletBalances(address: string): Promise<MobulaAsset[
       })
       .filter((a: MobulaAsset) => (a.token_balance || 0) > 0 || (a.estimated_balance || 0) > 0);
 
-    console.log("[Moralis] Fallback assets:", mapped.length);
+    console.log("[Moralis] Fallback assets:", mapped.length, isSol ? "(solana)" : "(evm)");
     return mapped;
   } catch (error) {
     console.error("[Moralis] Error fetching wallet:", error);

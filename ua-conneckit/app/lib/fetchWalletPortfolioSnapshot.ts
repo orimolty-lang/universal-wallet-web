@@ -12,39 +12,62 @@ const MOBULA_PROXY_BASE =
   process.env.NEXT_PUBLIC_LIFI_PROXY_URL || "https://lifi-proxy.orimolty.workers.dev";
 const MORALIS_API_KEY = process.env.NEXT_PUBLIC_MORALIS_API_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6ImM3NzRhN2EyLThjMDItNDlhOS04ZDdlLTdiMmI3YWM5OTJlMSIsIm9yZ0lkIjoiNDQwODQxIiwidXNlcklkIjoiNDUzNTQ1IiwidHlwZUlkIjoiN2Y3NjRlZGMtMzI3Ni00NTQ3LTkzNWYtYzQ2NmVjNzJmNTYwIiwidHlwZSI6IlBST0pFQ1QiLCJpYXQiOjE3NDQyNDE4MjYsImV4cCI6NDkwMDAwMTgyNn0.jDl4YJnGYbEPp4zARV71TZupZBZmbHx4FABNIwT-CNc";
 
+const isMoralisEvmAddress = (value: string): boolean => /^0x[a-fA-F0-9]{40}$/.test(value);
+const isMoralisSolAddress = (value: string): boolean => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value);
+
 async function fetchMoralisWalletBalances(address: string): Promise<MobulaPortfolioAsset[]> {
-  if (!address || !address.startsWith("0x") || !MORALIS_API_KEY) return [];
+  if (!address || !MORALIS_API_KEY) return [];
   try {
-    const url = `https://deep-index.moralis.io/api/v2.2/wallets/${address}/tokens?chain=base&token_prices=true&exclude_spam=true`;
+    const isEvm = isMoralisEvmAddress(address);
+    const isSol = !isEvm && isMoralisSolAddress(address);
+    if (!isEvm && !isSol) return [];
+
+    const url = isEvm
+      ? `https://deep-index.moralis.io/api/v2.2/wallets/${address}/tokens?chain=base&token_prices=true&exclude_spam=true`
+      : `https://solana-gateway.moralis.io/account/mainnet/${address}/tokens?excludeSpam=true`;
+
     const response = await fetch(url, { headers: { Accept: "application/json", "X-API-Key": MORALIS_API_KEY } });
     if (!response.ok) return [];
+
     const data = await response.json();
-    const result = Array.isArray(data?.result) ? data.result : [];
+    const result = isEvm
+      ? (Array.isArray(data?.result) ? data.result : [])
+      : (Array.isArray(data) ? data : (Array.isArray(data?.tokens) ? data.tokens : []));
+
     return result
       .map((row: Record<string, unknown>) => {
-        const tokenBalance = Number(row?.balance_formatted || 0);
-        const price = Number(row?.usd_price || 0);
-        const estimated = Number(row?.usd_value ?? tokenBalance * price);
-        const tokenAddress = typeof row?.token_address === "string" ? row.token_address : undefined;
+        const tokenAddress = String(
+          row?.token_address || row?.mint || row?.address || row?.tokenAddress || "",
+        ).trim();
+        const tokenBalance = Number(
+          row?.balance_formatted || row?.amount || row?.balanceFormatted || row?.balance || 0,
+        );
+        const price = Number(row?.usd_price || row?.usdPrice || row?.priceUsd || 0);
+        const estimated = Number(row?.usd_value || row?.usdValue || tokenBalance * price);
+
+        const blockchain = isEvm ? "base" : "solana";
+        const chainId = isEvm ? 8453 : 101;
+        const balanceRaw = String(row?.balance || row?.amountRaw || row?.amount_raw || "0");
+
         return {
           asset: {
             name: row?.name || row?.symbol || "Unknown",
             symbol: row?.symbol || "?",
             logo: row?.logo || row?.thumbnail,
             contracts: tokenAddress ? [tokenAddress] : [],
-            blockchains: ["base"],
+            blockchains: [blockchain],
           },
           token_balance: Number.isFinite(tokenBalance) ? tokenBalance : 0,
           price: Number.isFinite(price) ? price : 0,
           estimated_balance: Number.isFinite(estimated) ? estimated : 0,
-          contracts_balances: tokenAddress ? [{ address: tokenAddress, chainId: "8453" }] : [],
+          contracts_balances: tokenAddress ? [{ address: tokenAddress, chainId: String(chainId) }] : [],
           cross_chain_balances: tokenAddress
             ? {
-                base: {
+                [blockchain]: {
                   address: tokenAddress,
                   balance: Number.isFinite(tokenBalance) ? tokenBalance : 0,
-                  balanceRaw: String(row?.balance || "0"),
-                  chainId: 8453,
+                  balanceRaw,
+                  chainId,
                 },
               }
             : {},
