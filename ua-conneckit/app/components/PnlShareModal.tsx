@@ -89,6 +89,31 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
     if (!cardRef.current) return;
     try {
       setIsExporting(true);
+
+      // Export-only stability: wait for fonts + in-card images so html2canvas layout
+      // matches on-screen modal metrics (prevents spacing/alignment drift).
+      if (typeof document !== "undefined") {
+        const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
+        if (fonts) {
+          try {
+            await fonts.ready;
+          } catch {}
+        }
+      }
+
+      const imgs = Array.from(cardRef.current.querySelectorAll("img"));
+      await Promise.all(
+        imgs.map(async (img) => {
+          try {
+            if ((img as HTMLImageElement).complete) return;
+            await new Promise<void>((resolve) => {
+              img.addEventListener("load", () => resolve(), { once: true });
+              img.addEventListener("error", () => resolve(), { once: true });
+            });
+          } catch {}
+        })
+      );
+
       const canvas = await html2canvas(cardRef.current, {
         backgroundColor: null,
         scale: 2,
