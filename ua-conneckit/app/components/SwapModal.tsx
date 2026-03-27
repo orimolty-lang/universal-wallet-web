@@ -743,7 +743,7 @@ export const SwapModal = ({
   };
 
 
-  const hasInsufficientBalance = direction === "buy" ? amountNum > totalBalance : tokenBalance <= 0;
+  const hasInsufficientBalance = direction === "sell" ? tokenBalance <= 0 : false;
   const canSwap =
     sliderValue > 0 &&
     targetToken &&
@@ -942,8 +942,7 @@ export const SwapModal = ({
                   isConfirming ||
                   !universalAccount ||
                   sliderValue <= 0 ||
-                  (direction === "sell" && tokenBalance <= 0) ||
-                  (direction === "buy" && hasInsufficientBalance)
+                  (direction === "sell" && tokenBalance <= 0)
                 }
                 loading={isLoading || isConfirming}
                 loadingLabel={
