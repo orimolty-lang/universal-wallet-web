@@ -8422,6 +8422,7 @@ const App = () => {
         portfolioAssets={combinedAssets as IAssetsResponse | null}
         universalAccount={universalAccountInstance}
         onWalletActivity={showWalletActivityToast}
+        onBalancesRefresh={fetchAssets}
         onSwapSuccess={() => {
           fetchAssets();
           fetchMobulaAssets();

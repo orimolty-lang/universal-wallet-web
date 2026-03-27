@@ -33,6 +33,7 @@ interface SwapModalProps {
   universalAccount: UniversalAccount | null;
   onSwapSuccess?: (txId: string) => void;
   onWalletActivity?: (kind: WalletActivityToastKind, detail?: string) => void;
+  onBalancesRefresh?: () => void;
 }
 
 // Official USDC logo
@@ -114,6 +115,7 @@ export const SwapModal = ({
   universalAccount,
   onSwapSuccess,
   onWalletActivity,
+  onBalancesRefresh,
 }: SwapModalProps) => {
   const [amount, setAmount] = useState("");
   const [sliderValue, setSliderValue] = useState(50);
@@ -172,7 +174,7 @@ export const SwapModal = ({
   const displayedOutputAmount = liveBuyOutput ?? outputAmount;
   const rate = targetToken?.price ? 1 / targetToken.price : 0;
 
-  // Reset state when modal opens
+  // Reset state when modal opens + ensure balances are fresh before use
   useEffect(() => {
     if (isOpen) {
       setAmount("");
@@ -185,8 +187,10 @@ export const SwapModal = ({
       setLiveBuyOutput(null);
       setLiveSellUsd(null);
       setQuoteStatus("idle");
+      // Refresh balances so unifiedUaBuyBalance is not stale
+      onBalancesRefresh?.();
     }
-  }, [isOpen]);
+  }, [isOpen, onBalancesRefresh]);
 
   useEffect(() => {
     if (!isOpen) return;
