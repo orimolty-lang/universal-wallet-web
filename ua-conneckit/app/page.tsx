@@ -5547,6 +5547,8 @@ const HomeTab = ({
     return false;
   });
   const [actionBarToast, setActionBarToast] = useState<string | null>(null);
+  const [showPnlPercent, setShowPnlPercent] = useState(false);
+  const [tokenPnlMap, setTokenPnlMap] = useState<Record<string, { totalGain?: number; totalGainPct?: number }>>({});
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   
   // Toggle compact mode on long-press
@@ -5669,6 +5671,68 @@ const HomeTab = ({
     ? allTokens.filter((t: { amountInUSD: number }) => t.amountInUSD >= 0.10)
     : allTokens;
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const chainToZerion: Record<string, string> = {
+      base: "base",
+      ethereum: "ethereum",
+      arbitrum: "arbitrum",
+      optimism: "optimism",
+      polygon: "polygon",
+      bsc: "binance-smart-chain",
+      solana: "solana",
+    };
+
+    const run = async () => {
+      const wallet = accountInfo?.evmSmartAccount;
+      if (!wallet) return;
+
+      const impls = new Set<string>();
+      for (const t of allTokens as Array<{ isExternal?: boolean; contracts?: Array<{ address: string; blockchain: string }> }>) {
+        if (!t.isExternal || !t.contracts?.length) continue;
+        for (const c of t.contracts) {
+          const chain = chainToZerion[(c.blockchain || "").toLowerCase()];
+          if (!chain) continue;
+          const addr = String(c.address || "");
+          if (chain !== "solana" && !addr.startsWith("0x")) continue;
+          impls.add(`${chain}:${addr.toLowerCase()}`);
+        }
+      }
+
+      if (!impls.size) {
+        if (!cancelled) setTokenPnlMap({});
+        return;
+      }
+
+      try {
+        const base = process.env.NEXT_PUBLIC_LIFI_PROXY_URL || "https://lifi-proxy.orimolty.workers.dev";
+        const params = new URLSearchParams();
+        params.set("filter[fungible_implementations]", Array.from(impls).slice(0, 100).join(","));
+        const url = `${base}/zerion/wallets/${wallet}/pnl?${params.toString()}`;
+        const res = await fetch(url, { headers: { Accept: "application/json" } });
+        if (!res.ok) return;
+        const data = await res.json();
+        const byImpl = data?.data?.attributes?.breakdown?.by_implementation || {};
+        const next: Record<string, { totalGain?: number; totalGainPct?: number }> = {};
+        Object.keys(byImpl).forEach((k) => {
+          next[k.toLowerCase()] = {
+            totalGain: Number(byImpl[k]?.total_gain || 0),
+            totalGainPct: Number(byImpl[k]?.relative_total_gain_percentage || 0),
+          };
+        });
+        if (!cancelled) setTokenPnlMap(next);
+      } catch {
+        // ignore pnl fetch errors
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [accountInfo?.evmSmartAccount, allTokens]);
+
   return (
     <div 
       ref={scrollRef}
@@ -5761,14 +5825,22 @@ const HomeTab = ({
 
       {/* Token List with Chain Breakdown */}
       <div className="px-4 mt-2">
-        {/* Hide small balances toggle */}
-        <div className="flex items-center justify-between py-2 mb-2">
-          <span className="text-gray-500 text-sm">Hide small balances (&lt;$0.10)</span>
+        {/* Filters + PnL display */}
+        <div className="flex items-center justify-between py-2 mb-2 gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-gray-500 text-sm">Hide small balances (&lt;$0.10)</span>
+            <button
+              onClick={() => setHideSmallBalances(!hideSmallBalances)}
+              className={`w-10 h-6 rounded-full transition-colors ${hideSmallBalances ? 'bg-accent-dynamic' : 'bg-gray-600'}`}
+            >
+              <div className={`w-4 h-4 bg-white rounded-full transition-transform ml-1 ${hideSmallBalances ? 'translate-x-4' : ''}`} />
+            </button>
+          </div>
           <button
-            onClick={() => setHideSmallBalances(!hideSmallBalances)}
-            className={`w-10 h-6 rounded-full transition-colors ${hideSmallBalances ? 'bg-accent-dynamic' : 'bg-gray-600'}`}
+            onClick={() => setShowPnlPercent((v) => !v)}
+            className="text-xs px-2 py-1 rounded-md bg-white/10 text-gray-300"
           >
-            <div className={`w-4 h-4 bg-white rounded-full transition-transform ml-1 ${hideSmallBalances ? 'translate-x-4' : ''}`} />
+            PnL: {showPnlPercent ? "%" : "$"}
           </button>
         </div>
         
@@ -5788,6 +5860,26 @@ const HomeTab = ({
             }) => {
               // For external tokens, get chain from first chain breakdown or contracts
               const externalChainId = token.isExternal && token.chainBreakdown[0]?.chainId;
+
+              const pnlForToken = (() => {
+                if (!token.isExternal || !token.contracts?.length) return null;
+                const chainToZerion: Record<string, string> = {
+                  base: "base",
+                  ethereum: "ethereum",
+                  arbitrum: "arbitrum",
+                  optimism: "optimism",
+                  polygon: "polygon",
+                  bsc: "binance-smart-chain",
+                  solana: "solana",
+                };
+                for (const c of token.contracts) {
+                  const chain = chainToZerion[(c.blockchain || "").toLowerCase()];
+                  if (!chain) continue;
+                  const k = `${chain}:${String(c.address || "").toLowerCase()}`;
+                  if (tokenPnlMap[k]) return tokenPnlMap[k];
+                }
+                return null;
+              })();
               
               return (
               <div key={token.assetKey} className="border-b border-gray-800/30">
@@ -5861,6 +5953,13 @@ const HomeTab = ({
                   <div className="flex items-center gap-2">
                     <div className="text-right">
                       <div className="text-white">${token.amountInUSD.toFixed(2)}</div>
+                      {token.isExternal && pnlForToken && (
+                        <div className={`text-xs ${Number(pnlForToken.totalGain || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {showPnlPercent
+                            ? `${Number(pnlForToken.totalGainPct || 0) >= 0 ? '+' : ''}${Number(pnlForToken.totalGainPct || 0).toFixed(2)}%`
+                            : `${Number(pnlForToken.totalGain || 0) >= 0 ? '+' : ''}$${Math.abs(Number(pnlForToken.totalGain || 0)).toFixed(2)}`}
+                        </div>
+                      )}
                       {!token.isExternal && token.chainBreakdown.length > 1 && (
                         <div className="text-gray-500 text-xs">{token.chainBreakdown.length} chains</div>
                       )}

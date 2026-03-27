@@ -7,6 +7,7 @@ const LIFI_API_BASE = "https://li.quest/v1";
 const ZEROX_API_BASE = "https://api.0x.org";
 const MOBULA_API_BASE = "https://api.mobula.io/api/1";
 const PYTH_TV_BASE = "https://benchmarks.pyth.network/v1/shims/tradingview";
+const ZERION_API_BASE = "https://api.zerion.io/v1";
 
 const corsHeaders = (env) => ({
   "Access-Control-Allow-Origin": env.ALLOWED_ORIGIN || "*",
@@ -100,6 +101,37 @@ export default {
         }
 
         return out;
+      }
+
+      // Zerion proxy path: /zerion/*
+      if (url.pathname.startsWith("/zerion/")) {
+        const zerionPath = url.pathname.replace("/zerion", "");
+        const zerionUrl = new URL(`${ZERION_API_BASE}${zerionPath}`);
+        url.searchParams.forEach((value, key) => {
+          zerionUrl.searchParams.set(key, value);
+        });
+
+        const key = env.ZERION_API_KEY || "";
+        const basic = `Basic ${btoa(`${key}:`)}`;
+        const zerionResponse = await fetch(zerionUrl.toString(), {
+          method: request.method,
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+            Authorization: basic,
+          },
+          body: request.method !== "GET" ? await request.text() : undefined,
+        });
+
+        const text = await zerionResponse.text();
+        return new Response(text, {
+          status: zerionResponse.status,
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": request.method === "GET" ? "public, s-maxage=20, max-age=10" : "no-store",
+            ...corsHeaders(env),
+          },
+        });
       }
 
       // 0x proxy path: /0x/*
