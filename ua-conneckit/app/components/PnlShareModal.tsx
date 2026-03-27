@@ -175,8 +175,6 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
                     src={tokenLogoSrc || token.logo}
                     alt={token.symbol}
                     className="w-10 h-10 rounded-full"
-                    crossOrigin="anonymous"
-                    referrerPolicy="no-referrer"
                   />
                 )}
                 <div>
