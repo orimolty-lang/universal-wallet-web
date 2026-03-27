@@ -5719,9 +5719,10 @@ const HomeTab = ({
         const byImpl = data?.data?.attributes?.breakdown?.by_implementation || {};
         const next: Record<string, { totalGain?: number; totalGainPct?: number }> = {};
         Object.keys(byImpl).forEach((k) => {
+          // Use CURRENT OPEN POSITION PnL (unrealized), not lifetime/global total PnL.
           next[k.toLowerCase()] = {
-            totalGain: Number(byImpl[k]?.total_gain || 0),
-            totalGainPct: Number(byImpl[k]?.relative_total_gain_percentage || 0),
+            totalGain: Number(byImpl[k]?.unrealized_gain || 0),
+            totalGainPct: Number(byImpl[k]?.relative_unrealized_gain_percentage || 0),
           };
         });
         if (!cancelled) setTokenPnlMap(next);
