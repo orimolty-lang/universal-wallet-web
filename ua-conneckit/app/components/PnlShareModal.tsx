@@ -126,10 +126,10 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
             <img
               src={withBasePath(t.image)}
               alt=""
-              className="absolute inset-0 w-full h-full object-cover opacity-35"
+              className="absolute inset-0 w-full h-full object-cover opacity-55"
             />
           )}
-          <div className="absolute inset-0 bg-black/15" />
+          <div className="absolute inset-0 bg-black/5" />
 
           <div className="relative flex items-start justify-between">
             <div className="flex items-center gap-3">
