@@ -130,6 +130,7 @@ export const SwapModal = ({
   const [liveBuyOutput, setLiveBuyOutput] = useState<number | null>(null);
   const [liveSellUsd, setLiveSellUsd] = useState<number | null>(null);
   const [quoteStatus, setQuoteStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [quoteTick, setQuoteTick] = useState(0);
 
   /** Buy cap: primary UA unified USD (sum amountInUSD), not combined Mobula total. */
   const unifiedUaBuyBalance = useMemo(() => {
@@ -212,6 +213,29 @@ export const SwapModal = ({
     if (want.size === 0) return 0;
     const asset = assetsForTokenLookup.assets.find((a) => mergedAssetMatchesContractKeys(a as never, want));
     if (!asset) return 0;
+
+    // Prefer chain-specific balance when available (prevents inflated merged balances on sell math).
+    const chainAgg = (asset as { chainAggregation?: Array<{ amount?: number | string; token?: { address?: string; chainId?: number } }> }).chainAggregation;
+    const selectedAddress = targetToken.address
+      || targetToken.contracts?.find((c) => c.blockchain.toLowerCase() === "base")?.address
+      || targetToken.contracts?.[0]?.address
+      || "";
+    const selectedChainId = targetToken.chainId
+      || (targetToken.contracts?.find((c) => c.blockchain.toLowerCase() === "base") ? 8453 :
+          (targetToken.contracts?.find((c) => c.blockchain.toLowerCase() === "ethereum") ? 1 :
+            (targetToken.contracts?.find((c) => c.blockchain.toLowerCase() === "solana") ? 101 : undefined)));
+    if (chainAgg?.length && selectedAddress && selectedChainId) {
+      const row = chainAgg.find((c) =>
+        (c.token?.chainId === selectedChainId) &&
+        String(c.token?.address || "").toLowerCase() === selectedAddress.toLowerCase()
+      ) || chainAgg.find((c) => c.token?.chainId === selectedChainId);
+      if (row) {
+        const v = row.amount;
+        const n = typeof v === "string" ? parseFloat(v) : Number(v || 0);
+        if (Number.isFinite(n) && n > 0) return n;
+      }
+    }
+
     const amt = (asset as { amount?: number | string }).amount;
     return typeof amt === "string" ? parseFloat(amt) : (amt || 0);
   }, [assetsForTokenLookup, targetToken]);
@@ -373,6 +397,14 @@ export const SwapModal = ({
 
   // Live requote for 0x (EVM) and Relay (Solana) while modal is open.
   const quoteReqIdRef = useRef(0);
+
+  // Periodic refresh every 5s while modal is open.
+  useEffect(() => {
+    if (!isOpen) return;
+    const id = setInterval(() => setQuoteTick((t) => t + 1), 5000);
+    return () => clearInterval(id);
+  }, [isOpen]);
+
   useEffect(() => {
     if (!isOpen || !universalAccount || !targetToken || amountNum <= 0) {
       setQuoteStatus("idle");
@@ -456,10 +488,7 @@ export const SwapModal = ({
             return;
           }
 
-          const tokenAmountToSell =
-            (targetToken?.price || 0) > 0
-              ? Math.min(Math.max(0, amountNum / (targetToken?.price || 1)), tokenBalance)
-              : tokenBalance * sliderValue / 100;
+          const tokenAmountToSell = tokenBalance * sliderValue / 100;
           const decimals = targetToken?.decimals || 18;
           const amountRaw = humanToRawUnits(tokenAmountToSell, decimals).toString();
           if (!amountRaw || BigInt(amountRaw) <= BigInt(0)) {
@@ -508,6 +537,7 @@ export const SwapModal = ({
     direction,
     sliderValue,
     tokenBalance,
+    quoteTick,
     getTokenAddressAndChain,
   ]);
 
@@ -515,10 +545,7 @@ export const SwapModal = ({
   const [primaryWallet] = useWallets();
   const sign7702 = useSign7702AuthorizationCompat();
 
-  const sellTokenHuman =
-    direction === "sell" && (targetToken?.price || 0) > 0
-      ? Math.min(Math.max(0, amountNum / (targetToken?.price || 1)), tokenBalance)
-      : tokenBalance * sliderValue / 100;
+  const sellTokenHuman = tokenBalance * sliderValue / 100;
 
   const sellUsdPreview = liveSellUsd ?? (amountNum * Math.max(0, 1 - slippagePct / 100));
 
@@ -559,7 +586,7 @@ export const SwapModal = ({
         const isSolanaToken = targetChainId === 101;
         const rawDecimals = targetToken.decimals || (isSolanaToken ? 9 : 18);
         const decimals = isSolanaToken ? Math.min(rawDecimals, 9) : rawDecimals;
-        const tokenAmountToSell = Math.min(Math.max(0, sellTokenHuman), tokenBalance);
+        const tokenAmountToSell = tokenBalance * sliderValue / 100;
         if (tokenAmountToSell <= 0) {
           setError("Invalid sell amount");
           setIsLoading(false);
