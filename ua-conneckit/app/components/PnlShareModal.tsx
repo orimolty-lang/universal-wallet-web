@@ -48,6 +48,7 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
   const [theme, setTheme] = useState<Theme>("sunset");
   const [showPnl, setShowPnl] = useState(true);
   const [showTokenLogo, setShowTokenLogo] = useState(true);
+  const [tokenLogoSrc, setTokenLogoSrc] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const cardRef = useRef<HTMLDivElement | null>(null);
 
@@ -69,6 +70,37 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
       setTheme(positive ? "pos1" : "neg1");
     }
   }, [isOpen, positive, selectableThemes, theme]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      if (!isOpen || !token?.logo) {
+        if (!cancelled) setTokenLogoSrc(null);
+        return;
+      }
+
+      try {
+        const res = await fetch(token.logo, { mode: "cors" });
+        if (!res.ok) throw new Error("logo fetch failed");
+        const blob = await res.blob();
+        const reader = new FileReader();
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          reader.onloadend = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(new Error("logo read failed"));
+          reader.readAsDataURL(blob);
+        });
+        if (!cancelled) setTokenLogoSrc(dataUrl || token.logo);
+      } catch {
+        if (!cancelled) setTokenLogoSrc(token.logo);
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, token?.logo]);
 
   const displayDollar = useMemo(() => {
     if (!showPnl) return "••••";
@@ -138,16 +170,14 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
           <div className="relative flex items-start justify-between">
             {showTokenLogo ? (
               <div className="flex items-center gap-3">
-                {token.logo ? (
+                {token.logo && (
                   <img
-                    src={token.logo}
+                    src={tokenLogoSrc || token.logo}
                     alt={token.symbol}
                     className="w-10 h-10 rounded-full"
                     crossOrigin="anonymous"
                     referrerPolicy="no-referrer"
                   />
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-white/20" />
                 )}
                 <div>
                   <div className="font-semibold text-lg">{token.symbol}</div>
@@ -167,14 +197,20 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
           <div className="relative mt-4">
             {showPnl ? (
               <>
-                <div className="text-xs text-white/80">PnL</div>
+                <div className="flex items-center gap-2 text-xs text-white/80">
+                  <span>PnL</span>
+                  <span className="font-semibold" style={{ color: positive ? "#4ade80" : "#f87171" }}>
+                    {displayPct}
+                  </span>
+                </div>
                 <div className="text-3xl font-extrabold" style={{ color: positive ? "#4ade80" : "#f87171" }}>
                   {displayDollar}
                 </div>
-                <div className="mt-1 text-sm text-white/90">{displayPct}</div>
               </>
             ) : (
-              <div className="text-3xl font-extrabold text-white">{displayPct}</div>
+              <div className="text-3xl font-extrabold" style={{ color: gainPct >= 0 ? "#4ade80" : "#f87171" }}>
+                {displayPct}
+              </div>
             )}
           </div>
         </div>
