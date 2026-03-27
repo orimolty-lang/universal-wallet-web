@@ -25,6 +25,7 @@ import DepositDialog from "./components/DepositDialog";
 import AssetBreakdownDialog from "./components/AssetBreakdownDialog";
 import TokenDetailModal from "./components/TokenDetailModal";
 import SwapModal from "./components/SwapModal";
+import PnlShareModal from "./components/PnlShareModal";
 import PolymarketModal from "./components/PolymarketModal";
 import EarnModal from "./components/EarnModal";
 import PerpsCandleChart from "./components/PerpsCandleChart";
@@ -5549,6 +5550,8 @@ const HomeTab = ({
   const [actionBarToast, setActionBarToast] = useState<string | null>(null);
   const [showPnlPercent, setShowPnlPercent] = useState(false);
   const [tokenPnlMap, setTokenPnlMap] = useState<Record<string, { totalGain?: number; totalGainPct?: number }>>({});
+  const [pnlShareToken, setPnlShareToken] = useState<{ symbol: string; name: string; logo?: string; amountInUSD: number } | null>(null);
+  const [pnlShareData, setPnlShareData] = useState<{ totalGain?: number; totalGainPct?: number } | null>(null);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   
   // Toggle compact mode on long-press
@@ -5954,11 +5957,19 @@ const HomeTab = ({
                     <div className="text-right">
                       <div className="text-white">${token.amountInUSD.toFixed(2)}</div>
                       {token.isExternal && pnlForToken && (
-                        <div className={`text-xs ${Number(pnlForToken.totalGain || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPnlShareToken(token);
+                            setPnlShareData(pnlForToken);
+                          }}
+                          className={`text-xs ${Number(pnlForToken.totalGain || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}
+                        >
                           {showPnlPercent
                             ? `${Number(pnlForToken.totalGainPct || 0) >= 0 ? '+' : ''}${Number(pnlForToken.totalGainPct || 0).toFixed(2)}%`
                             : `${Number(pnlForToken.totalGain || 0) >= 0 ? '+' : ''}$${Math.abs(Number(pnlForToken.totalGain || 0)).toFixed(2)}`}
-                        </div>
+                        </button>
                       )}
                       {!token.isExternal && token.chainBreakdown.length > 1 && (
                         <div className="text-gray-500 text-xs">{token.chainBreakdown.length} chains</div>
@@ -6007,6 +6018,21 @@ const HomeTab = ({
           </div>
         )}
       </div>
+
+      <PnlShareModal
+        isOpen={!!pnlShareToken}
+        onClose={() => {
+          setPnlShareToken(null);
+          setPnlShareData(null);
+        }}
+        token={pnlShareToken ? {
+          symbol: pnlShareToken.symbol,
+          name: pnlShareToken.name,
+          logo: pnlShareToken.logo,
+          amountInUSD: pnlShareToken.amountInUSD,
+        } : null}
+        pnl={pnlShareData}
+      />
       
       <div className="mb-24" />
     </div>
@@ -6691,6 +6717,7 @@ const SearchTab = ({
         onWalletActivity={onWalletActivity}
         onSwapSuccess={onSwapSuccess}
       />
+
     </div>
   );
 };
