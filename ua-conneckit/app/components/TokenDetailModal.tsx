@@ -71,11 +71,6 @@ const formatSupply = (num: number): string => {
   return num.toLocaleString();
 };
 
-const formatAddress = (addr: string): string => {
-  if (!addr) return "";
-  return `${addr.substring(0, 6)}...${addr.substring(addr.length - 4)}`;
-};
-
 // Chain logo URLs
 const CHAIN_LOGOS: Record<string, string> = {
   "ethereum": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png",
@@ -182,43 +177,6 @@ const EmbeddedChart = ({
   );
 };
 
-// Expandable Section Component
-const ExpandableSection = ({
-  icon,
-  title,
-  defaultExpanded = false,
-  children,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  defaultExpanded?: boolean;
-  children: React.ReactNode;
-}) => {
-  const [expanded, setExpanded] = useState(defaultExpanded);
-
-  return (
-    <div className="border-t border-gray-800/50">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between py-4 px-1"
-      >
-        <div className="flex items-center gap-3">
-          <span className="text-accent-dynamic">{icon}</span>
-          <span className="text-white font-medium">{title}</span>
-        </div>
-        <span
-          className={`text-accent-dynamic transition-transform ${
-            expanded ? "rotate-180" : ""
-          }`}
-        >
-          ▼
-        </span>
-      </button>
-      {expanded && <div className="pb-4">{children}</div>}
-    </div>
-  );
-};
-
 // Main Token Detail Modal
 export const TokenDetailModal = ({
   token,
@@ -229,6 +187,8 @@ export const TokenDetailModal = ({
   onWatchlistChange,
 }: TokenDetailModalProps) => {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [activeTab, setActiveTab] = useState<"feed" | "about">("about");
+  const [isWatchlisted, setIsWatchlisted] = useState(false);
   const [fallbackMetrics, setFallbackMetrics] = useState<{ volume?: number; liquidity?: number; priceChange24h?: number } | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
   const startYRef = useRef<number | null>(null);
@@ -299,23 +259,39 @@ export const TokenDetailModal = ({
     try {
       const raw = localStorage.getItem(WATCHLIST_STORAGE_KEY);
       const tokens: Array<{ id: string; symbol: string; name: string; logo?: string; price?: number; contracts?: TokenContract[] }> = raw ? JSON.parse(raw) : [];
-      if (!tokens.some((t) => t.id === token.id)) {
-        tokens.unshift({
-          id: token.id,
-          symbol: token.symbol,
-          name: token.name,
-          logo: token.logo,
-          price: token.price,
-          contracts: token.contracts,
-        });
-        localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(tokens.slice(0, 50)));
-      }
+      const exists = tokens.some((t) => t.id === token.id);
+      const next = exists
+        ? tokens.filter((t) => t.id !== token.id)
+        : [{
+            id: token.id,
+            symbol: token.symbol,
+            name: token.name,
+            logo: token.logo,
+            price: token.price,
+            contracts: token.contracts,
+          }, ...tokens].slice(0, 50);
+      localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(next));
+      setIsWatchlisted(!exists);
       onWatchlistChange?.();
     } catch {
       // ignore
     }
     setShowMoreMenu(false);
   };
+
+  useEffect(() => {
+    try {
+      if (!token?.id) {
+        setIsWatchlisted(false);
+      } else {
+        const raw = localStorage.getItem(WATCHLIST_STORAGE_KEY);
+        const tokens: Array<{ id: string }> = raw ? JSON.parse(raw) : [];
+        setIsWatchlisted(tokens.some((t) => t.id === token.id));
+      }
+    } catch {
+      setIsWatchlisted(false);
+    }
+  }, [token?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -406,38 +382,54 @@ export const TokenDetailModal = ({
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto px-5 pb-24 min-h-0 overscroll-contain">
           {/* Token Header */}
-          <div className="flex items-center gap-3 mb-1">
-            <div className="relative">
-              {token.logo ? (
-                <img
-                  src={token.logo}
-                  alt={token.symbol}
-                  className="w-10 h-10 rounded-full"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = "none";
-                  }}
-                />
-              ) : (
-                <div className="w-10 h-10 rounded-full bg-accent-dynamic flex items-center justify-center text-white font-bold">
-                  {token.symbol.slice(0, 2)}
-                </div>
-              )}
-              {/* Single chain badge on logo only - no duplicate badges next to name */}
-              {token.contracts && token.contracts.length > 0 && (() => {
-                const normalized = normalizeBlockchain(token.contracts[0].blockchain);
-                const logoUrl = normalized ? CHAIN_LOGOS[normalized] : CHAIN_LOGOS[token.contracts[0].blockchain.toLowerCase()];
-                return logoUrl ? (
-                  <img 
-                    src={logoUrl}
-                    alt=""
-                    className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[#0d1b2a]"
+          <div className="flex items-start justify-between gap-3 mb-1">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="relative">
+                {token.logo ? (
+                  <img
+                    src={token.logo}
+                    alt={token.symbol}
+                    className="w-10 h-10 rounded-full"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
                   />
-                ) : null;
-              })()}
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-accent-dynamic flex items-center justify-center text-white font-bold">
+                    {token.symbol.slice(0, 2)}
+                  </div>
+                )}
+                {token.contracts && token.contracts.length > 0 && (() => {
+                  const normalized = normalizeBlockchain(token.contracts[0].blockchain);
+                  const logoUrl = normalized ? CHAIN_LOGOS[normalized] : CHAIN_LOGOS[token.contracts[0].blockchain.toLowerCase()];
+                  return logoUrl ? (
+                    <img 
+                      src={logoUrl}
+                      alt=""
+                      className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[#0d1b2a]"
+                    />
+                  ) : null;
+                })()}
+              </div>
+              <div className="min-w-0">
+                <div className="text-accent-dynamic font-medium text-lg truncate">{token.name}</div>
+                {primaryContract?.address && (
+                  <button
+                    onClick={() => navigator.clipboard.writeText(primaryContract.address)}
+                    className="mt-1 text-xs text-gray-400 hover:text-white flex items-center gap-1"
+                  >
+                    {token.symbol} <span>⧉</span>
+                  </button>
+                )}
+              </div>
             </div>
-            <div>
-              <span className="text-accent-dynamic font-medium text-lg">{token.name}</span>
-            </div>
+            <button
+              onClick={handleAddToWatchlist}
+              className={`w-9 h-9 rounded-full border flex items-center justify-center ${isWatchlisted ? "bg-yellow-500/20 border-yellow-400/50 text-yellow-300" : "bg-white/5 border-white/15 text-gray-300"}`}
+              aria-label="Toggle watchlist"
+            >
+              ★
+            </button>
           </div>
 
           {/* Price Display */}
@@ -495,201 +487,50 @@ export const TokenDetailModal = ({
             </div>
           )}
 
-          {/* Market Stats - Expandable */}
-          <div className="mt-4">
-            <ExpandableSection
-              icon={<span>📊</span>}
-              title="Market Stats"
-              defaultExpanded={true}
-            >
-              <div className="space-y-3 px-1">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-gray-400 text-sm">
-                    <span>$</span>
-                    <span>Market Cap</span>
-                  </div>
-                  <span className="text-accent-dynamic font-medium">
-                    {formatLargeNumber(token.market_cap || 0)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-gray-400 text-sm">
-                    <span>📈</span>
-                    <span>24h Volume</span>
-                  </div>
-                  <span className="text-accent-dynamic font-medium">
-                    {formatLargeNumber(displayedVolume)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-gray-400 text-sm">
-                    <span>💧</span>
-                    <span>Liquidity</span>
-                  </div>
-                  <span className="text-accent-dynamic font-medium">
-                    {formatLargeNumber(displayedLiquidity)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-gray-400 text-sm">
-                    <span>⏱️</span>
-                    <span>Fully Diluted Valuation</span>
-                  </div>
-                  <span className="text-accent-dynamic font-medium">
-                    {formatLargeNumber((token.totalSupply || 0) * (token.price || 0))}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-gray-400 text-sm">
-                    <span>🔄</span>
-                    <span>Circulating Supply</span>
-                  </div>
-                  <span className="text-accent-dynamic font-medium">
-                    {formatSupply(token.circulatingSupply || token.totalSupply || 0)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-gray-400 text-sm">
-                    <span>⬆️</span>
-                    <span>Max Supply</span>
-                  </div>
-                  <span className="text-accent-dynamic font-medium">
-                    {formatSupply(token.totalSupply || 0)}
-                  </span>
-                </div>
-              </div>
-            </ExpandableSection>
-
-            {/* History - Expandable */}
-            <ExpandableSection icon={<span>🕐</span>} title="History">
-              <div className="px-1">
-                <div className="text-gray-500 text-sm text-center py-4">
-                  No transaction history for this token
-                </div>
-              </div>
-            </ExpandableSection>
-
-            {/* About - Expandable */}
-            <ExpandableSection icon={<span>ℹ️</span>} title="About">
-              <div className="space-y-3 px-1">
-                {primaryContract && (
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-gray-400 text-sm">
-                      <span>👤</span>
-                      <span>Creator</span>
-                    </div>
-                    <span className="text-accent-dynamic font-mono text-sm">
-                      {formatAddress(primaryContract.address)}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </ExpandableSection>
-
-            {/* Details - Expandable */}
-            <ExpandableSection icon={<span>📋</span>} title="Details">
-              <div className="space-y-3 px-1">
-                {token.website && (
-                  <a
-                    href={token.website}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-between py-1"
-                  >
-                    <div className="flex items-center gap-2 text-gray-400 text-sm">
-                      <span>🏠</span>
-                      <span>Website</span>
-                    </div>
-                    <span className="text-accent-dynamic text-sm flex items-center gap-1">
-                      {new URL(token.website).hostname.replace("www.", "")}
-                      <span>↗</span>
-                    </span>
-                  </a>
-                )}
-                {token.twitter && (
-                  <a
-                    href={token.twitter}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-between py-1"
-                  >
-                    <div className="flex items-center gap-2 text-gray-400 text-sm">
-                      <span>𝕏</span>
-                      <span>X Account</span>
-                    </div>
-                    <span className="text-accent-dynamic text-sm flex items-center gap-1">
-                      {(() => {
-                        try {
-                          const url = new URL(token.twitter);
-                          const handle = url.pathname.replace(/^\//, '').split('/')[0];
-                          return handle ? `@${handle}` : '';
-                        } catch { return ''; }
-                      })()}
-                      <span>↗</span>
-                    </span>
-                  </a>
-                )}
-
-                {/* Token Description */}
-                {token.description && (
-                  <div className="mt-4">
-                    <h4 className="text-white font-medium mb-2">
-                      What is {token.name}?
-                    </h4>
-                    <p className="text-gray-400 text-sm leading-relaxed">
-                      {token.description}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </ExpandableSection>
-
-            {/* Clicker Trader Comments — only show for supported chains */}
-            {(primaryContract && ["ethereum", "base", "solana"].includes(normalizeBlockchain(primaryContract.blockchain))) && (
-              <ExpandableSection
-                icon={<span>💬</span>}
-                title="Trader Comments"
-                defaultExpanded={false}
+          {/* Tabs + Content */}
+          <div className="mt-5">
+            <div className="flex items-center gap-2 border-b border-white/10 mb-3">
+              <button
+                onClick={() => setActiveTab("feed")}
+                className={`px-3 py-2 text-sm ${activeTab === "feed" ? "text-white border-b-2 border-accent-dynamic" : "text-gray-500"}`}
               >
-                <div className="px-1">
-                  <ClickerComments
-                    tokenAddress={primaryContract?.address}
-                    blockchain={primaryContract?.blockchain}
-                  />
-                </div>
-              </ExpandableSection>
-            )}
+                Feed
+              </button>
+              <button
+                onClick={() => setActiveTab("about")}
+                className={`px-3 py-2 text-sm ${activeTab === "about" ? "text-white border-b-2 border-accent-dynamic" : "text-gray-500"}`}
+              >
+                About
+              </button>
+            </div>
 
-            {/* Contracts */}
-            {token.contracts && token.contracts.length > 0 && (
-              <ExpandableSection icon={<span>📝</span>} title="Contracts">
-                <div className="space-y-2 px-1">
-                  {token.contracts.map((contract, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center justify-between gap-2 py-1"
-                    >
-                      <span className="text-gray-400 text-sm shrink-0">
-                        {contract.blockchain}
-                      </span>
-                      <span className="text-accent-dynamic font-mono text-xs break-all text-right flex-1 min-w-0">
-                        {contract.address}
-                      </span>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(contract.address);
-                        }}
-                        className="shrink-0 w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center hover:bg-white/20"
-                        aria-label="Copy contract"
-                      >
-                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h2m8 0h2a2 2 0 012 2v2m2 4a2 2 0 01-2 2h-2m-4-1h.01M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
-                        </svg>
-                      </button>
+            {activeTab === "feed" ? (
+              <div className="bg-white/5 rounded-xl border border-white/10 p-3">
+                {primaryContract && ["ethereum", "base", "solana"].includes(normalizeBlockchain(primaryContract.blockchain)) ? (
+                  <ClickerComments tokenAddress={primaryContract.address} blockchain={primaryContract.blockchain} />
+                ) : (
+                  <div className="text-gray-500 text-sm text-center py-6">Feed unavailable for this token</div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2 bg-white/5 rounded-xl border border-white/10 p-3 text-sm">
+                <div className="flex items-center justify-between"><span className="text-gray-400">Market Cap</span><span className="text-white">{formatLargeNumber(token.market_cap || 0)}</span></div>
+                <div className="flex items-center justify-between"><span className="text-gray-400">24h Volume</span><span className="text-white">{formatLargeNumber(displayedVolume)}</span></div>
+                <div className="flex items-center justify-between"><span className="text-gray-400">Liquidity</span><span className="text-white">{formatLargeNumber(displayedLiquidity)}</span></div>
+                <div className="flex items-center justify-between"><span className="text-gray-400">FDV</span><span className="text-white">{formatLargeNumber((token.totalSupply || 0) * (token.price || 0))}</span></div>
+                <div className="flex items-center justify-between"><span className="text-gray-400">Supply</span><span className="text-white">{formatSupply(token.circulatingSupply || token.totalSupply || 0)}</span></div>
+                {token.website && <a href={token.website} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between text-accent-dynamic"><span>Website</span><span>↗</span></a>}
+                {token.twitter && <a href={token.twitter} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between text-accent-dynamic"><span>X / Twitter</span><span>↗</span></a>}
+                {primaryContract?.address && (
+                  <div className="pt-2 border-t border-white/10">
+                    <div className="text-gray-500 text-xs mb-1">Contract</div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-gray-300 font-mono break-all">{primaryContract.address}</span>
+                      <button onClick={() => navigator.clipboard.writeText(primaryContract.address)} className="text-accent-dynamic text-xs">Copy</button>
                     </div>
-                  ))}
-                </div>
-              </ExpandableSection>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>

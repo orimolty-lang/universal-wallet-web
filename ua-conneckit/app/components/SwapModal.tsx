@@ -305,11 +305,6 @@ export const SwapModal = ({
     }, 1500);
   };
 
-  // Handle slider change - when user drags slider, clear typing mode
-  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setIsTyping(false); // User is now using slider, allow slider->amount sync
-    setSliderValue(parseInt(e.target.value));
-  };
 
   // Cleanup debounce timer on unmount
   useEffect(() => {
@@ -787,7 +782,7 @@ export const SwapModal = ({
         </div>
 
         <>
-            <div className="flex-1 overflow-y-auto px-5 pb-3 max-h-[min(52vh,420px)]">
+            <div className="flex-1 px-5 pb-3">
               {/* Error Message */}
               {error && (
                 <div className="bg-red-500/20 border border-red-500/50 rounded-xl p-3 mb-4">
@@ -893,30 +888,18 @@ export const SwapModal = ({
                 </div>
               </div>
 
-              {/* Slider */}
-              <div className="mt-8">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <img src={USDC_LOGO} alt="USDC" className="w-5 h-5 rounded-full" />
-                    <span className="text-white font-medium">
-                      {direction === "buy" ? `Buy ${sliderValue}%` : `Sell ${sliderValue}%`}
-                    </span>
-                  </div>
-                  <button 
-                    onClick={() => { setIsTyping(false); setSliderValue(100); }}
-                    className="text-accent-dynamic font-medium"
+              {/* Quick Size Buttons */}
+              <div className="mt-6 grid grid-cols-4 gap-2">
+                {[10, 25, 50, 100].map((pct) => (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => { setIsTyping(false); setSliderValue(pct); }}
+                    className={`h-10 rounded-xl text-sm font-medium ${sliderValue === pct ? "bg-accent-dynamic text-white" : "bg-white/10 text-white"}`}
                   >
-                    Max
+                    {pct === 100 ? "Max" : `${pct}%`}
                   </button>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={sliderValue}
-                  onChange={handleSliderChange}
-                  className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-[var(--accent-color,#f97316)]"
-                />
+                ))}
               </div>
 
               {/* Number Pad */}
