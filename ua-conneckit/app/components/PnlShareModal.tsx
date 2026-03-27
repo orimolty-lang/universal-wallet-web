@@ -136,7 +136,17 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
 
           <div className="relative flex items-start justify-between">
             <div className="flex items-center gap-3">
-              {token.logo ? <img src={token.logo} alt={token.symbol} className="w-10 h-10 rounded-full" /> : <div className="w-10 h-10 rounded-full bg-white/20" />}
+              {token.logo ? (
+                <img
+                  src={token.logo}
+                  alt={token.symbol}
+                  className="w-10 h-10 rounded-full"
+                  crossOrigin="anonymous"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-white/20" />
+              )}
               <div>
                 <div className="font-semibold text-lg">{token.symbol}</div>
               </div>
