@@ -933,35 +933,9 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
         return { success: false, error: `Unsupported chain for swap: ${sourceChainId}` };
       }
 
-      // OmniUA parity with resilience:
-      // prefer USDC funding, but auto-fallback to native ETH when chain USDC is insufficient.
-      let useNativeFunding = fromToken === "ETH";
-      if (!useNativeFunding) {
-        try {
-          const primary = await ua.getPrimaryAssets();
-          const usdcAsset = (primary?.assets || []).find((a: unknown) =>
-            String((a as { tokenType?: string })?.tokenType || "").toUpperCase() === "USDC"
-          ) as { chainAggregation?: Array<{ token?: { chainId?: number }; amount?: number | string; amountInUSD?: number | string }> } | undefined;
-
-          const usdcOnChain = usdcAsset?.chainAggregation?.find((c) => Number(c.token?.chainId) === Number(sourceChainId));
-          const usdcAmount = Number(usdcOnChain?.amount ?? 0);
-          const usdcAmountUsd = Number(usdcOnChain?.amountInUSD ?? usdcAmount);
-          const neededUsd = Math.max(0, amountUsd);
-
-          if (!Number.isFinite(usdcAmountUsd) || usdcAmountUsd + 1e-8 < neededUsd) {
-            console.log("[Swap] USDC on source chain insufficient, auto-fallback to ETH funding", {
-              sourceChainId,
-              usdcAmount,
-              usdcAmountUsd,
-              neededUsd,
-            });
-            useNativeFunding = true;
-          }
-        } catch {
-          // If balance probe fails, keep requested funding token and let downstream quote validation decide.
-        }
-      }
-
+      // OmniUA parity: default BUY funding from USDC on execution chain.
+      // ETH funding only when explicitly requested by caller.
+      const useNativeFunding = fromToken === "ETH";
       const sellToken = useNativeFunding ? NATIVE_ETH : (USDC_ADDRESSES[sourceChainId] || NATIVE_ETH);
 
       let sellAmount: string;
