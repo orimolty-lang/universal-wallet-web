@@ -51,8 +51,7 @@ const CHAIN_LOGOS: Record<number, string> = {
 const SLIPPAGE_STORAGE_KEY = "omni_swap_slippage_pct_v1";
 const DEFAULT_SLIPPAGE_PCT = 1;
 const MIN_SLIPPAGE_PCT = 0.1;
-const MAX_SLIPPAGE_PCT = 10;
-const PRESET_SLIPPAGE_PCTS = [0.5, 1, 2, 3, 5];
+const MAX_SLIPPAGE_PCT = 50;
 
 // Helper functions
 const formatTokenAmount = (amount: number, decimals: number = 6): string => {
@@ -126,10 +125,9 @@ export const SwapModal = ({
   const [isTyping, setIsTyping] = useState(false); // Track manual input to prevent slider override
   const [showSlippageSettings, setShowSlippageSettings] = useState(false);
   const [slippagePct, setSlippagePct] = useState<number>(DEFAULT_SLIPPAGE_PCT);
-  const [customSlippageInput, setCustomSlippageInput] = useState<string>(DEFAULT_SLIPPAGE_PCT.toString());
   const [liveBuyOutput, setLiveBuyOutput] = useState<number | null>(null);
   const [liveSellUsd, setLiveSellUsd] = useState<number | null>(null);
-  const [quoteStatus, setQuoteStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [, setQuoteStatus] = useState<"idle" | "loading" | "error">("idle");
   const [quoteTick, setQuoteTick] = useState(0);
 
   /** Buy cap: primary UA unified USD (sum amountInUSD), not combined Mobula total. */
@@ -162,7 +160,6 @@ export const SwapModal = ({
   const applySlippagePct = useCallback((nextValue: number) => {
     const safe = clampSlippagePct(nextValue);
     setSlippagePct(safe);
-    setCustomSlippageInput(Number(safe.toFixed(2)).toString());
     try {
       window.localStorage.setItem(SLIPPAGE_STORAGE_KEY, safe.toString());
     } catch {
@@ -200,7 +197,6 @@ export const SwapModal = ({
       if (!Number.isFinite(parsed)) return;
       const safe = clampSlippagePct(parsed);
       setSlippagePct(safe);
-      setCustomSlippageInput(Number(safe.toFixed(2)).toString());
     } catch {
       // no-op (private mode or blocked storage)
     }
@@ -684,15 +680,17 @@ export const SwapModal = ({
                 targetChainId,
               );
               if (txDetails.status === "completed") {
-                const outSym = direction === "sell" ? "USDC" : (targetToken?.symbol || "");
+                const fromSym = direction === "buy" ? "USDC" : (targetToken?.symbol || "TOKEN");
+                const toSym = direction === "buy" ? (targetToken?.symbol || "TOKEN") : "USDC";
                 let detail: string | undefined;
-                if (txDetails.receivedAmount && outSym) {
-                  detail = `${formatTokenAmount(parseFloat(txDetails.receivedAmount))} ${outSym}`;
-                } else if (outSym) {
-                  detail = outSym;
+                if (txDetails.receivedAmount) {
+                  detail = `${formatTokenAmount(parseFloat(txDetails.receivedAmount))} ${toSym} · ${fromSym} → ${toSym}`;
+                } else {
+                  detail = `${fromSym} → ${toSym}`;
                 }
                 onWalletActivity?.("swap_confirmed", detail);
                 onSwapSuccess?.(sendResult.transactionId);
+                onClose();
               } else if (txDetails.status === "failed") {
                 setError("Swap failed on-chain");
               }
@@ -717,8 +715,11 @@ export const SwapModal = ({
             targetChainId,
           );
           if (txDetails.status === "completed") {
-            onWalletActivity?.("swap_confirmed", targetToken.symbol);
+            const fromSym = direction === "buy" ? "USDC" : (targetToken?.symbol || "TOKEN");
+            const toSym = direction === "buy" ? (targetToken?.symbol || "TOKEN") : "USDC";
+            onWalletActivity?.("swap_confirmed", `${fromSym} → ${toSym}`);
             onSwapSuccess?.(result.transactionId);
+            onClose();
           } else if (txDetails.status === "failed") {
             setError("Swap failed on-chain");
           }
@@ -882,10 +883,7 @@ export const SwapModal = ({
                     : `1 ${targetToken?.symbol} ≈ $${(targetToken?.price || 0).toFixed(6)}`
                   }
                 </span>
-                <div className="text-[11px] text-gray-500 mt-1">Max slippage: {slippageLabel}%</div>
-                <div className="text-[11px] text-gray-500 mt-1">
-                  {quoteStatus === "loading" ? "Updating live quote…" : quoteStatus === "error" ? "Live quote unavailable" : "Live quote"}
-                </div>
+
               </div>
 
               {/* Quick Size Buttons */}
@@ -985,41 +983,18 @@ export const SwapModal = ({
               <span className="text-gray-400 text-sm">Tolerance</span>
               <span className="text-accent-dynamic text-sm font-medium">{slippageLabel}%</span>
             </div>
-            <div className="grid grid-cols-5 gap-2 mb-4">
-              {PRESET_SLIPPAGE_PCTS.map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  onClick={() => applySlippagePct(preset)}
-                  className={`rounded-lg py-2 text-xs font-medium ${
-                    Math.abs(slippagePct - preset) < 0.001
-                      ? "bg-accent-dynamic text-white"
-                      : "bg-white/10 text-gray-300"
-                  }`}
-                >
-                  {preset}%
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2 mb-2">
+            <div className="mb-2">
               <input
-                type="number"
+                type="range"
                 min={MIN_SLIPPAGE_PCT}
                 max={MAX_SLIPPAGE_PCT}
                 step="0.1"
-                value={customSlippageInput}
-                onChange={(e) => setCustomSlippageInput(e.target.value)}
-                onBlur={() => applySlippagePct(Number(customSlippageInput))}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") applySlippagePct(Number(customSlippageInput));
-                }}
-                className="w-28 rounded-lg border border-white/10 bg-black/40 px-2 py-2 text-white outline-none"
+                value={slippagePct}
+                onChange={(e) => applySlippagePct(Number(e.target.value))}
+                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-[var(--accent-color,#f97316)]"
               />
-              <span className="text-gray-400 text-sm">% (0.1 – 10)</span>
             </div>
-            <p className="text-[11px] text-gray-500">
-              Applied to Li.Fi quotes for buy and sell.
-            </p>
+            <p className="text-[11px] text-gray-500">Range: 0.1% – 50%</p>
           </div>
         </>
       )}

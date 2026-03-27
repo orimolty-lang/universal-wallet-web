@@ -2,6 +2,7 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
 import ClickerComments from "./ClickerComments";
+import type { WalletActivityToastKind } from "./WalletActivityToast";
 
 // Types
 interface TokenContract {
@@ -41,6 +42,7 @@ interface TokenDetailModalProps {
   onSwap?: (token: TokenData) => void;
   onSend?: (token: TokenData) => void;
   onWatchlistChange?: () => void;
+  onWalletActivity?: (kind: WalletActivityToastKind, detail?: string) => void;
 }
 
 // Helper functions
@@ -185,6 +187,7 @@ export const TokenDetailModal = ({
   onSwap,
   onSend,
   onWatchlistChange,
+  onWalletActivity,
 }: TokenDetailModalProps) => {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [activeTab, setActiveTab] = useState<"feed" | "about">("about");
@@ -415,7 +418,10 @@ export const TokenDetailModal = ({
                 <div className="text-accent-dynamic font-medium text-lg truncate">{token.name}</div>
                 {primaryContract?.address && (
                   <button
-                    onClick={() => navigator.clipboard.writeText(primaryContract.address)}
+                    onClick={() => {
+                      navigator.clipboard.writeText(primaryContract.address);
+                      onWalletActivity?.("copied");
+                    }}
                     className="mt-1 text-xs text-gray-400 hover:text-white flex items-center gap-1"
                   >
                     {token.symbol} <span>⧉</span>
@@ -526,7 +532,7 @@ export const TokenDetailModal = ({
                     <div className="text-gray-500 text-xs mb-1">Contract</div>
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs text-gray-300 font-mono break-all">{primaryContract.address}</span>
-                      <button onClick={() => navigator.clipboard.writeText(primaryContract.address)} className="text-accent-dynamic text-xs">Copy</button>
+                      <button onClick={() => { navigator.clipboard.writeText(primaryContract.address); onWalletActivity?.("copied"); }} className="text-accent-dynamic text-xs">Copy</button>
                     </div>
                   </div>
                 )}

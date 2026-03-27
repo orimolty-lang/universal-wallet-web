@@ -6568,9 +6568,9 @@ const SearchTab = ({
         onSwap={(token) => { 
           setSwapTargetToken(token as TokenResult);
           setShowSwapModal(true);
-          setSelectedToken(null);
         }}
         onSend={() => { setSelectedToken(null); onSend?.(); }}
+        onWalletActivity={onWalletActivity}
       />
 
       <SwapModal
@@ -8312,6 +8312,7 @@ const App = () => {
           setShowHomeSwapModal(true);
         }}
         onSend={() => { setHomeSelectedToken(null); setShowSendModal(true); }}
+        onWalletActivity={showWalletActivityToast}
       />
       
       <SwapModal
@@ -8326,6 +8327,8 @@ const App = () => {
           fetchAssets();
           fetchMobulaAssets();
           fetchParticleAssets();
+          setShowHomeSwapModal(false);
+          setHomeSelectedToken(null);
         }}
       />
     </div>
