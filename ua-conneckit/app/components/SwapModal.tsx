@@ -2,7 +2,7 @@
 "use client";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type { IAssetsResponse, UniversalAccount } from "@particle-network/universal-account-sdk";
-import { executeSwap, executeSell, getChainIdFromBlockchain, pollTransactionDetails } from "../lib/swapService";
+import { executeSwap, executeSell, get0xSwapQuote, getRelayQuote, getChainIdFromBlockchain, pollTransactionDetails, USDC_ADDRESSES } from "../lib/swapService";
 import { mergedAssetMatchesContractKeys, tokenContractKeySet } from "../lib/mobulaAssetIdentity";
 import { useWallets, useSign7702AuthorizationCompat } from "@/app/lib/connectkit-compat";
 import { getUserOpsFromTx, handleEIP7702Authorizations } from "@/lib/eip7702";
@@ -127,6 +127,9 @@ export const SwapModal = ({
   const [showSlippageSettings, setShowSlippageSettings] = useState(false);
   const [slippagePct, setSlippagePct] = useState<number>(DEFAULT_SLIPPAGE_PCT);
   const [customSlippageInput, setCustomSlippageInput] = useState<string>(DEFAULT_SLIPPAGE_PCT.toString());
+  const [liveBuyOutput, setLiveBuyOutput] = useState<number | null>(null);
+  const [liveSellUsd, setLiveSellUsd] = useState<number | null>(null);
+  const [quoteStatus, setQuoteStatus] = useState<"idle" | "loading" | "error">("idle");
 
   /** Buy cap: primary UA unified USD (sum amountInUSD), not combined Mobula total. */
   const unifiedUaBuyBalance = useMemo(() => {
@@ -166,8 +169,9 @@ export const SwapModal = ({
     }
   }, []);
 
-  // Calculate output amount based on target token price
+  // Calculate output amount (fallback estimate) based on target token price
   const outputAmount = targetToken?.price ? amountUsd / targetToken.price : 0;
+  const displayedOutputAmount = liveBuyOutput ?? outputAmount;
   const rate = targetToken?.price ? 1 / targetToken.price : 0;
 
   // Reset state when modal opens
@@ -180,6 +184,9 @@ export const SwapModal = ({
       setDirection("buy"); // Default to buy mode
       setIsTyping(false); // Reset typing state
       setShowSlippageSettings(false);
+      setLiveBuyOutput(null);
+      setLiveSellUsd(null);
+      setQuoteStatus("idle");
     }
   }, [isOpen]);
 
@@ -364,6 +371,146 @@ export const SwapModal = ({
     return { address: "", chainId: 0 };
   }, [targetToken, assetsForTokenLookup]);
 
+  // Live requote for 0x (EVM) and Relay (Solana) while modal is open.
+  const quoteReqIdRef = useRef(0);
+  useEffect(() => {
+    if (!isOpen || !universalAccount || !targetToken || amountNum <= 0) {
+      setQuoteStatus("idle");
+      if (direction === "buy") setLiveBuyOutput(null);
+      else setLiveSellUsd(null);
+      return;
+    }
+
+    const { address, chainId: targetChainId } = getTokenAddressAndChain();
+    if (!address || !targetChainId) {
+      setQuoteStatus("error");
+      return;
+    }
+
+    const reqId = ++quoteReqIdRef.current;
+    setQuoteStatus("loading");
+
+    const timer = setTimeout(async () => {
+      try {
+        const options = await universalAccount.getSmartAccountOptions();
+        const evmAddress = options?.smartAccountAddress;
+        const solAddress = options?.solanaSmartAccountAddress;
+        if (!evmAddress) {
+          if (reqId === quoteReqIdRef.current) setQuoteStatus("error");
+          return;
+        }
+
+        if (direction === "buy") {
+          const usdcRaw = String(Math.max(0, Math.floor(amountUsd * 1e6)));
+          if (targetChainId === 101) {
+            if (!solAddress) {
+              if (reqId === quoteReqIdRef.current) setQuoteStatus("error");
+              return;
+            }
+            const relayQuote = await getRelayQuote(
+              evmAddress,
+              solAddress,
+              8453,
+              address,
+              usdcRaw,
+              slippageBps,
+            );
+            if (reqId !== quoteReqIdRef.current) return;
+            if (!relayQuote.success) {
+              setQuoteStatus("error");
+              setLiveBuyOutput(null);
+              return;
+            }
+            const out = Number(relayQuote.outputAmount || "0");
+            setLiveBuyOutput(Number.isFinite(out) ? out : null);
+            setQuoteStatus("idle");
+          } else {
+            const sellToken = USDC_ADDRESSES[8453] || "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
+            const quote = await get0xSwapQuote(
+              evmAddress,
+              sellToken,
+              address,
+              usdcRaw,
+              targetChainId,
+              slippageBps,
+              evmAddress,
+            );
+            if (reqId !== quoteReqIdRef.current) return;
+            if (!quote.success || !quote.outputAmount) {
+              setQuoteStatus("error");
+              setLiveBuyOutput(null);
+              return;
+            }
+            const dec = targetToken?.decimals ?? 18;
+            const out = Number(quote.outputAmount) / Math.pow(10, dec);
+            setLiveBuyOutput(Number.isFinite(out) ? out : null);
+            setQuoteStatus("idle");
+          }
+        } else {
+          // Sell side live quote for EVM tokens via 0x
+          if (targetChainId === 101) {
+            if (reqId === quoteReqIdRef.current) {
+              setLiveSellUsd(null);
+              setQuoteStatus("idle");
+            }
+            return;
+          }
+
+          const tokenAmountToSell =
+            (targetToken?.price || 0) > 0
+              ? Math.min(Math.max(0, amountNum / (targetToken?.price || 1)), tokenBalance)
+              : tokenBalance * sliderValue / 100;
+          const decimals = targetToken?.decimals || 18;
+          const amountRaw = humanToRawUnits(tokenAmountToSell, decimals).toString();
+          if (!amountRaw || BigInt(amountRaw) <= BigInt(0)) {
+            if (reqId === quoteReqIdRef.current) setQuoteStatus("error");
+            return;
+          }
+
+          const buyUsdc = USDC_ADDRESSES[targetChainId] || USDC_ADDRESSES[8453];
+          if (!buyUsdc) {
+            if (reqId === quoteReqIdRef.current) setQuoteStatus("error");
+            return;
+          }
+
+          const sellQuote = await get0xSwapQuote(
+            evmAddress,
+            address,
+            buyUsdc,
+            amountRaw,
+            targetChainId,
+            slippageBps,
+            evmAddress,
+          );
+          if (reqId !== quoteReqIdRef.current) return;
+          if (!sellQuote.success || !sellQuote.outputAmount) {
+            setQuoteStatus("error");
+            setLiveSellUsd(null);
+            return;
+          }
+          const usd = Number(sellQuote.outputAmount) / 1e6;
+          setLiveSellUsd(Number.isFinite(usd) ? usd : null);
+          setQuoteStatus("idle");
+        }
+      } catch {
+        if (reqId === quoteReqIdRef.current) setQuoteStatus("error");
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [
+    isOpen,
+    universalAccount,
+    targetToken,
+    amountNum,
+    amountUsd,
+    slippageBps,
+    direction,
+    sliderValue,
+    tokenBalance,
+    getTokenAddressAndChain,
+  ]);
+
   // Get wallet for signing
   const [primaryWallet] = useWallets();
   const sign7702 = useSign7702AuthorizationCompat();
@@ -373,7 +520,7 @@ export const SwapModal = ({
       ? Math.min(Math.max(0, amountNum / (targetToken?.price || 1)), tokenBalance)
       : tokenBalance * sliderValue / 100;
 
-  const sellUsdPreview = amountNum * Math.max(0, 1 - slippagePct / 100);
+  const sellUsdPreview = liveSellUsd ?? (amountNum * Math.max(0, 1 - slippagePct / 100));
 
   // Handle swap execution (buy or sell based on direction)
   const handleSwap = async () => {
@@ -683,7 +830,7 @@ export const SwapModal = ({
                           symbol={targetToken?.symbol || "?"} 
                           chainId={getTokenAddressAndChain().chainId}
                         />
-                        <div className="text-white text-3xl font-bold">{formatTokenAmount(outputAmount)}</div>
+                        <div className="text-white text-3xl font-bold">{formatTokenAmount(displayedOutputAmount)}</div>
                       </>
                     ) : (
                       <>
@@ -714,6 +861,9 @@ export const SwapModal = ({
                   }
                 </span>
                 <div className="text-[11px] text-gray-500 mt-1">Max slippage: {slippageLabel}%</div>
+                <div className="text-[11px] text-gray-500 mt-1">
+                  {quoteStatus === "loading" ? "Updating live quote…" : quoteStatus === "error" ? "Live quote unavailable" : "Live quote"}
+                </div>
               </div>
 
               {/* Slider */}
