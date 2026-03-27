@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 
-type Theme = "sunset" | "midnight" | "forest" | "pos1" | "pos2" | "pos3" | "neg1" | "neg2" | "neg3";
+type Theme = "sunset" | "midnight" | "forest" | "pos1" | "pos2" | "pos3" | "pos4" | "pos5" | "pos6" | "neg1" | "neg2" | "neg3";
 
 type PnlData = {
   totalGain?: number;
@@ -29,8 +29,11 @@ const themeMap: Record<Theme, { bg: string; accent: string; image?: string; sent
   midnight: { bg: "linear-gradient(135deg,#0f172a 0%, #1d4ed8 70%, #0ea5e9 100%)", accent: "#60a5fa", sentiment: "neutral" },
   forest: { bg: "linear-gradient(135deg,#052e16 0%, #166534 70%, #22c55e 100%)", accent: "#86efac", sentiment: "neutral" },
   pos1: { bg: "#0f172a", accent: "#4ade80", image: "/pnl-backgrounds/pnl-positive.png", sentiment: "positive" },
-  pos2: { bg: "#0f172a", accent: "#4ade80", image: "/pnl-backgrounds/pnl-positive2.png", sentiment: "positive" },
-  pos3: { bg: "#0f172a", accent: "#4ade80", image: "/pnl-backgrounds/pnl-positive3.png", sentiment: "positive" },
+  pos2: { bg: "#0f172a", accent: "#4ade80", image: "/pnl-backgrounds/pnl-positive1.png", sentiment: "positive" },
+  pos3: { bg: "#0f172a", accent: "#4ade80", image: "/pnl-backgrounds/pnl-positive2.png", sentiment: "positive" },
+  pos4: { bg: "#0f172a", accent: "#4ade80", image: "/pnl-backgrounds/pnl-positive3.png", sentiment: "positive" },
+  pos5: { bg: "#0f172a", accent: "#4ade80", image: "/pnl-backgrounds/pnl-positive4.png", sentiment: "positive" },
+  pos6: { bg: "#0f172a", accent: "#4ade80", image: "/pnl-backgrounds/pnl-positive5.png", sentiment: "positive" },
   neg1: { bg: "#0f172a", accent: "#f87171", image: "/pnl-backgrounds/pnl-negative.png", sentiment: "negative" },
   neg2: { bg: "#0f172a", accent: "#f87171", image: "/pnl-backgrounds/pnl-negative1.png", sentiment: "negative" },
   neg3: { bg: "#0f172a", accent: "#f87171", image: "/pnl-backgrounds/pnl-negative4.png", sentiment: "negative" },
@@ -163,25 +166,25 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
 
         <div className="mt-3 space-y-2">
           <div className="grid grid-cols-3 gap-2">
-            {selectableThemes.map((x) => (
-              <button
-                key={x}
-                onClick={() => setTheme(x)}
-                className={`h-9 rounded-lg text-xs font-medium ${theme === x ? "bg-accent-dynamic text-white" : "bg-white/10 text-gray-300"}`}
-              >
-                {{
-                  sunset: "sunset",
-                  midnight: "midnight",
-                  forest: "forest",
-                  pos1: "pos-1",
-                  pos2: "pos-2",
-                  pos3: "pos-3",
-                  neg1: "neg-1",
-                  neg2: "neg-2",
-                  neg3: "neg-3",
-                }[x]}
-              </button>
-            ))}
+            {selectableThemes.map((x) => {
+              const label = x === "sunset"
+                ? "Sunset"
+                : x === "midnight"
+                  ? "Midnight"
+                  : x === "forest"
+                    ? "Forest"
+                    : `PNL ${x.startsWith("pos") ? Number(x.replace("pos", "")) : Number(x.replace("neg", ""))}`;
+
+              return (
+                <button
+                  key={x}
+                  onClick={() => setTheme(x)}
+                  className={`h-9 rounded-lg text-xs font-medium ${theme === x ? "bg-accent-dynamic text-white" : "bg-white/10 text-gray-300"}`}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
           <button
             onClick={() => setShowPnl((v) => !v)}
