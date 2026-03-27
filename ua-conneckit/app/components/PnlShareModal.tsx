@@ -47,6 +47,7 @@ const withBasePath = (p: string): string => {
 export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareModalProps) {
   const [theme, setTheme] = useState<Theme>("sunset");
   const [showPnl, setShowPnl] = useState(true);
+  const [showTokenLogo, setShowTokenLogo] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const cardRef = useRef<HTMLDivElement | null>(null);
 
@@ -135,22 +136,26 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
           <div className="absolute inset-0 bg-black/5" />
 
           <div className="relative flex items-start justify-between">
-            <div className="flex items-center gap-3">
-              {token.logo ? (
-                <img
-                  src={token.logo}
-                  alt={token.symbol}
-                  className="w-10 h-10 rounded-full"
-                  crossOrigin="anonymous"
-                  referrerPolicy="no-referrer"
-                />
-              ) : (
-                <div className="w-10 h-10 rounded-full bg-white/20" />
-              )}
-              <div>
-                <div className="font-semibold text-lg">{token.symbol}</div>
+            {showTokenLogo ? (
+              <div className="flex items-center gap-3">
+                {token.logo ? (
+                  <img
+                    src={token.logo}
+                    alt={token.symbol}
+                    className="w-10 h-10 rounded-full"
+                    crossOrigin="anonymous"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-white/20" />
+                )}
+                <div>
+                  <div className="font-semibold text-lg">{token.symbol}</div>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="font-semibold text-lg">${token.symbol}</div>
+            )}
             <img src={withBasePath("/omni-logo.png")} alt="Omni" className="w-7 h-7 rounded-full" />
           </div>
 
@@ -201,6 +206,12 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
             className="w-full h-9 rounded-lg bg-white/10 text-gray-300 text-xs font-medium"
           >
             {showPnl ? "Hide $ PnL" : "Show $ PnL"}
+          </button>
+          <button
+            onClick={() => setShowTokenLogo((v) => !v)}
+            className="w-full h-9 rounded-lg bg-white/10 text-gray-300 text-xs font-medium"
+          >
+            {showTokenLogo ? "Hide Token Logo" : "Show Token Logo"}
           </button>
         </div>
 
