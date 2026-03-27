@@ -103,6 +103,60 @@ export default {
         return out;
       }
 
+      // Image proxy path: /img?url=<encoded-image-url>
+      if (url.pathname === "/img") {
+        const src = url.searchParams.get("url");
+        if (!src) {
+          return new Response(JSON.stringify({ error: "Missing url param" }), {
+            status: 400,
+            headers: {
+              "Content-Type": "application/json",
+              ...corsHeaders(env),
+            },
+          });
+        }
+
+        let parsed;
+        try {
+          parsed = new URL(src);
+        } catch {
+          return new Response(JSON.stringify({ error: "Invalid image url" }), {
+            status: 400,
+            headers: {
+              "Content-Type": "application/json",
+              ...corsHeaders(env),
+            },
+          });
+        }
+
+        if (!(parsed.protocol === "https:" || parsed.protocol === "http:")) {
+          return new Response(JSON.stringify({ error: "Unsupported protocol" }), {
+            status: 400,
+            headers: {
+              "Content-Type": "application/json",
+              ...corsHeaders(env),
+            },
+          });
+        }
+
+        const imgResp = await fetch(parsed.toString(), {
+          method: "GET",
+          headers: {
+            Accept: "image/*,*/*;q=0.8",
+          },
+        });
+
+        const buf = await imgResp.arrayBuffer();
+        return new Response(buf, {
+          status: imgResp.status,
+          headers: {
+            "Content-Type": imgResp.headers.get("Content-Type") || "image/png",
+            "Cache-Control": "public, s-maxage=3600, max-age=600",
+            ...corsHeaders(env),
+          },
+        });
+      }
+
       // Zerion proxy path: /zerion/*
       if (url.pathname.startsWith("/zerion/")) {
         const zerionPath = url.pathname.replace("/zerion", "");

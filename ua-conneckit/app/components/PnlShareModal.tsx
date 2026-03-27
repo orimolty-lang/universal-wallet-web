@@ -48,7 +48,6 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
   const [theme, setTheme] = useState<Theme>("sunset");
   const [showPnl, setShowPnl] = useState(true);
   const [showTokenLogo, setShowTokenLogo] = useState(true);
-  const [tokenLogoSrc, setTokenLogoSrc] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const cardRef = useRef<HTMLDivElement | null>(null);
 
@@ -71,36 +70,11 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
     }
   }, [isOpen, positive, selectableThemes, theme]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const run = async () => {
-      if (!isOpen || !token?.logo) {
-        if (!cancelled) setTokenLogoSrc(null);
-        return;
-      }
-
-      try {
-        const res = await fetch(token.logo, { mode: "cors" });
-        if (!res.ok) throw new Error("logo fetch failed");
-        const blob = await res.blob();
-        const reader = new FileReader();
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          reader.onloadend = () => resolve(String(reader.result || ""));
-          reader.onerror = () => reject(new Error("logo read failed"));
-          reader.readAsDataURL(blob);
-        });
-        if (!cancelled) setTokenLogoSrc(dataUrl || token.logo);
-      } catch {
-        if (!cancelled) setTokenLogoSrc(token.logo);
-      }
-    };
-
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen, token?.logo]);
+  const logoSrc = useMemo(() => {
+    if (!token?.logo) return "";
+    const base = process.env.NEXT_PUBLIC_LIFI_PROXY_URL || "https://lifi-proxy.orimolty.workers.dev";
+    return `${base}/img?url=${encodeURIComponent(token.logo)}`;
+  }, [token?.logo]);
 
   const displayDollar = useMemo(() => {
     if (!showPnl) return "••••";
@@ -172,9 +146,10 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
               <div className="flex items-center gap-3">
                 {token.logo && (
                   <img
-                    src={tokenLogoSrc || token.logo}
+                    src={logoSrc}
                     alt={token.symbol}
                     className="w-10 h-10 rounded-full"
+                    crossOrigin="anonymous"
                   />
                 )}
                 <div>
