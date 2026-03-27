@@ -351,13 +351,6 @@ function normalizeSlippagePct(value?: number, fallbackPct: number = 1): number {
   return normalizeSlippageBps(Math.round(clamped * 100), 100);
 }
 
-function weiToEthString(wei: bigint): string {
-  const base = BigInt("1000000000000000000");
-  const int = wei / base;
-  const frac = (wei % base).toString().padStart(18, "0").replace(/0+$/, "");
-  return frac ? `${int.toString()}.${frac}` : int.toString();
-}
-
 type ZeroXQuoteRaw = {
   transaction?: { value?: string };
   totalNetworkFee?: string;
@@ -370,28 +363,6 @@ type ZeroXQuoteRaw = {
     allowance?: { actual?: string };
   };
 };
-
-function get0xRequiredNativeWei(raw: unknown): bigint {
-  const q = (raw || {}) as ZeroXQuoteRaw;
-  try {
-    const balanceIssue = q.issues?.balance;
-    const token = String(balanceIssue?.token || "").toLowerCase();
-    if (token === "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee") {
-      const expected = BigInt(balanceIssue?.expected || "0");
-      const actual = BigInt(balanceIssue?.actual || "0");
-      if (expected > actual) return expected - actual;
-      return expected;
-    }
-  } catch {
-    // ignore and fallback below
-  }
-
-  const txValue = BigInt(q.transaction?.value || "0");
-  const integratorFee = BigInt(q.fees?.integratorFee?.amount || "0");
-  const zeroExFee = BigInt(q.fees?.zeroExFee?.amount || "0");
-  const networkFee = BigInt(q.totalNetworkFee || "0");
-  return txValue + integratorFee + zeroExFee + networkFee;
-}
 
 function shouldAddApproval(raw: unknown, sellAmount: string): boolean {
   const q = (raw || {}) as ZeroXQuoteRaw;
@@ -1050,32 +1021,9 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
         },
       ];
 
-      // OmniUA parity: if 0x indicates native balance requirement, size ETH expect token from quote.
-      if (quoteSource === "0x") {
-        const requiredWeiBase = get0xRequiredNativeWei(quote.raw);
-        if (requiredWeiBase > BigInt(0)) {
-          let requiredWei = (requiredWeiBase * BigInt(112) + BigInt(99)) / BigInt(100); // +12% cushion
-          const roundUnit = BigInt("1000000000000");
-          if (requiredWei % roundUnit !== BigInt(0)) {
-            requiredWei = ((requiredWei / roundUnit) + BigInt(1)) * roundUnit;
-          }
-          const needEth = weiToEthString(requiredWei);
-          if (needEth && needEth !== "0") {
-            // Prefer native token for swap fees on 0x buy path.
-            // Put ETH first so UA fee abstraction chooses native fee token when available.
-            const nativeFeeToken = {
-              type: TOKEN_TYPE.ETH,
-              tokenType: TOKEN_TYPE.ETH,
-              amount: needEth,
-              chainId: sourceChainId,
-            };
-            const alreadyEth = expectTokens.some((t) => t.type === TOKEN_TYPE.ETH);
-            if (!alreadyEth) {
-              expectTokens.unshift(nativeFeeToken);
-            }
-          }
-        }
-      }
+      // Keep buy expectTokens deterministic for UA balance checks:
+      // do not add extra ETH expect token from 0x fee hints.
+      // Gas/native requirements are handled by route execution itself.
 
       // Execute on the selected EVM source chain (target chain preferred).
       const uaChainId = sourceChainId as CHAIN_ID;
