@@ -141,9 +141,9 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
           )}
           <div className="absolute inset-0 bg-black/5" />
 
-          <div className="relative flex items-start justify-between">
+          <div className="relative flex items-center justify-between">
             {showTokenLogo ? (
-              <div className="flex items-center gap-3">
+              <div className="flex h-10 items-center gap-3">
                 {token.logo && (
                   <img
                     src={logoSrc}
@@ -152,14 +152,14 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
                     crossOrigin="anonymous"
                   />
                 )}
-                <div>
-                  <div className="font-semibold text-lg">{token.symbol}</div>
+                <div className="h-10 flex items-center">
+                  <div className="font-semibold text-lg leading-none">{token.symbol}</div>
                 </div>
               </div>
             ) : (
-              <div className="font-semibold text-lg">${token.symbol}</div>
+              <div className="h-10 flex items-center font-semibold text-lg leading-none">${token.symbol}</div>
             )}
-            <img src={withBasePath("/omni-logo.png")} alt="Omni" className="w-7 h-7 rounded-full" />
+            <img src={withBasePath("/omni-logo.png")} alt="Omni" className="w-9 h-9 rounded-full" />
           </div>
 
           <div className="relative mt-6">
