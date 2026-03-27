@@ -33,6 +33,11 @@ const themeMap: Record<Theme, { bg: string; accent: string; image?: string }> = 
   omni3: { bg: "#0f172a", accent: "#a78bfa", image: "/pnl-backgrounds/omni-3.png" },
 };
 
+const withBasePath = (p: string): string => {
+  const base = "/universal-wallet-web";
+  return `${base}${p.startsWith("/") ? p : `/${p}`}`;
+};
+
 export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareModalProps) {
   const [theme, setTheme] = useState<Theme>("sunset");
   const [showPnl, setShowPnl] = useState(true);
@@ -101,7 +106,7 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
         >
           {t.image && (
             <img
-              src={t.image}
+              src={withBasePath(t.image)}
               alt=""
               className="absolute inset-0 w-full h-full object-cover opacity-35"
             />
@@ -115,7 +120,7 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
                 <div className="font-semibold text-lg">{token.symbol}</div>
               </div>
             </div>
-            <img src="/omni-logo.png" alt="Omni" className="w-7 h-7 rounded-full" />
+            <img src={withBasePath("/omni-logo.png")} alt="Omni" className="w-7 h-7 rounded-full" />
           </div>
 
           <div className="relative mt-6">
