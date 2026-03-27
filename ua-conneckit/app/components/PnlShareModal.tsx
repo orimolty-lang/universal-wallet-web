@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 
-type Theme = "sunset" | "midnight" | "forest" | "omni1" | "omni2" | "omni3";
+type Theme = "sunset" | "midnight" | "forest" | "pos1" | "pos2" | "pos3" | "neg1" | "neg2" | "neg3";
 
 type PnlData = {
   totalGain?: number;
@@ -24,13 +24,16 @@ interface PnlShareModalProps {
   pnl: PnlData | null;
 }
 
-const themeMap: Record<Theme, { bg: string; accent: string; image?: string }> = {
-  sunset: { bg: "linear-gradient(135deg,#3b0a45 0%, #f97316 70%, #f59e0b 100%)", accent: "#fbbf24" },
-  midnight: { bg: "linear-gradient(135deg,#0f172a 0%, #1d4ed8 70%, #0ea5e9 100%)", accent: "#60a5fa" },
-  forest: { bg: "linear-gradient(135deg,#052e16 0%, #166534 70%, #22c55e 100%)", accent: "#86efac" },
-  omni1: { bg: "#0f172a", accent: "#a78bfa", image: "/pnl-backgrounds/omni-1.png" },
-  omni2: { bg: "#0f172a", accent: "#a78bfa", image: "/pnl-backgrounds/omni-2.png" },
-  omni3: { bg: "#0f172a", accent: "#a78bfa", image: "/pnl-backgrounds/omni-3.png" },
+const themeMap: Record<Theme, { bg: string; accent: string; image?: string; sentiment: "neutral" | "positive" | "negative" }> = {
+  sunset: { bg: "linear-gradient(135deg,#3b0a45 0%, #f97316 70%, #f59e0b 100%)", accent: "#fbbf24", sentiment: "neutral" },
+  midnight: { bg: "linear-gradient(135deg,#0f172a 0%, #1d4ed8 70%, #0ea5e9 100%)", accent: "#60a5fa", sentiment: "neutral" },
+  forest: { bg: "linear-gradient(135deg,#052e16 0%, #166534 70%, #22c55e 100%)", accent: "#86efac", sentiment: "neutral" },
+  pos1: { bg: "#0f172a", accent: "#4ade80", image: "/pnl-backgrounds/pnl-positive.png", sentiment: "positive" },
+  pos2: { bg: "#0f172a", accent: "#4ade80", image: "/pnl-backgrounds/pnl-positive2.png", sentiment: "positive" },
+  pos3: { bg: "#0f172a", accent: "#4ade80", image: "/pnl-backgrounds/pnl-positive3.png", sentiment: "positive" },
+  neg1: { bg: "#0f172a", accent: "#f87171", image: "/pnl-backgrounds/pnl-negative.png", sentiment: "negative" },
+  neg2: { bg: "#0f172a", accent: "#f87171", image: "/pnl-backgrounds/pnl-negative1.png", sentiment: "negative" },
+  neg3: { bg: "#0f172a", accent: "#f87171", image: "/pnl-backgrounds/pnl-negative4.png", sentiment: "negative" },
 };
 
 const withBasePath = (p: string): string => {
@@ -47,6 +50,21 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
   const gain = Number(pnl?.totalGain || 0);
   const gainPct = Number(pnl?.totalGainPct || 0);
   const positive = gain >= 0;
+
+  const selectableThemes = useMemo(() => {
+    const desired = positive ? "positive" : "negative";
+    return (Object.keys(themeMap) as Theme[]).filter((k) => {
+      const s = themeMap[k].sentiment;
+      return s === "neutral" || s === desired;
+    });
+  }, [positive]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!selectableThemes.includes(theme)) {
+      setTheme(positive ? "pos1" : "neg1");
+    }
+  }, [isOpen, positive, selectableThemes, theme]);
 
   const displayDollar = useMemo(() => {
     if (!showPnl) return "••••";
@@ -145,13 +163,23 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
 
         <div className="mt-3 space-y-2">
           <div className="grid grid-cols-3 gap-2">
-            {(Object.keys(themeMap) as Theme[]).map((x) => (
+            {selectableThemes.map((x) => (
               <button
                 key={x}
                 onClick={() => setTheme(x)}
                 className={`h-9 rounded-lg text-xs font-medium ${theme === x ? "bg-accent-dynamic text-white" : "bg-white/10 text-gray-300"}`}
               >
-                {{ sunset: "sunset", midnight: "midnight", forest: "forest", omni1: "omni-1", omni2: "omni-2", omni3: "omni-3" }[x]}
+                {{
+                  sunset: "sunset",
+                  midnight: "midnight",
+                  forest: "forest",
+                  pos1: "pos-1",
+                  pos2: "pos-2",
+                  pos3: "pos-3",
+                  neg1: "neg-1",
+                  neg2: "neg-2",
+                  neg3: "neg-3",
+                }[x]}
               </button>
             ))}
           </div>
