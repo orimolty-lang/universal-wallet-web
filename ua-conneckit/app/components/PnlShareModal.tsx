@@ -115,7 +115,7 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
                 <div className="font-semibold text-lg">{token.symbol}</div>
               </div>
             </div>
-            <img src="/omni-logo.svg" alt="Omni" className="w-7 h-7" />
+            <img src="/omni-logo.png" alt="Omni" className="w-7 h-7 rounded-full" />
           </div>
 
           <div className="relative mt-6">
@@ -124,25 +124,36 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
           </div>
 
           <div className="relative mt-4">
-            <div className="text-xs text-white/80">PnL</div>
-            <div className="text-3xl font-extrabold" style={{ color: showPnl ? (positive ? "#4ade80" : "#f87171") : t.accent }}>
-              {displayDollar}
-            </div>
-            <div className={`mt-1 ${showPnl ? "text-sm text-white/90" : "text-lg font-bold text-white"}`}>{displayPct}</div>
+            {showPnl ? (
+              <>
+                <div className="text-xs text-white/80">PnL</div>
+                <div className="text-3xl font-extrabold" style={{ color: positive ? "#4ade80" : "#f87171" }}>
+                  {displayDollar}
+                </div>
+                <div className="mt-1 text-sm text-white/90">{displayPct}</div>
+              </>
+            ) : (
+              <div className="text-3xl font-extrabold text-white">{displayPct}</div>
+            )}
           </div>
         </div>
 
-        <div className="mt-3 flex items-center gap-2">
-          {(Object.keys(themeMap) as Theme[]).map((x) => (
-            <button
-              key={x}
-              onClick={() => setTheme(x)}
-              className={`px-2 py-1 rounded-md text-xs ${theme === x ? "bg-accent-dynamic text-white" : "bg-white/10 text-gray-300"}`}
-            >
-              {{ sunset: "sunset", midnight: "midnight", forest: "forest", omni1: "omni-1", omni2: "omni-2", omni3: "omni-3" }[x]}
-            </button>
-          ))}
-          <button onClick={() => setShowPnl((v) => !v)} className="ml-auto px-2 py-1 rounded-md bg-white/10 text-gray-300 text-xs">
+        <div className="mt-3 space-y-2">
+          <div className="grid grid-cols-3 gap-2">
+            {(Object.keys(themeMap) as Theme[]).map((x) => (
+              <button
+                key={x}
+                onClick={() => setTheme(x)}
+                className={`h-9 rounded-lg text-xs font-medium ${theme === x ? "bg-accent-dynamic text-white" : "bg-white/10 text-gray-300"}`}
+              >
+                {{ sunset: "sunset", midnight: "midnight", forest: "forest", omni1: "omni-1", omni2: "omni-2", omni3: "omni-3" }[x]}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => setShowPnl((v) => !v)}
+            className="w-full h-9 rounded-lg bg-white/10 text-gray-300 text-xs font-medium"
+          >
             {showPnl ? "Hide $ PnL" : "Show $ PnL"}
           </button>
         </div>
