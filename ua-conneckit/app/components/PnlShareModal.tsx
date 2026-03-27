@@ -160,9 +160,9 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
               <div className="absolute left-0 top-0 h-10 flex items-center font-semibold text-lg leading-none">${token.symbol}</div>
             )}
 
-            <div className="absolute right-0 top-0 h-10 flex items-center gap-1.5">
+            <div className="absolute right-0 top-0 h-10 flex items-center gap-2">
               <img src={withBasePath("/omni-logo.png")} alt="Omni" className="w-10 h-10 rounded-full" />
-              <span className="text-[11px] font-semibold tracking-wide text-white/90">OMNI</span>
+              <span className="text-sm font-semibold leading-none text-white/95">OMNI</span>
             </div>
           </div>
 
