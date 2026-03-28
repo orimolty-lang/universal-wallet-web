@@ -111,6 +111,18 @@ const EXPLORER_TOKEN_URLS: Record<string, string> = {
   avalanche: "https://snowtrace.io/token/",
 };
 
+const EXPLORER_TX_URLS: Record<string, string> = {
+  ethereum: "https://etherscan.io/tx/",
+  base: "https://basescan.org/tx/",
+  arbitrum: "https://arbiscan.io/tx/",
+  optimism: "https://optimistic.etherscan.io/tx/",
+  polygon: "https://polygonscan.com/tx/",
+  bsc: "https://bscscan.com/tx/",
+  bnb: "https://bscscan.com/tx/",
+  solana: "https://explorer.solana.com/tx/",
+  avalanche: "https://snowtrace.io/tx/",
+};
+
 // Map blockchain names to DEXScreener/GeckoTerminal network slugs
 const NETWORK_SLUGS: Record<string, { dexscreener: string; geckoterminal: string }> = {
   "ethereum": { dexscreener: "ethereum", geckoterminal: "eth" },
@@ -648,9 +660,14 @@ export const TokenDetailModal = ({
                       const isIn = tx.direction === "in";
                       const qty = Number(tx.quantity || 0);
                       const qtyText = `${isIn ? "+" : "-"}${Math.abs(qty).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${tx.symbol || token.symbol}`;
-                      const valueText = typeof tx.valueUsd === "number" ? `${isIn ? "+" : "-"}$${Math.abs(tx.valueUsd).toFixed(2)}` : "—";
+                      // Cashflow sign (what user paid/received): Buy = -, Sell = +
+                      const valueText = typeof tx.valueUsd === "number" ? `${isIn ? "-" : "+"}$${Math.abs(tx.valueUsd).toFixed(2)}` : "—";
+                      const valueClass = isIn ? "text-red-300" : "text-green-300";
                       const timeText = tx.minedAt ? new Date(tx.minedAt).toLocaleString() : "Unknown time";
                       const sideLabel = tx.direction === "in" ? "Buy" : tx.direction === "out" ? "Sell" : ((tx.operationType || "transfer").replace(/_/g, " "));
+                      const chainNorm = normalizeBlockchain(primaryContract?.blockchain || "");
+                      const txBase = EXPLORER_TX_URLS[chainNorm] || EXPLORER_TX_URLS.base;
+                      const txUrl = tx.hash ? `${txBase}${tx.hash}${chainNorm === "solana" ? "?cluster=mainnet-beta" : ""}` : null;
 
                       return (
                         <div key={tx.id} className="rounded-lg bg-transparent border border-white/10 px-3 py-2">
@@ -661,11 +678,20 @@ export const TokenDetailModal = ({
                             </div>
                             <div className="text-right shrink-0">
                               <div className={`text-sm font-medium ${isIn ? "text-green-400" : "text-red-400"}`}>{qtyText}</div>
-                              <div className={`text-xs ${isIn ? "text-green-300" : "text-red-300"}`}>{valueText}</div>
+                              <div className={`text-xs ${valueClass}`}>{valueText}</div>
                             </div>
                           </div>
-                          {tx.hash && (
-                            <div className="mt-1 text-[11px] text-gray-500 font-mono truncate">{tx.hash}</div>
+                          {txUrl && (
+                            <div className="mt-1">
+                              <a
+                                href={txUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[11px] text-accent-dynamic hover:underline"
+                              >
+                                View txn ↗
+                              </a>
+                            </div>
                           )}
                         </div>
                       );
