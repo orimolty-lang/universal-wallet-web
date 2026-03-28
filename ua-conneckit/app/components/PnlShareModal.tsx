@@ -49,10 +49,7 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
   const [showPnl, setShowPnl] = useState(true);
   const [showTokenLogo, setShowTokenLogo] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string>("");
-  const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
-  const sourceCardRef = useRef<HTMLDivElement | null>(null);
-  const previewUrlRef = useRef<string>("");
+  const cardRef = useRef<HTMLDivElement | null>(null);
 
   const gain = Number(pnl?.totalGain || 0);
   const gainPct = Number(pnl?.totalGainPct || 0);
@@ -88,32 +85,38 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
     return `${gainPct >= 0 ? "+" : ""}${gainPct.toFixed(2)}%`;
   }, [gainPct]);
 
-  const captureCardBlob = async (node: HTMLDivElement, scale = 3): Promise<Blob | null> => {
-    if (typeof document !== "undefined") {
-      const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
-      if (fonts) {
-        try {
-          await fonts.ready;
-        } catch {}
-      }
-    }
-
-    const rect = node.getBoundingClientRect();
-    const width = Math.round(rect.width);
-    const height = Math.round(rect.height);
-
-    const clone = node.cloneNode(true) as HTMLDivElement;
-    clone.style.position = "fixed";
-    clone.style.left = "-10000px";
-    clone.style.top = "0";
-    clone.style.width = `${width}px`;
-    clone.style.height = `${height}px`;
-    clone.style.transform = "none";
-    clone.style.margin = "0";
-    clone.style.pointerEvents = "none";
-    document.body.appendChild(clone);
+  const exportImage = async () => {
+    if (!cardRef.current) return;
+    let clone: HTMLDivElement | null = null;
 
     try {
+      setIsExporting(true);
+
+      if (typeof document !== "undefined") {
+        const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
+        if (fonts) {
+          try {
+            await fonts.ready;
+          } catch {}
+        }
+      }
+
+      const rect = cardRef.current.getBoundingClientRect();
+      const width = Math.round(rect.width);
+      const height = Math.round(rect.height);
+
+      // Capture a fixed-size offscreen clone to avoid export-only layout drift on iOS.
+      clone = cardRef.current.cloneNode(true) as HTMLDivElement;
+      clone.style.position = "fixed";
+      clone.style.left = "-10000px";
+      clone.style.top = "0";
+      clone.style.width = `${width}px`;
+      clone.style.height = `${height}px`;
+      clone.style.transform = "none";
+      clone.style.margin = "0";
+      clone.style.pointerEvents = "none";
+      document.body.appendChild(clone);
+
       const imgs = Array.from(clone.querySelectorAll("img"));
       await Promise.all(
         imgs.map(async (img) => {
@@ -129,7 +132,7 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
 
       const canvas = await html2canvas(clone, {
         backgroundColor: null,
-        scale,
+        scale: 3,
         useCORS: true,
         width,
         height,
@@ -138,46 +141,7 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
         scrollX: 0,
         scrollY: 0,
       });
-      return await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
-    } finally {
-      if (clone.parentNode) clone.parentNode.removeChild(clone);
-    }
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const run = async () => {
-      if (!isOpen || !sourceCardRef.current) return;
-      const blob = await captureCardBlob(sourceCardRef.current, 2);
-      if (!blob || cancelled) return;
-
-      const nextUrl = URL.createObjectURL(blob);
-      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
-      previewUrlRef.current = nextUrl;
-      setPreviewBlob(blob);
-      setPreviewUrl(nextUrl);
-    };
-
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen, theme, showPnl, showTokenLogo, logoSrc, displayDollar, displayPct, token?.symbol, token?.amountInUSD]);
-
-  useEffect(() => {
-    return () => {
-      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
-    };
-  }, []);
-
-  const exportImage = async () => {
-    if (!sourceCardRef.current) return;
-
-    try {
-      setIsExporting(true);
-
-      const blob = previewBlob || (await captureCardBlob(sourceCardRef.current, 3));
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
       if (!blob) return;
 
       const file = new File([blob], `${token?.symbol || "token"}-pnl-card.png`, { type: "image/png" });
@@ -194,6 +158,7 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
       a.click();
       URL.revokeObjectURL(url);
     } finally {
+      if (clone?.parentNode) clone.parentNode.removeChild(clone);
       setIsExporting(false);
     }
   };
@@ -210,78 +175,68 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
           <button onClick={onClose} className="text-gray-400 text-sm">Close</button>
         </div>
 
-        <div className="relative rounded-2xl overflow-hidden bg-[#0f172a]/50">
-          {previewUrl ? (
-            <img src={previewUrl} alt="P&L preview" className="w-full h-auto block" />
-          ) : (
-            <div className="h-[220px] flex items-center justify-center text-sm text-white/60">Rendering preview…</div>
+        <div
+          ref={cardRef}
+          className="relative rounded-2xl p-4 text-white overflow-hidden"
+          style={{ background: t.bg }}
+        >
+          {t.image && (
+            <img
+              src={withBasePath(t.image)}
+              alt=""
+              className="absolute inset-0 w-full h-full object-cover opacity-55"
+            />
           )}
-        </div>
+          <div className="absolute inset-0 bg-black/5" />
 
-        <div className="fixed -left-[10000px] top-0 pointer-events-none opacity-0" aria-hidden="true">
-          <div
-            ref={sourceCardRef}
-            className="relative rounded-2xl p-4 text-white overflow-hidden w-[352px]"
-            style={{ background: t.bg }}
-          >
-            {t.image && (
-              <img
-                src={withBasePath(t.image)}
-                alt=""
-                className="absolute inset-0 w-full h-full object-cover opacity-55"
-              />
-            )}
-            <div className="absolute inset-0 bg-black/5" />
-
-            <div className="relative h-10">
-              {showTokenLogo ? (
-                <div className="absolute left-0 top-0 flex h-10 items-center gap-3">
-                  {token.logo && (
-                    <img
-                      src={logoSrc}
-                      alt={token.symbol}
-                      className="w-10 h-10 rounded-full"
-                      crossOrigin="anonymous"
-                    />
-                  )}
-                  <div className="h-10 flex items-center">
-                    <div className="font-semibold text-lg leading-none">{token.symbol}</div>
-                  </div>
+          <div className="relative h-10">
+            {showTokenLogo ? (
+              <div className="absolute left-0 top-0 flex h-10 items-center gap-3">
+                {token.logo && (
+                  <img
+                    src={logoSrc}
+                    alt={token.symbol}
+                    className="w-10 h-10 rounded-full"
+                    crossOrigin="anonymous"
+                  />
+                )}
+                <div className="h-10 flex items-center">
+                  <div className="font-semibold text-lg leading-none">{token.symbol}</div>
                 </div>
-              ) : (
-                <div className="absolute left-0 top-0 h-10 flex items-center font-semibold text-lg leading-none">${token.symbol}</div>
-              )}
-
-              <div className="absolute right-0 top-0 h-10 flex items-center gap-2">
-                <img src={withBasePath("/omni-logo.png")} alt="Omni" className="w-10 h-10 rounded-full" />
-                <span className="text-sm font-semibold leading-none text-white/95">OMNI</span>
               </div>
-            </div>
+            ) : (
+              <div className="absolute left-0 top-0 h-10 flex items-center font-semibold text-lg leading-none">${token.symbol}</div>
+            )}
 
-            <div className="relative mt-6">
-              <div className="text-xs text-white/80">Position Value</div>
-              <div className="text-2xl font-bold">${Number(token.amountInUSD || 0).toFixed(2)}</div>
+            <div className="absolute right-0 top-0 h-10 flex items-center gap-2">
+              <img src={withBasePath("/omni-logo.png")} alt="Omni" className="w-10 h-10 rounded-full" />
+              <span className="text-sm font-semibold leading-none text-white/95">OMNI</span>
             </div>
+          </div>
 
-            <div className="relative mt-4">
-              {showPnl ? (
-                <>
-                  <div className="flex items-center gap-2 text-xs text-white/80">
-                    <span>PnL</span>
-                    <span className="font-semibold" style={{ color: positive ? "#4ade80" : "#f87171" }}>
-                      {displayPct}
-                    </span>
-                  </div>
-                  <div className="text-3xl font-extrabold" style={{ color: positive ? "#4ade80" : "#f87171" }}>
-                    {displayDollar}
-                  </div>
-                </>
-              ) : (
-                <div className="text-3xl font-extrabold" style={{ color: gainPct >= 0 ? "#4ade80" : "#f87171" }}>
-                  {displayPct}
+          <div className="relative mt-6">
+            <div className="text-xs text-white/80">Position Value</div>
+            <div className="text-2xl font-bold">${Number(token.amountInUSD || 0).toFixed(2)}</div>
+          </div>
+
+          <div className="relative mt-4">
+            {showPnl ? (
+              <>
+                <div className="flex items-center gap-2 text-xs text-white/80">
+                  <span>PnL</span>
+                  <span className="font-semibold" style={{ color: positive ? "#4ade80" : "#f87171" }}>
+                    {displayPct}
+                  </span>
                 </div>
-              )}
-            </div>
+                <div className="text-3xl font-extrabold" style={{ color: positive ? "#4ade80" : "#f87171" }}>
+                  {displayDollar}
+                </div>
+              </>
+            ) : (
+              <div className="text-3xl font-extrabold" style={{ color: gainPct >= 0 ? "#4ade80" : "#f87171" }}>
+                {displayPct}
+              </div>
+            )}
           </div>
         </div>
 
