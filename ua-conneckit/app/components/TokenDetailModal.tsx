@@ -38,11 +38,23 @@ const WATCHLIST_STORAGE_KEY = "omni_swap_watchlist_v1";
 interface TokenDetailModalProps {
   token: TokenData | null;
   userBalance?: UserBalance | null;
+  walletAddress?: string | null;
   onClose: () => void;
   onSwap?: (token: TokenData) => void;
   onSend?: (token: TokenData) => void;
   onWatchlistChange?: () => void;
   onWalletActivity?: (kind: WalletActivityToastKind, detail?: string) => void;
+}
+
+interface ZerionTokenTx {
+  id: string;
+  hash?: string;
+  minedAt?: string;
+  operationType?: string;
+  direction?: "in" | "out" | string;
+  quantity?: number;
+  symbol?: string;
+  valueUsd?: number;
 }
 
 // Helper functions
@@ -183,6 +195,7 @@ const EmbeddedChart = ({
 export const TokenDetailModal = ({
   token,
   userBalance,
+  walletAddress,
   onClose,
   onSwap,
   onSend,
@@ -190,9 +203,12 @@ export const TokenDetailModal = ({
   onWalletActivity,
 }: TokenDetailModalProps) => {
   const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const [activeTab, setActiveTab] = useState<"feed" | "about">("about");
+  const [activeTab, setActiveTab] = useState<"feed" | "about" | "history">("about");
   const [isWatchlisted, setIsWatchlisted] = useState(false);
   const [fallbackMetrics, setFallbackMetrics] = useState<{ volume?: number; liquidity?: number; priceChange24h?: number } | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyItems, setHistoryItems] = useState<ZerionTokenTx[]>([]);
   const modalRef = useRef<HTMLDivElement>(null);
   const startYRef = useRef<number | null>(null);
   const currentYRef = useRef<number>(0);
@@ -348,6 +364,88 @@ export const TokenDetailModal = ({
       cancelled = true;
     };
   }, [token]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadHistory = async () => {
+      if (activeTab !== "history") return;
+      const contract = token?.contracts?.[0];
+      if (!walletAddress || !contract?.address) {
+        setHistoryItems([]);
+        setHistoryError("Wallet or token contract unavailable");
+        return;
+      }
+
+      const chain = normalizeBlockchain(contract.blockchain);
+      if (!chain) {
+        setHistoryItems([]);
+        setHistoryError("Unsupported chain for history");
+        return;
+      }
+
+      try {
+        setHistoryLoading(true);
+        setHistoryError(null);
+
+        const base = process.env.NEXT_PUBLIC_LIFI_PROXY_URL || "https://lifi-proxy.orimolty.workers.dev";
+        const params = new URLSearchParams();
+        params.set("filter[fungible_implementations]", `${chain}:${contract.address.toLowerCase()}`);
+        params.set("filter[chain_ids]", chain);
+        params.set("page[size]", "30");
+
+        const url = `${base}/zerion/wallets/${walletAddress}/transactions/?${params.toString()}`;
+        const res = await fetch(url, { headers: { Accept: "application/json" } });
+        if (!res.ok) throw new Error(`History fetch failed (${res.status})`);
+
+        const json = await res.json();
+        const rows = Array.isArray(json?.data) ? json.data : [];
+
+        const mapped: ZerionTokenTx[] = rows.map((row: {
+          id?: string;
+          attributes?: {
+            hash?: string;
+            mined_at?: string;
+            operation_type?: string;
+            transfers?: Array<{
+              direction?: string;
+              quantity?: { numeric?: string };
+              value?: number;
+              fungible_info?: { symbol?: string };
+            }>;
+          };
+        }) => {
+          const attrs = row?.attributes || {};
+          const transfers = Array.isArray(attrs.transfers) ? attrs.transfers : [];
+          const transfer = transfers[0] || {};
+          return {
+            id: String(row?.id || attrs.hash || Math.random()),
+            hash: attrs.hash,
+            minedAt: attrs.mined_at,
+            operationType: attrs.operation_type,
+            direction: transfer.direction,
+            quantity: Number(transfer.quantity?.numeric || 0),
+            symbol: transfer.fungible_info?.symbol || token?.symbol,
+            valueUsd: typeof transfer.value === "number" ? transfer.value : undefined,
+          };
+        });
+
+        if (!cancelled) setHistoryItems(mapped);
+      } catch (err) {
+        if (!cancelled) {
+          setHistoryItems([]);
+          setHistoryError(err instanceof Error ? err.message : "Failed to load history");
+        }
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    };
+
+    loadHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, token, walletAddress]);
 
   if (!token) return null;
 
@@ -508,6 +606,12 @@ export const TokenDetailModal = ({
               >
                 About
               </button>
+              <button
+                onClick={() => setActiveTab("history")}
+                className={`px-3 py-2 text-sm ${activeTab === "history" ? "text-white border-b-2 border-accent-dynamic" : "text-gray-500"}`}
+              >
+                History
+              </button>
             </div>
 
             {activeTab === "feed" ? (
@@ -516,6 +620,44 @@ export const TokenDetailModal = ({
                   <ClickerComments tokenAddress={primaryContract.address} blockchain={primaryContract.blockchain} />
                 ) : (
                   <div className="text-gray-500 text-sm text-center py-6">Feed unavailable for this token</div>
+                )}
+              </div>
+            ) : activeTab === "history" ? (
+              <div className="bg-white/5 rounded-xl border border-white/10 p-3">
+                {historyLoading ? (
+                  <div className="text-gray-400 text-sm text-center py-6">Loading history…</div>
+                ) : historyError ? (
+                  <div className="text-red-400 text-sm text-center py-6">{historyError}</div>
+                ) : historyItems.length === 0 ? (
+                  <div className="text-gray-500 text-sm text-center py-6">No token transactions found</div>
+                ) : (
+                  <div className="space-y-2">
+                    {historyItems.map((tx) => {
+                      const isIn = tx.direction === "in";
+                      const qty = Number(tx.quantity || 0);
+                      const qtyText = `${isIn ? "+" : "-"}${Math.abs(qty).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${tx.symbol || token.symbol}`;
+                      const valueText = typeof tx.valueUsd === "number" ? `${isIn ? "+" : "-"}$${Math.abs(tx.valueUsd).toFixed(2)}` : "—";
+                      const timeText = tx.minedAt ? new Date(tx.minedAt).toLocaleString() : "Unknown time";
+
+                      return (
+                        <div key={tx.id} className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-white text-sm font-medium truncate">{(tx.operationType || "transfer").replace(/_/g, " ")}</div>
+                              <div className="text-[11px] text-gray-400 truncate">{timeText}</div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <div className={`text-sm font-medium ${isIn ? "text-green-400" : "text-red-400"}`}>{qtyText}</div>
+                              <div className={`text-xs ${isIn ? "text-green-300" : "text-red-300"}`}>{valueText}</div>
+                            </div>
+                          </div>
+                          {tx.hash && (
+                            <div className="mt-1 text-[11px] text-gray-500 font-mono truncate">{tx.hash}</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             ) : (

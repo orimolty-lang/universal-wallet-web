@@ -6045,6 +6045,7 @@ const SearchTab = ({
   primaryAssets,
   portfolioAssets,
   universalAccount,
+  walletAddress,
   onSend,
   onWalletActivity,
   onSwapSuccess,
@@ -6052,6 +6053,7 @@ const SearchTab = ({
   primaryAssets: IAssetsResponse | null;
   portfolioAssets: IAssetsResponse | null;
   universalAccount: UniversalAccount | null;
+  walletAddress?: string | null;
   onSend?: () => void;
   onWalletActivity?: (kind: WalletActivityToastKind, detail?: string) => void;
   onSwapSuccess?: () => void;
@@ -6689,6 +6691,7 @@ const SearchTab = ({
       <TokenDetailModal 
         token={selectedToken} 
         userBalance={getUserBalance(selectedToken)}
+        walletAddress={walletAddress || null}
         onClose={() => setSelectedToken(null)} 
         onWatchlistChange={refreshWatchlist}
         onSwap={(token) => { 
@@ -8258,6 +8261,7 @@ const App = () => {
           primaryAssets={primaryAssets}
           portfolioAssets={combinedAssets as IAssetsResponse | null}
           universalAccount={universalAccountInstance}
+          walletAddress={accountInfo?.evmSmartAccount || null}
           onSend={() => setShowSendModal(true)}
           onWalletActivity={showWalletActivityToast}
           onSwapSuccess={() => {
@@ -8434,6 +8438,7 @@ const App = () => {
             amountInUSD: row?.amountInUSD || 0,
           };
         })() : undefined}
+        walletAddress={accountInfo?.evmSmartAccount || null}
         onClose={() => setHomeSelectedToken(null)} 
         onSwap={() => {
           setShowHomeSwapModal(true);
