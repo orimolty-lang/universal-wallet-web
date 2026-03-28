@@ -87,13 +87,27 @@ const formatSupply = (num: number): string => {
   return num.toLocaleString();
 };
 
+const toSubscript = (n: number): string => {
+  const map: Record<string, string> = { "0": "₀", "1": "₁", "2": "₂", "3": "₃", "4": "₄", "5": "₅", "6": "₆", "7": "₇", "8": "₈", "9": "₉" };
+  return String(n).split("").map((c) => map[c] || c).join("");
+};
+
 const formatTxPrice = (price?: number): string => {
   if (typeof price !== "number" || !Number.isFinite(price) || price <= 0) return "—";
-  if (price < 0.000001) {
-    const exp = price.toExponential(2).replace("e-0", "e-");
-    return `0.000000 · ${exp}`;
+
+  // Tiny-price style: 0.0₆3008 (matches screenshot style)
+  if (price < 0.001) {
+    const s = price.toFixed(20);
+    const frac = s.split(".")[1] || "";
+    const firstNonZero = frac.search(/[1-9]/);
+    if (firstNonZero > 0) {
+      const leadingZeros = firstNonZero;
+      const significant = frac.slice(firstNonZero, firstNonZero + 4).padEnd(4, "0");
+      return `0.0${toSubscript(leadingZeros)}${significant}`;
+    }
   }
-  return formatPrice(price);
+
+  return formatPrice(price).replace(/^\$/, "");
 };
 
 // Chain logo URLs
@@ -703,7 +717,7 @@ export const TokenDetailModal = ({
                             <div className="text-right shrink-0">
                               <div className={`text-sm font-medium ${isIn ? "text-green-400" : "text-red-400"}`}>{qtyText}</div>
                               <div className={`text-xs ${valueClass}`}>{valueText}</div>
-                              <div className="text-[11px] text-gray-400">px {formatTxPrice(tx.price)}</div>
+                              <div className="text-[11px] text-gray-400">{formatTxPrice(tx.price)}</div>
                             </div>
                           </div>
                           {txUrl && (
