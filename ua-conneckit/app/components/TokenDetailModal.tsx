@@ -627,7 +627,7 @@ export const TokenDetailModal = ({
             </div>
 
             {activeTab === "feed" ? (
-              <div className="bg-white/5 rounded-xl border border-white/10 p-3">
+              <div className="p-0">
                 {primaryContract && ["ethereum", "base", "solana"].includes(normalizeBlockchain(primaryContract.blockchain)) ? (
                   <ClickerComments tokenAddress={primaryContract.address} blockchain={primaryContract.blockchain} />
                 ) : (
@@ -635,7 +635,7 @@ export const TokenDetailModal = ({
                 )}
               </div>
             ) : activeTab === "history" ? (
-              <div className="bg-white/5 rounded-xl border border-white/10 p-3">
+              <div className="p-0">
                 {historyLoading ? (
                   <div className="text-gray-400 text-sm text-center py-6">Loading history…</div>
                 ) : historyError ? (
@@ -653,7 +653,7 @@ export const TokenDetailModal = ({
                       const sideLabel = tx.direction === "in" ? "Buy" : tx.direction === "out" ? "Sell" : ((tx.operationType || "transfer").replace(/_/g, " "));
 
                       return (
-                        <div key={tx.id} className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
+                        <div key={tx.id} className="rounded-lg bg-transparent border border-white/10 px-3 py-2">
                           <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0">
                               <div className={`text-sm font-medium truncate ${isIn ? "text-green-300" : "text-red-300"}`}>{sideLabel}</div>
@@ -674,7 +674,7 @@ export const TokenDetailModal = ({
                 )}
               </div>
             ) : (
-              <div className="space-y-2 bg-white/5 rounded-xl border border-white/10 p-3 text-sm">
+              <div className="space-y-2 p-0 text-sm">
                 <div className="flex items-center justify-between"><span className="text-gray-400">Market Cap</span><span className="text-white">{formatLargeNumber(token.market_cap || 0)}</span></div>
                 <div className="flex items-center justify-between"><span className="text-gray-400">24h Volume</span><span className="text-white">{formatLargeNumber(displayedVolume)}</span></div>
                 <div className="flex items-center justify-between"><span className="text-gray-400">Liquidity</span><span className="text-white">{formatLargeNumber(displayedLiquidity)}</span></div>
