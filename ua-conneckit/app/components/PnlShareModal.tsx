@@ -87,11 +87,11 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
 
   const exportImage = async () => {
     if (!cardRef.current) return;
+    let clone: HTMLDivElement | null = null;
+
     try {
       setIsExporting(true);
 
-      // Export-only stability: wait for fonts + in-card images so html2canvas layout
-      // matches on-screen modal metrics (prevents spacing/alignment drift).
       if (typeof document !== "undefined") {
         const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
         if (fonts) {
@@ -101,7 +101,23 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
         }
       }
 
-      const imgs = Array.from(cardRef.current.querySelectorAll("img"));
+      const rect = cardRef.current.getBoundingClientRect();
+      const width = Math.round(rect.width);
+      const height = Math.round(rect.height);
+
+      // Capture a fixed-size offscreen clone to avoid export-only layout drift on iOS.
+      clone = cardRef.current.cloneNode(true) as HTMLDivElement;
+      clone.style.position = "fixed";
+      clone.style.left = "-10000px";
+      clone.style.top = "0";
+      clone.style.width = `${width}px`;
+      clone.style.height = `${height}px`;
+      clone.style.transform = "none";
+      clone.style.margin = "0";
+      clone.style.pointerEvents = "none";
+      document.body.appendChild(clone);
+
+      const imgs = Array.from(clone.querySelectorAll("img"));
       await Promise.all(
         imgs.map(async (img) => {
           try {
@@ -114,10 +130,16 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
         })
       );
 
-      const canvas = await html2canvas(cardRef.current, {
+      const canvas = await html2canvas(clone, {
         backgroundColor: null,
-        scale: 2,
+        scale: 3,
         useCORS: true,
+        width,
+        height,
+        windowWidth: width,
+        windowHeight: height,
+        scrollX: 0,
+        scrollY: 0,
       });
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
       if (!blob) return;
@@ -136,6 +158,7 @@ export default function PnlShareModal({ isOpen, onClose, token, pnl }: PnlShareM
       a.click();
       URL.revokeObjectURL(url);
     } finally {
+      if (clone?.parentNode) clone.parentNode.removeChild(clone);
       setIsExporting(false);
     }
   };
