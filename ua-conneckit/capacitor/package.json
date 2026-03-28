@@ -1,0 +1,23 @@
+{
+  "name": "capacitor",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "sync:web": "rm -rf www && mkdir -p www && cp -R ../out/. www/",
+    "cap:sync": "npm run sync:web && npx cap sync ios",
+    "cap:open": "npx cap open ios",
+    "cap:run": "npm run cap:sync && npx cap run ios"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/browser": "^8.0.3",
+    "@capacitor/cli": "^8.3.0",
+    "@capacitor/core": "^8.3.0",
+    "@capacitor/ios": "^8.3.0"
+  }
+}
