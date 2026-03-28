@@ -650,12 +650,13 @@ export const TokenDetailModal = ({
                       const qtyText = `${isIn ? "+" : "-"}${Math.abs(qty).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${tx.symbol || token.symbol}`;
                       const valueText = typeof tx.valueUsd === "number" ? `${isIn ? "+" : "-"}$${Math.abs(tx.valueUsd).toFixed(2)}` : "—";
                       const timeText = tx.minedAt ? new Date(tx.minedAt).toLocaleString() : "Unknown time";
+                      const sideLabel = tx.direction === "in" ? "Buy" : tx.direction === "out" ? "Sell" : ((tx.operationType || "transfer").replace(/_/g, " "));
 
                       return (
                         <div key={tx.id} className="rounded-lg bg-white/5 border border-white/10 px-3 py-2">
                           <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0">
-                              <div className="text-white text-sm font-medium truncate">{(tx.operationType || "transfer").replace(/_/g, " ")}</div>
+                              <div className={`text-sm font-medium truncate ${isIn ? "text-green-300" : "text-red-300"}`}>{sideLabel}</div>
                               <div className="text-[11px] text-gray-400 truncate">{timeText}</div>
                             </div>
                             <div className="text-right shrink-0">
