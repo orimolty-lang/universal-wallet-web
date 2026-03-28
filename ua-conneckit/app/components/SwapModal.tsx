@@ -461,6 +461,7 @@ export const SwapModal = ({
               targetChainId,
               slippageBps,
               evmAddress,
+              "sell",
             );
             if (reqId !== quoteReqIdRef.current) return;
             if (!quote.success || !quote.outputAmount) {
@@ -505,6 +506,7 @@ export const SwapModal = ({
             targetChainId,
             slippageBps,
             evmAddress,
+            "buy",
           );
           if (reqId !== quoteReqIdRef.current) return;
           if (!sellQuote.success || !sellQuote.outputAmount) {

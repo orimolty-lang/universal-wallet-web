@@ -479,7 +479,8 @@ async function getNativeSellAmountForUsd(
     usdcAmount,
     chainId,
     slippageBps,
-    takerAddress
+    takerAddress,
+    "sell"
   );
 
   if (!quote.success || !quote.outputAmount) {
@@ -502,7 +503,8 @@ export async function get0xSwapQuote(
   sellAmount: string, // In base units (wei)
   chainId: number,
   slippageBps: number = 100, // 1%
-  txOrigin?: string
+  txOrigin?: string,
+  feeTokenPreference: "sell" | "buy" = "buy"
 ): Promise<SwapQuote> {
   try {
     const slippagePercent = slippageBps / 10000;
@@ -518,12 +520,14 @@ export async function get0xSwapQuote(
     url.searchParams.set("swapFeeRecipient", AFFILIATE_FEE_RECIPIENT);
     url.searchParams.set("swapFeeBps", String(AFFILIATE_FEE_BPS));
 
-    // OmniUA-style fee preference:
+    // Fee token preference:
     // - If either side is native, collect in native token.
-    // - Otherwise collect in buy token (typically USDC rails for sells).
+    // - Otherwise choose sell or buy token explicitly per caller.
     const feeToken = sellToken === NATIVE_ETH
       ? sellToken
-      : (buyToken === NATIVE_ETH ? buyToken : buyToken);
+      : (buyToken === NATIVE_ETH
+        ? buyToken
+        : (feeTokenPreference === "sell" ? sellToken : buyToken));
     if (feeToken !== NATIVE_ETH) {
       url.searchParams.set("swapFeeToken", feeToken);
     }
@@ -951,7 +955,8 @@ export async function executeSwap(params: SwapParams): Promise<SwapResult> {
         sellAmount,
         sourceChainId,
         safeSlippageBps,
-        evmSmartAccount
+        evmSmartAccount,
+        "sell"
       );
 
       console.log("[Swap] 0x quote result:", quote);
@@ -1127,7 +1132,8 @@ export async function getSellQuotePreview(params: {
       sellAmount,
       tokenChainId,
       safeSlippageBps,
-      evmSmartAccount
+      evmSmartAccount,
+      "buy"
     );
 
     if (!quote.success || !quote.outputAmount) {
@@ -1200,7 +1206,8 @@ export async function executeSell(params: SellParams): Promise<SwapResult> {
       sellAmount,
       tokenChainId,
       safeSlippageBps,
-      evmSmartAccount
+      evmSmartAccount,
+      "buy"
     );
 
     if (!quote.success || !quote.transaction) {
