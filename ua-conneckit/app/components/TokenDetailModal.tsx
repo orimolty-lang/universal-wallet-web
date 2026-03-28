@@ -39,6 +39,7 @@ interface TokenDetailModalProps {
   token: TokenData | null;
   userBalance?: UserBalance | null;
   walletAddress?: string | null;
+  solanaWalletAddress?: string | null;
   onClose: () => void;
   onSwap?: (token: TokenData) => void;
   onSend?: (token: TokenData) => void;
@@ -55,6 +56,7 @@ interface ZerionTokenTx {
   quantity?: number;
   symbol?: string;
   valueUsd?: number;
+  price?: number;
 }
 
 // Helper functions
@@ -83,6 +85,15 @@ const formatSupply = (num: number): string => {
   if (num >= 1e6) return `${(num / 1e6).toFixed(2)}M`;
   if (num >= 1e3) return `${(num / 1e3).toFixed(2)}K`;
   return num.toLocaleString();
+};
+
+const formatTxPrice = (price?: number): string => {
+  if (typeof price !== "number" || !Number.isFinite(price) || price <= 0) return "—";
+  if (price < 0.000001) {
+    const exp = price.toExponential(2).replace("e-0", "e-");
+    return `0.000000 · ${exp}`;
+  }
+  return formatPrice(price);
 };
 
 // Chain logo URLs
@@ -208,6 +219,7 @@ export const TokenDetailModal = ({
   token,
   userBalance,
   walletAddress,
+  solanaWalletAddress,
   onClose,
   onSwap,
   onSend,
@@ -383,9 +395,9 @@ export const TokenDetailModal = ({
     const loadHistory = async () => {
       if (activeTab !== "history") return;
       const contract = token?.contracts?.[0];
-      if (!walletAddress || !contract?.address) {
+      if (!contract?.address) {
         setHistoryItems([]);
-        setHistoryError("Wallet or token contract unavailable");
+        setHistoryError("Token contract unavailable");
         return;
       }
 
@@ -393,6 +405,16 @@ export const TokenDetailModal = ({
       if (!chain) {
         setHistoryItems([]);
         setHistoryError("Unsupported chain for history");
+        return;
+      }
+
+      const selectedWallet = chain === "solana"
+        ? (solanaWalletAddress || walletAddress)
+        : walletAddress;
+
+      if (!selectedWallet) {
+        setHistoryItems([]);
+        setHistoryError("Wallet unavailable for this chain");
         return;
       }
 
@@ -406,7 +428,7 @@ export const TokenDetailModal = ({
         params.set("filter[chain_ids]", chain);
         params.set("page[size]", "30");
 
-        const url = `${base}/zerion/wallets/${walletAddress}/transactions/?${params.toString()}`;
+        const url = `${base}/zerion/wallets/${selectedWallet}/transactions/?${params.toString()}`;
         const res = await fetch(url, { headers: { Accept: "application/json" } });
         if (!res.ok) throw new Error(`History fetch failed (${res.status})`);
 
@@ -425,6 +447,7 @@ export const TokenDetailModal = ({
               direction?: string;
               quantity?: { numeric?: string };
               value?: number;
+              price?: number;
               fungible_info?: {
                 symbol?: string;
                 implementations?: Array<{ chain_id?: string; address?: string }>;
@@ -451,6 +474,7 @@ export const TokenDetailModal = ({
             quantity: Number(transfer.quantity?.numeric || 0),
             symbol: transfer.fungible_info?.symbol || token?.symbol,
             valueUsd: typeof transfer.value === "number" ? transfer.value : undefined,
+            price: typeof transfer.price === "number" ? transfer.price : undefined,
           };
         });
 
@@ -469,7 +493,7 @@ export const TokenDetailModal = ({
     return () => {
       cancelled = true;
     };
-  }, [activeTab, token, walletAddress]);
+  }, [activeTab, token, walletAddress, solanaWalletAddress]);
 
   if (!token) return null;
 
@@ -679,6 +703,7 @@ export const TokenDetailModal = ({
                             <div className="text-right shrink-0">
                               <div className={`text-sm font-medium ${isIn ? "text-green-400" : "text-red-400"}`}>{qtyText}</div>
                               <div className={`text-xs ${valueClass}`}>{valueText}</div>
+                              <div className="text-[11px] text-gray-400">px {formatTxPrice(tx.price)}</div>
                             </div>
                           </div>
                           {txUrl && (
