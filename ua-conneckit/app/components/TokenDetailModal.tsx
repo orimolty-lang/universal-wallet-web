@@ -401,6 +401,8 @@ export const TokenDetailModal = ({
         const json = await res.json();
         const rows = Array.isArray(json?.data) ? json.data : [];
 
+        const targetAddress = contract.address.toLowerCase();
+
         const mapped: ZerionTokenTx[] = rows.map((row: {
           id?: string;
           attributes?: {
@@ -411,13 +413,23 @@ export const TokenDetailModal = ({
               direction?: string;
               quantity?: { numeric?: string };
               value?: number;
-              fungible_info?: { symbol?: string };
+              fungible_info?: {
+                symbol?: string;
+                implementations?: Array<{ chain_id?: string; address?: string }>;
+              };
             }>;
           };
         }) => {
           const attrs = row?.attributes || {};
           const transfers = Array.isArray(attrs.transfers) ? attrs.transfers : [];
-          const transfer = transfers[0] || {};
+
+          const matchedTransfer = transfers.find((t) => {
+            const impls = t?.fungible_info?.implementations || [];
+            return impls.some((imp) => imp?.chain_id === chain && (imp?.address || "").toLowerCase() === targetAddress);
+          });
+
+          const transfer = matchedTransfer || transfers[0] || {};
+
           return {
             id: String(row?.id || attrs.hash || Math.random()),
             hash: attrs.hash,
