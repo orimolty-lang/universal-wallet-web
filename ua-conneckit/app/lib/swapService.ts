@@ -509,54 +509,39 @@ export async function get0xSwapQuote(
   try {
     const slippagePercent = slippageBps / 10000;
 
-    const fetchQuote = async (withFees: boolean) => {
-      const url = new URL(`${ZEROX_PROXY_BASE}/0x/swap/allowance-holder/quote`);
-      url.searchParams.set("sellToken", sellToken);
-      url.searchParams.set("buyToken", buyToken);
-      url.searchParams.set("sellAmount", sellAmount);
-      url.searchParams.set("chainId", String(chainId));
-      url.searchParams.set("taker", takerAddress);
-      url.searchParams.set("txOrigin", txOrigin || takerAddress);
-      url.searchParams.set("slippagePercentage", String(slippagePercent));
+    const url = new URL(`${ZEROX_PROXY_BASE}/0x/swap/allowance-holder/quote`);
+    url.searchParams.set("sellToken", sellToken);
+    url.searchParams.set("buyToken", buyToken);
+    url.searchParams.set("sellAmount", sellAmount);
+    url.searchParams.set("chainId", String(chainId));
+    url.searchParams.set("taker", takerAddress);
+    url.searchParams.set("txOrigin", txOrigin || takerAddress);
+    url.searchParams.set("slippagePercentage", String(slippagePercent));
+    url.searchParams.set("swapFeeRecipient", AFFILIATE_FEE_RECIPIENT);
+    url.searchParams.set("swapFeeBps", String(AFFILIATE_FEE_BPS));
 
-      if (withFees) {
-        url.searchParams.set("swapFeeRecipient", AFFILIATE_FEE_RECIPIENT);
-        url.searchParams.set("swapFeeBps", String(AFFILIATE_FEE_BPS));
-
-        // Fee token preference:
-        // - If either side is native, collect in native token.
-        // - Otherwise choose sell or buy token explicitly per caller.
-        const feeToken = sellToken === NATIVE_ETH
-          ? sellToken
-          : (buyToken === NATIVE_ETH
-            ? buyToken
-            : (feeTokenPreference === "sell" ? sellToken : buyToken));
-        if (feeToken !== NATIVE_ETH) {
-          url.searchParams.set("swapFeeToken", feeToken);
-        }
-      }
-
-      console.log(`[0x] Fetching quote via proxy (${withFees ? "with" : "without"} fee):`, url.toString());
-      const response = await fetch(url.toString(), { headers: { Accept: "application/json" } });
-      const data = await response.json().catch(() => ({}));
-      console.log("[0x] Response:", response.status, data);
-      return { response, data };
-    };
-
-    // First attempt: with affiliate fee params
-    let { response, data } = await fetchQuote(true);
-
-    const hasNoRoute =
-      (!response.ok && (data?.code === "INSUFFICIENT_ASSET_LIQUIDITY" || String(data?.reason || "").toLowerCase().includes("liquidity")))
-      || (response.ok && data?.liquidityAvailable === false);
-
-    // Retry without fee params if no route/liquidity (some pools fail with fee-on-transfer + fee params)
-    if (hasNoRoute) {
-      console.warn("[0x] No route/liquidity with fee params, retrying without affiliate fee params");
-      const retry = await fetchQuote(false);
-      response = retry.response;
-      data = retry.data;
+    // Fee token preference:
+    // - If either side is native, collect in native token.
+    // - Otherwise choose sell or buy token explicitly per caller.
+    const feeToken = sellToken === NATIVE_ETH
+      ? sellToken
+      : (buyToken === NATIVE_ETH
+        ? buyToken
+        : (feeTokenPreference === "sell" ? sellToken : buyToken));
+    if (feeToken !== NATIVE_ETH) {
+      url.searchParams.set("swapFeeToken", feeToken);
     }
+
+    console.log("[0x] Fetching quote via proxy:", url.toString());
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    const data = await response.json().catch(() => ({}));
+    console.log("[0x] Response:", response.status, data);
 
     if (!response.ok) {
       // Check for specific errors
@@ -570,10 +555,6 @@ export async function get0xSwapQuote(
         success: false,
         error: data.reason || data.message || `0x API error: ${response.status}`,
       };
-    }
-
-    if (data?.liquidityAvailable === false) {
-      return { success: false, error: "No liquidity for this token on 0x" };
     }
 
     return {
