@@ -5533,7 +5533,7 @@ const HomeTab = ({
   onRefresh?: () => Promise<void>;
 }) => {
   // Use Set to allow multiple tokens to be expanded simultaneously
-  const [expandedTokens, setExpandedTokens] = useState<Set<string>>(new Set());
+  const [expandedTokens] = useState<Set<string>>(new Set());
   const [hideSmallBalances, setHideSmallBalances] = useState(true); // Hide <$0.10 by default
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
@@ -5605,42 +5605,46 @@ const HomeTab = ({
     touchStartY.current = 0;
   };
   
-  const toggleExpanded = (assetKey: string) => {
-    setExpandedTokens((prev) => {
-      const next = new Set(prev);
-      if (next.has(assetKey)) {
-        next.delete(assetKey);
-      } else {
-        next.add(assetKey);
-      }
-      return next;
-    });
-  };
-
-  const fetchFallbackMobulaPrice = async (contractAddress?: string): Promise<number | null> => {
+  const fetchFallbackMobulaPrice = async (contractAddress?: string, symbol?: string): Promise<number | null> => {
     const addr = String(contractAddress || "").toLowerCase();
-    if (!/^0x[a-f0-9]{40}$/.test(addr)) return null;
     const base = process.env.NEXT_PUBLIC_LIFI_PROXY_URL || "https://lifi-proxy.orimolty.workers.dev";
-    try {
-      const meta = await fetch(`${base}/mobula/api/1/metadata?asset=${addr}`);
-      if (meta.ok) {
-        const data = await meta.json();
-        const p = Number(data?.data?.price || 0);
-        if (Number.isFinite(p) && p > 0) return p;
-      }
-    } catch {}
 
-    try {
-      const search = await fetch(`${base}/mobula/api/1/search?input=${addr}`);
-      if (search.ok) {
-        const data = await search.json();
-        const rows: Array<{ contracts?: string[]; price?: number; symbol?: string }> = Array.isArray(data?.data) ? data.data : [];
-        const exact = rows.find((r) => Array.isArray(r?.contracts) && r.contracts.some((c: string) => String(c).toLowerCase() === addr));
-        const candidate = exact || rows[0];
-        const p = Number(candidate?.price || 0);
-        if (Number.isFinite(p) && p > 0) return p;
-      }
-    } catch {}
+    if (/^0x[a-f0-9]{40}$/.test(addr)) {
+      try {
+        const meta = await fetch(`${base}/mobula/api/1/metadata?asset=${addr}`);
+        if (meta.ok) {
+          const data = await meta.json();
+          const p = Number(data?.data?.price || 0);
+          if (Number.isFinite(p) && p > 0) return p;
+        }
+      } catch {}
+
+      try {
+        const search = await fetch(`${base}/mobula/api/1/search?input=${addr}`);
+        if (search.ok) {
+          const data = await search.json();
+          const rows: Array<{ contracts?: string[]; price?: number; symbol?: string }> = Array.isArray(data?.data) ? data.data : [];
+          const exact = rows.find((r) => Array.isArray(r?.contracts) && r.contracts.some((c: string) => String(c).toLowerCase() === addr));
+          const candidate = exact || rows[0];
+          const p = Number(candidate?.price || 0);
+          if (Number.isFinite(p) && p > 0) return p;
+        }
+      } catch {}
+    }
+
+    const sym = String(symbol || "").trim();
+    if (sym) {
+      try {
+        const search = await fetch(`${base}/mobula/api/1/search?input=${encodeURIComponent(sym)}`);
+        if (search.ok) {
+          const data = await search.json();
+          const rows: Array<{ contracts?: string[]; price?: number; symbol?: string }> = Array.isArray(data?.data) ? data.data : [];
+          const candidate = rows.find((r) => String(r?.symbol || "").toUpperCase() === sym.toUpperCase()) || rows[0];
+          const p = Number(candidate?.price || 0);
+          if (Number.isFinite(p) && p > 0) return p;
+        }
+      } catch {}
+    }
 
     return null;
   };
@@ -5701,20 +5705,33 @@ const HomeTab = ({
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
-      const needs = (allTokens as Array<{ isExternal?: boolean; price: number; amountInUSD: number; contracts?: Array<{ address: string }> }> || [])
-        .filter((t) => t.isExternal && (!(t.price > 0) || !(t.amountInUSD > 0)))
-        .map((t) => String(t.contracts?.[0]?.address || "").toLowerCase())
-        .filter((a) => /^0x[a-f0-9]{40}$/.test(a))
-        .filter((a) => !(resolvedPrices[a] > 0));
+      const missing = (allTokens as Array<{ isExternal?: boolean; price: number; amountInUSD: number; symbol: string; contracts?: Array<{ address: string }> }> || [])
+        .filter((t) => t.isExternal && (!(t.price > 0) || !(t.amountInUSD > 0)));
 
-      const unique = Array.from(new Set(needs));
-      if (!unique.length) return;
+      const addrNeeds = Array.from(new Set(
+        missing
+          .map((t) => String(t.contracts?.[0]?.address || "").toLowerCase())
+          .filter((a) => /^0x[a-f0-9]{40}$/.test(a))
+          .filter((a) => !(resolvedPrices[a] > 0))
+      ));
 
-      const entries = await Promise.all(unique.map(async (a) => [a, await fetchFallbackMobulaPrice(a)] as const));
+      const symNeeds = Array.from(new Set(
+        missing
+          .filter((t) => !/^0x[a-f0-9]{40}$/.test(String(t.contracts?.[0]?.address || "").toLowerCase()))
+          .map((t) => String(t.symbol || "").toUpperCase())
+          .filter((s) => s.length > 0)
+          .filter((s) => !(resolvedPrices[`sym:${s}`] > 0))
+      ));
+
+      if (!addrNeeds.length && !symNeeds.length) return;
+
+      const addrEntries = await Promise.all(addrNeeds.map(async (a) => [a, await fetchFallbackMobulaPrice(a)] as const));
+      const symEntries = await Promise.all(symNeeds.map(async (s) => [`sym:${s}`, await fetchFallbackMobulaPrice(undefined, s)] as const));
+
       if (cancelled) return;
       const next: Record<string, number> = {};
-      for (const [a, p] of entries) {
-        if (p && p > 0) next[a] = p;
+      for (const [k, p] of [...addrEntries, ...symEntries]) {
+        if (p && p > 0) next[k] = p;
       }
       if (Object.keys(next).length) setResolvedPrices((prev) => ({ ...prev, ...next }));
     };
@@ -5724,16 +5741,17 @@ const HomeTab = ({
     };
   }, [allTokens]);
 
-  const effectiveUsdForToken = (t: { amountInUSD: number; price: number; balance: number; contracts?: Array<{ address: string }> }) => {
+  const effectiveUsdForToken = (t: { amountInUSD: number; price: number; balance: number; symbol: string; contracts?: Array<{ address: string }> }) => {
     if (t.amountInUSD > 0) return t.amountInUSD;
     const addr = String(t.contracts?.[0]?.address || "").toLowerCase();
-    const p = t.price > 0 ? t.price : (resolvedPrices[addr] || 0);
+    const symKey = `sym:${String(t.symbol || "").toUpperCase()}`;
+    const p = t.price > 0 ? t.price : (resolvedPrices[addr] || resolvedPrices[symKey] || 0);
     return p > 0 ? t.balance * p : 0;
   };
 
   // Filter based on hide small balances toggle
   const tokens = hideSmallBalances
-    ? allTokens.filter((t: { amountInUSD: number; price: number; balance: number; contracts?: Array<{ address: string }> }) => effectiveUsdForToken(t) >= 0.10)
+    ? allTokens.filter((t: { amountInUSD: number; price: number; balance: number; symbol: string; contracts?: Array<{ address: string }> }) => effectiveUsdForToken(t) >= 0.10)
     : allTokens;
 
   useEffect(() => {
@@ -5928,7 +5946,8 @@ const HomeTab = ({
               const externalChainId = token.isExternal && token.chainBreakdown[0]?.chainId;
 
               const addr = String(token.contracts?.[0]?.address || "").toLowerCase();
-              const effectivePrice = token.price > 0 ? token.price : (resolvedPrices[addr] || 0);
+              const symKey = `sym:${String(token.symbol || "").toUpperCase()}`;
+              const effectivePrice = token.price > 0 ? token.price : (resolvedPrices[addr] || resolvedPrices[symKey] || 0);
               const effectiveAmountUsd = token.amountInUSD > 0 ? token.amountInUSD : (effectivePrice > 0 ? token.balance * effectivePrice : 0);
 
               const pnlForToken = (() => {
@@ -5979,7 +5998,7 @@ const HomeTab = ({
 
                       let selectedPrice = effectivePrice;
                       if (!(selectedPrice > 0)) {
-                        const p = await fetchFallbackMobulaPrice(contracts?.[0]?.address);
+                        const p = await fetchFallbackMobulaPrice(contracts?.[0]?.address, token.symbol);
                         if (p && p > 0) {
                           selectedPrice = p;
                           const priceAddr = String(contracts?.[0]?.address || "").toLowerCase();
@@ -5998,8 +6017,15 @@ const HomeTab = ({
                       return;
                     }
 
-                    // Only expand when no concrete token contract is available.
-                    toggleExpanded(token.assetKey);
+                    // Still open modal even when contracts are missing, so behavior matches search page.
+                    onTokenSelect?.({
+                      id: token.assetKey,
+                      symbol: token.symbol,
+                      name: token.name,
+                      logo: token.logo,
+                      price: effectivePrice,
+                      contracts: [],
+                    });
                   }}
                 >
                   <div className="flex items-center gap-3">
