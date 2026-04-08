@@ -5957,25 +5957,25 @@ const HomeTab = ({
                 <button 
                   className="w-full flex items-center justify-between py-4"
                   onClick={async () => {
-                    if (token.isExternal) {
-                      // External tokens: open token detail modal for swap
-                      let contracts = token.contracts || [];
-                      
-                      // Fallback: extract from chainBreakdown if contracts is empty
-                      if (contracts.length === 0 && token.chainBreakdown?.length > 0) {
-                        const chainIdToName: Record<number, string> = {
-                          1: "ethereum", 8453: "base", 42161: "arbitrum", 
-                          10: "optimism", 137: "polygon", 56: "bsc", 101: "solana",
-                        };
-                        contracts = token.chainBreakdown
-                          .filter((c: { address?: string; chainId?: number }) => c.address)
-                          .map((c: { address: string; chainId: number }) => ({
-                            address: c.address,
-                            blockchain: chainIdToName[c.chainId] || `chain-${c.chainId}`,
-                          }));
-                      }
-                      
-                      console.log("[HomeTab] External token selected:", token.symbol, "contracts:", contracts);
+                    // Open token modal whenever contracts are available, regardless of isExternal.
+                    let contracts = token.contracts || [];
+
+                    // Fallback: extract from chainBreakdown if contracts is empty
+                    if (contracts.length === 0 && token.chainBreakdown?.length > 0) {
+                      const chainIdToName: Record<number, string> = {
+                        1: "ethereum", 8453: "base", 42161: "arbitrum",
+                        10: "optimism", 137: "polygon", 56: "bsc", 101: "solana",
+                      };
+                      contracts = token.chainBreakdown
+                        .filter((c: { address?: string; chainId?: number }) => c.address)
+                        .map((c: { address: string; chainId: number }) => ({
+                          address: c.address,
+                          blockchain: chainIdToName[c.chainId] || `chain-${c.chainId}`,
+                        }));
+                    }
+
+                    if (contracts.length > 0) {
+                      console.log("[HomeTab] Token selected:", token.symbol, "contracts:", contracts);
 
                       let selectedPrice = effectivePrice;
                       if (!(selectedPrice > 0)) {
@@ -5986,7 +5986,7 @@ const HomeTab = ({
                           if (priceAddr) setResolvedPrices((prev) => ({ ...prev, [priceAddr]: p }));
                         }
                       }
-                      
+
                       onTokenSelect?.({
                         id: token.assetKey,
                         symbol: token.symbol,
@@ -5995,10 +5995,11 @@ const HomeTab = ({
                         price: selectedPrice,
                         contracts,
                       });
-                    } else {
-                      // Primary UA tokens: toggle chain breakdown expansion
-                      toggleExpanded(token.assetKey);
+                      return;
                     }
+
+                    // Only expand when no concrete token contract is available.
+                    toggleExpanded(token.assetKey);
                   }}
                 >
                   <div className="flex items-center gap-3">
