@@ -912,7 +912,7 @@ export const SwapModal = ({
                 )}
                 {direction === "sell" && (
                   <div className="text-gray-500 text-[10px] mt-1 break-all">
-                    dbg chain:{sellDebug.chainId || 0} addr:{sellDebug.address || "-"} raw:{sellDebug.raw} out:{sellDebug.liveSellUsd ?? "-"}
+                    dbg chain:{sellDebug.chainId || 0} addr:{sellDebug.address || "-"} raw:{sellDebug.raw} out:{sellDebug.liveSellUsd ?? "-"} • build:bcfa560a
                   </div>
                 )}
 
