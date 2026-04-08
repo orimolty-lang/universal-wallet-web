@@ -244,6 +244,7 @@ export const TokenDetailModal = ({
   const [activeTab, setActiveTab] = useState<"feed" | "about" | "history">("about");
   const [isWatchlisted, setIsWatchlisted] = useState(false);
   const [fallbackMetrics, setFallbackMetrics] = useState<{ volume?: number; liquidity?: number; priceChange24h?: number } | null>(null);
+  const [resolvedPrice, setResolvedPrice] = useState<number | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [historyItems, setHistoryItems] = useState<ZerionTokenTx[]>([]);
@@ -349,6 +350,52 @@ export const TokenDetailModal = ({
       setIsWatchlisted(false);
     }
   }, [token?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setResolvedPrice(null);
+
+    const loadResolvedPrice = async () => {
+      if (!token) return;
+      if (typeof token.price === "number" && token.price > 0) {
+        setResolvedPrice(token.price);
+        return;
+      }
+      const contract = token.contracts?.[0];
+      if (!contract?.address) return;
+      const base = process.env.NEXT_PUBLIC_LIFI_PROXY_URL || "https://lifi-proxy.orimolty.workers.dev";
+      const addr = contract.address.toLowerCase();
+
+      try {
+        const metaRes = await fetch(`${base}/mobula/api/1/metadata?asset=${addr}`);
+        if (metaRes.ok) {
+          const meta = await metaRes.json();
+          const p = Number(meta?.data?.price || 0);
+          if (!cancelled && Number.isFinite(p) && p > 0) {
+            setResolvedPrice(p);
+            return;
+          }
+        }
+      } catch {}
+
+      try {
+        const searchRes = await fetch(`${base}/mobula/api/1/search?input=${addr}`);
+        if (searchRes.ok) {
+          const search = await searchRes.json();
+          const rows = Array.isArray(search?.data) ? search.data : [];
+          const exact = rows.find((r: any) => Array.isArray(r?.contracts) && r.contracts.some((c: string) => String(c).toLowerCase() === addr));
+          const candidate = exact || rows[0];
+          const p = Number(candidate?.price || 0);
+          if (!cancelled && Number.isFinite(p) && p > 0) setResolvedPrice(p);
+        }
+      } catch {}
+    };
+
+    loadResolvedPrice();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   useEffect(() => {
     let cancelled = false;
@@ -513,6 +560,9 @@ export const TokenDetailModal = ({
 
   const displayedVolume = token.volume || fallbackMetrics?.volume || 0;
   const displayedLiquidity = token.liquidity || fallbackMetrics?.liquidity || 0;
+  const effectiveTokenPrice = (resolvedPrice && resolvedPrice > 0)
+    ? resolvedPrice
+    : (token.price || 0);
   const hasKnownPriceChange = typeof token.price_change_24h === "number" || typeof fallbackMetrics?.priceChange24h === "number";
   const priceChange = typeof token.price_change_24h === "number" ? token.price_change_24h : (fallbackMetrics?.priceChange24h || 0);
   const priceChangePositive = priceChange >= 0;
@@ -601,7 +651,7 @@ export const TokenDetailModal = ({
           {/* Price Display */}
           <div className="mb-1">
             <span className="text-white text-4xl font-bold">
-              {formatPrice(token.price || 0)}
+              {formatPrice(effectiveTokenPrice)}
             </span>
           </div>
 
@@ -743,7 +793,7 @@ export const TokenDetailModal = ({
                 <div className="flex items-center justify-between"><span className="text-gray-400">Market Cap</span><span className="text-white">{formatLargeNumber(token.market_cap || 0)}</span></div>
                 <div className="flex items-center justify-between"><span className="text-gray-400">24h Volume</span><span className="text-white">{formatLargeNumber(displayedVolume)}</span></div>
                 <div className="flex items-center justify-between"><span className="text-gray-400">Liquidity</span><span className="text-white">{formatLargeNumber(displayedLiquidity)}</span></div>
-                <div className="flex items-center justify-between"><span className="text-gray-400">FDV</span><span className="text-white">{formatLargeNumber((token.totalSupply || 0) * (token.price || 0))}</span></div>
+                <div className="flex items-center justify-between"><span className="text-gray-400">FDV</span><span className="text-white">{formatLargeNumber((token.totalSupply || 0) * effectiveTokenPrice)}</span></div>
                 <div className="flex items-center justify-between"><span className="text-gray-400">Supply</span><span className="text-white">{formatSupply(token.circulatingSupply || token.totalSupply || 0)}</span></div>
                 {token.website && <a href={token.website} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between text-accent-dynamic"><span>Website</span><span>↗</span></a>}
                 {token.twitter && <a href={token.twitter} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between text-accent-dynamic"><span>X / Twitter</span><span>↗</span></a>}
@@ -776,7 +826,7 @@ export const TokenDetailModal = ({
 
           {/* Swap Button - matches main screen pill bar style */}
           <button
-            onClick={() => onSwap?.(token)}
+            onClick={() => onSwap?.({ ...token, price: effectiveTokenPrice })}
             className="flex-1 h-12 rounded-full bg-accent-dynamic text-white font-semibold text-base hover:opacity-90 transition-opacity"
           >
             Swap
