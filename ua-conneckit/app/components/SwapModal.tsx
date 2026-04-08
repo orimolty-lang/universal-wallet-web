@@ -555,6 +555,12 @@ export const SwapModal = ({
   const sellTokenHuman = tokenBalance * sliderValue / 100;
 
   const sellUsdPreview = liveSellUsd ?? (amountNum * Math.max(0, 1 - slippagePct / 100));
+  const sellDebug = (() => {
+    const { address, chainId } = getTokenAddressAndChain();
+    const decimals = targetToken?.decimals || 18;
+    const raw = humanToRawUnits(Math.max(0, sellTokenHuman), decimals).toString();
+    return { address, chainId, decimals, raw, sliderValue, tokenBalance, liveSellUsd };
+  })();
 
   // Handle swap execution (buy or sell based on direction)
   const handleSwap = async () => {
@@ -903,6 +909,11 @@ export const SwapModal = ({
                 </span>
                 {direction === "sell" && quoteError && (
                   <div className="text-red-400 text-xs mt-1">{quoteError}</div>
+                )}
+                {direction === "sell" && (
+                  <div className="text-gray-500 text-[10px] mt-1 break-all">
+                    dbg chain:{sellDebug.chainId || 0} addr:{sellDebug.address || "-"} raw:{sellDebug.raw} out:{sellDebug.liveSellUsd ?? "-"}
+                  </div>
                 )}
 
               </div>
