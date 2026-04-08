@@ -401,7 +401,8 @@ export const SwapModal = ({
   }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen || !universalAccount || !targetToken || amountNum <= 0) {
+    const hasSellAmount = direction === "sell" && tokenBalance * sliderValue / 100 > 0;
+    if (!isOpen || !universalAccount || !targetToken || (direction === "buy" ? amountNum <= 0 : !hasSellAmount)) {
       setQuoteStatus("idle");
       if (direction === "buy") setLiveBuyOutput(null);
       else setLiveSellUsd(null);
@@ -548,7 +549,9 @@ export const SwapModal = ({
 
   // Handle swap execution (buy or sell based on direction)
   const handleSwap = async () => {
-    if (!targetToken || amountNum <= 0 || !universalAccount) {
+    const hasBuyAmount = amountNum > 0;
+    const hasSellAmount = tokenBalance * sliderValue / 100 > 0;
+    if (!targetToken || !universalAccount || (direction === "buy" ? !hasBuyAmount : !hasSellAmount)) {
       setError("Invalid swap parameters");
       return;
     }
