@@ -5634,8 +5634,8 @@ const HomeTab = ({
       const search = await fetch(`${base}/mobula/api/1/search?input=${addr}`);
       if (search.ok) {
         const data = await search.json();
-        const rows = Array.isArray(data?.data) ? data.data : [];
-        const exact = rows.find((r: any) => Array.isArray(r?.contracts) && r.contracts.some((c: string) => String(c).toLowerCase() === addr));
+        const rows: Array<{ contracts?: string[]; price?: number; symbol?: string }> = Array.isArray(data?.data) ? data.data : [];
+        const exact = rows.find((r) => Array.isArray(r?.contracts) && r.contracts.some((c: string) => String(c).toLowerCase() === addr));
         const candidate = exact || rows[0];
         const p = Number(candidate?.price || 0);
         if (Number.isFinite(p) && p > 0) return p;

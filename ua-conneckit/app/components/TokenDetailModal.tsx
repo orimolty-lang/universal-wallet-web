@@ -389,8 +389,8 @@ export const TokenDetailModal = ({
           const searchRes = await fetch(`${base}/mobula/api/1/search?input=${addr}`);
           if (searchRes.ok) {
             const search = await searchRes.json();
-            const rows = Array.isArray(search?.data) ? search.data : [];
-            const exact = rows.find((r: any) => Array.isArray(r?.contracts) && r.contracts.some((c: string) => String(c).toLowerCase() === addr));
+            const rows: Array<{ contracts?: string[]; price?: number; symbol?: string }> = Array.isArray(search?.data) ? search.data : [];
+            const exact = rows.find((r) => Array.isArray(r?.contracts) && r.contracts.some((c: string) => String(c).toLowerCase() === addr));
             const candidate = exact || rows[0];
             const p = Number(candidate?.price || 0);
             if (!cancelled && Number.isFinite(p) && p > 0) {
@@ -408,8 +408,8 @@ export const TokenDetailModal = ({
           const searchRes = await fetch(`${base}/mobula/api/1/search?input=${sym}`);
           if (searchRes.ok) {
             const search = await searchRes.json();
-            const rows = Array.isArray(search?.data) ? search.data : [];
-            const candidate = rows.find((r: any) => String(r?.symbol || "").toUpperCase() === String(token.symbol || "").toUpperCase()) || rows[0];
+            const rows: Array<{ contracts?: string[]; price?: number; symbol?: string }> = Array.isArray(search?.data) ? search.data : [];
+            const candidate = rows.find((r) => String(r?.symbol || "").toUpperCase() === String(token.symbol || "").toUpperCase()) || rows[0];
             const p = Number(candidate?.price || 0);
             if (!cancelled && Number.isFinite(p) && p > 0) setResolvedPrice(p);
           }
