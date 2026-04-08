@@ -361,32 +361,58 @@ export const TokenDetailModal = ({
         setResolvedPrice(token.price);
         return;
       }
-      const contract = token.contracts?.[0];
-      if (!contract?.address) return;
+
       const base = process.env.NEXT_PUBLIC_LIFI_PROXY_URL || "https://lifi-proxy.orimolty.workers.dev";
-      const addr = contract.address.toLowerCase();
+      const contracts = Array.isArray(token.contracts) ? token.contracts : [];
+      const orderedContracts = [
+        ...contracts.filter((c) => String(c?.blockchain || "").toLowerCase() === "base"),
+        ...contracts.filter((c) => String(c?.blockchain || "").toLowerCase() !== "base"),
+      ];
 
-      try {
-        const metaRes = await fetch(`${base}/mobula/api/1/metadata?asset=${addr}`);
-        if (metaRes.ok) {
-          const meta = await metaRes.json();
-          const p = Number(meta?.data?.price || 0);
-          if (!cancelled && Number.isFinite(p) && p > 0) {
-            setResolvedPrice(p);
-            return;
+      for (const contract of orderedContracts) {
+        const addr = String(contract?.address || "").toLowerCase();
+        if (!/^0x[a-f0-9]{40}$/.test(addr)) continue;
+
+        try {
+          const metaRes = await fetch(`${base}/mobula/api/1/metadata?asset=${addr}`);
+          if (metaRes.ok) {
+            const meta = await metaRes.json();
+            const p = Number(meta?.data?.price || 0);
+            if (!cancelled && Number.isFinite(p) && p > 0) {
+              setResolvedPrice(p);
+              return;
+            }
           }
-        }
-      } catch {}
+        } catch {}
 
+        try {
+          const searchRes = await fetch(`${base}/mobula/api/1/search?input=${addr}`);
+          if (searchRes.ok) {
+            const search = await searchRes.json();
+            const rows = Array.isArray(search?.data) ? search.data : [];
+            const exact = rows.find((r: any) => Array.isArray(r?.contracts) && r.contracts.some((c: string) => String(c).toLowerCase() === addr));
+            const candidate = exact || rows[0];
+            const p = Number(candidate?.price || 0);
+            if (!cancelled && Number.isFinite(p) && p > 0) {
+              setResolvedPrice(p);
+              return;
+            }
+          }
+        } catch {}
+      }
+
+      // last fallback: symbol search (same behavior user sees in search page)
       try {
-        const searchRes = await fetch(`${base}/mobula/api/1/search?input=${addr}`);
-        if (searchRes.ok) {
-          const search = await searchRes.json();
-          const rows = Array.isArray(search?.data) ? search.data : [];
-          const exact = rows.find((r: any) => Array.isArray(r?.contracts) && r.contracts.some((c: string) => String(c).toLowerCase() === addr));
-          const candidate = exact || rows[0];
-          const p = Number(candidate?.price || 0);
-          if (!cancelled && Number.isFinite(p) && p > 0) setResolvedPrice(p);
+        const sym = encodeURIComponent(String(token.symbol || "").trim());
+        if (sym) {
+          const searchRes = await fetch(`${base}/mobula/api/1/search?input=${sym}`);
+          if (searchRes.ok) {
+            const search = await searchRes.json();
+            const rows = Array.isArray(search?.data) ? search.data : [];
+            const candidate = rows.find((r: any) => String(r?.symbol || "").toUpperCase() === String(token.symbol || "").toUpperCase()) || rows[0];
+            const p = Number(candidate?.price || 0);
+            if (!cancelled && Number.isFinite(p) && p > 0) setResolvedPrice(p);
+          }
         }
       } catch {}
     };
@@ -563,12 +589,17 @@ export const TokenDetailModal = ({
   const effectiveTokenPrice = (resolvedPrice && resolvedPrice > 0)
     ? resolvedPrice
     : (token.price || 0);
+  const effectiveBalanceUsd = userBalance
+    ? (userBalance.amountInUSD > 0 ? userBalance.amountInUSD : (effectiveTokenPrice > 0 ? userBalance.amount * effectiveTokenPrice : 0))
+    : 0;
   const hasKnownPriceChange = typeof token.price_change_24h === "number" || typeof fallbackMetrics?.priceChange24h === "number";
   const priceChange = typeof token.price_change_24h === "number" ? token.price_change_24h : (fallbackMetrics?.priceChange24h || 0);
   const priceChangePositive = priceChange >= 0;
 
   // Get primary contract address (first one)
-  const primaryContract = token.contracts?.[0];
+  const primaryContract =
+    token.contracts?.find((c) => String(c?.blockchain || "").toLowerCase() === "base")
+    || token.contracts?.[0];
 
   return (
     <>
@@ -697,7 +728,7 @@ export const TokenDetailModal = ({
               <div className="text-right">
                 <div className="text-gray-400 text-xs">Value</div>
                 <div className="text-white font-bold text-lg">
-                  ${userBalance.amountInUSD.toFixed(2)}
+                  ${effectiveBalanceUsd.toFixed(2)}
                 </div>
               </div>
             </div>
