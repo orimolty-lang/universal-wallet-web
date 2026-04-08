@@ -130,6 +130,7 @@ export const SwapModal = ({
   const [liveBuyOutput, setLiveBuyOutput] = useState<number | null>(null);
   const [liveSellUsd, setLiveSellUsd] = useState<number | null>(null);
   const [, setQuoteStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [quoteError, setQuoteError] = useState<string | null>(null);
   const [quoteTick, setQuoteTick] = useState(0);
 
   /** Buy cap: primary UA unified USD (sum amountInUSD), not combined Mobula total. */
@@ -187,6 +188,7 @@ export const SwapModal = ({
       setLiveBuyOutput(null);
       setLiveSellUsd(null);
       setQuoteStatus("idle");
+      setQuoteError(null);
       // Refresh balances so unifiedUaBuyBalance is not stale
       onBalancesRefresh?.();
     }
@@ -417,6 +419,7 @@ export const SwapModal = ({
 
     const reqId = ++quoteReqIdRef.current;
     setQuoteStatus("loading");
+    setQuoteError(null);
 
     const timer = setTimeout(async () => {
       try {
@@ -446,6 +449,7 @@ export const SwapModal = ({
             if (reqId !== quoteReqIdRef.current) return;
             if (!relayQuote.success) {
               setQuoteStatus("error");
+              setQuoteError(relayQuote.error || "Relay quote failed");
               setLiveBuyOutput(null);
               return;
             }
@@ -467,6 +471,7 @@ export const SwapModal = ({
             if (reqId !== quoteReqIdRef.current) return;
             if (!quote.success || !quote.outputAmount) {
               setQuoteStatus("error");
+              setQuoteError(quote.error || "0x buy quote failed");
               setLiveBuyOutput(null);
               return;
             }
@@ -512,6 +517,7 @@ export const SwapModal = ({
           if (reqId !== quoteReqIdRef.current) return;
           if (!sellQuote.success || !sellQuote.outputAmount) {
             setQuoteStatus("error");
+            setQuoteError(sellQuote.error || "0x sell quote failed");
             setLiveSellUsd(null);
             return;
           }
@@ -520,7 +526,10 @@ export const SwapModal = ({
           setQuoteStatus("idle");
         }
       } catch {
-        if (reqId === quoteReqIdRef.current) setQuoteStatus("error");
+        if (reqId === quoteReqIdRef.current) {
+          setQuoteStatus("error");
+          setQuoteError("Quote request failed");
+        }
       }
     }, 350);
 
@@ -892,6 +901,9 @@ export const SwapModal = ({
                     : `1 ${targetToken?.symbol} ≈ $${(targetToken?.price || 0).toFixed(6)}`
                   }
                 </span>
+                {direction === "sell" && quoteError && (
+                  <div className="text-red-400 text-xs mt-1">{quoteError}</div>
+                )}
 
               </div>
 

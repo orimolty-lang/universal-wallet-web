@@ -5550,6 +5550,7 @@ const HomeTab = ({
   const [actionBarToast, setActionBarToast] = useState<string | null>(null);
   const [showPnlPercent, setShowPnlPercent] = useState(false);
   const [tokenPnlMap, setTokenPnlMap] = useState<Record<string, { totalGain?: number; totalGainPct?: number }>>({});
+  const [resolvedPrices, setResolvedPrices] = useState<Record<string, number>>({});
   const [pnlShareToken, setPnlShareToken] = useState<{ symbol: string; name: string; logo?: string; amountInUSD: number } | null>(null);
   const [pnlShareData, setPnlShareData] = useState<{ totalGain?: number; totalGainPct?: number } | null>(null);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
@@ -5616,6 +5617,34 @@ const HomeTab = ({
     });
   };
 
+  const fetchFallbackMobulaPrice = async (contractAddress?: string): Promise<number | null> => {
+    const addr = String(contractAddress || "").toLowerCase();
+    if (!/^0x[a-f0-9]{40}$/.test(addr)) return null;
+    const base = process.env.NEXT_PUBLIC_LIFI_PROXY_URL || "https://lifi-proxy.orimolty.workers.dev";
+    try {
+      const meta = await fetch(`${base}/mobula/api/1/metadata?asset=${addr}`);
+      if (meta.ok) {
+        const data = await meta.json();
+        const p = Number(data?.data?.price || 0);
+        if (Number.isFinite(p) && p > 0) return p;
+      }
+    } catch {}
+
+    try {
+      const search = await fetch(`${base}/mobula/api/1/search?input=${addr}`);
+      if (search.ok) {
+        const data = await search.json();
+        const rows = Array.isArray(data?.data) ? data.data : [];
+        const exact = rows.find((r: any) => Array.isArray(r?.contracts) && r.contracts.some((c: string) => String(c).toLowerCase() === addr));
+        const candidate = exact || rows[0];
+        const p = Number(candidate?.price || 0);
+        if (Number.isFinite(p) && p > 0) return p;
+      }
+    } catch {}
+
+    return null;
+  };
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const allTokens = primaryAssets?.assets?.map((asset: any) => {
     // Build contracts from chainAggregation if not present
@@ -5669,9 +5698,42 @@ const HomeTab = ({
     },
   ) || [];
   
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      const needs = (allTokens as Array<{ isExternal?: boolean; price: number; amountInUSD: number; contracts?: Array<{ address: string }> }> || [])
+        .filter((t) => t.isExternal && (!(t.price > 0) || !(t.amountInUSD > 0)))
+        .map((t) => String(t.contracts?.[0]?.address || "").toLowerCase())
+        .filter((a) => /^0x[a-f0-9]{40}$/.test(a))
+        .filter((a) => !(resolvedPrices[a] > 0));
+
+      const unique = Array.from(new Set(needs));
+      if (!unique.length) return;
+
+      const entries = await Promise.all(unique.map(async (a) => [a, await fetchFallbackMobulaPrice(a)] as const));
+      if (cancelled) return;
+      const next: Record<string, number> = {};
+      for (const [a, p] of entries) {
+        if (p && p > 0) next[a] = p;
+      }
+      if (Object.keys(next).length) setResolvedPrices((prev) => ({ ...prev, ...next }));
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [allTokens]);
+
+  const effectiveUsdForToken = (t: { amountInUSD: number; price: number; balance: number; contracts?: Array<{ address: string }> }) => {
+    if (t.amountInUSD > 0) return t.amountInUSD;
+    const addr = String(t.contracts?.[0]?.address || "").toLowerCase();
+    const p = t.price > 0 ? t.price : (resolvedPrices[addr] || 0);
+    return p > 0 ? t.balance * p : 0;
+  };
+
   // Filter based on hide small balances toggle
-  const tokens = hideSmallBalances 
-    ? allTokens.filter((t: { amountInUSD: number }) => t.amountInUSD >= 0.10)
+  const tokens = hideSmallBalances
+    ? allTokens.filter((t: { amountInUSD: number; price: number; balance: number; contracts?: Array<{ address: string }> }) => effectiveUsdForToken(t) >= 0.10)
     : allTokens;
 
   useEffect(() => {
@@ -5865,6 +5927,10 @@ const HomeTab = ({
               // For external tokens, get chain from first chain breakdown or contracts
               const externalChainId = token.isExternal && token.chainBreakdown[0]?.chainId;
 
+              const addr = String(token.contracts?.[0]?.address || "").toLowerCase();
+              const effectivePrice = token.price > 0 ? token.price : (resolvedPrices[addr] || 0);
+              const effectiveAmountUsd = token.amountInUSD > 0 ? token.amountInUSD : (effectivePrice > 0 ? token.balance * effectivePrice : 0);
+
               const pnlForToken = (() => {
                 if (!token.isExternal || !token.contracts?.length) return null;
                 const chainToZerion: Record<string, string> = {
@@ -5890,7 +5956,7 @@ const HomeTab = ({
                 {/* Main Token Row - click opens swap modal */}
                 <button 
                   className="w-full flex items-center justify-between py-4"
-                  onClick={() => {
+                  onClick={async () => {
                     if (token.isExternal) {
                       // External tokens: open token detail modal for swap
                       let contracts = token.contracts || [];
@@ -5910,13 +5976,23 @@ const HomeTab = ({
                       }
                       
                       console.log("[HomeTab] External token selected:", token.symbol, "contracts:", contracts);
+
+                      let selectedPrice = effectivePrice;
+                      if (!(selectedPrice > 0)) {
+                        const p = await fetchFallbackMobulaPrice(contracts?.[0]?.address);
+                        if (p && p > 0) {
+                          selectedPrice = p;
+                          const priceAddr = String(contracts?.[0]?.address || "").toLowerCase();
+                          if (priceAddr) setResolvedPrices((prev) => ({ ...prev, [priceAddr]: p }));
+                        }
+                      }
                       
                       onTokenSelect?.({
                         id: token.assetKey,
                         symbol: token.symbol,
                         name: token.name,
                         logo: token.logo,
-                        price: token.price,
+                        price: selectedPrice,
                         contracts,
                       });
                     } else {
@@ -5956,13 +6032,13 @@ const HomeTab = ({
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="text-right">
-                      <div className="text-white">${token.amountInUSD.toFixed(2)}</div>
+                      <div className="text-white">${effectiveAmountUsd.toFixed(2)}</div>
                       {token.isExternal && pnlForToken && (
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setPnlShareToken(token);
+                            setPnlShareToken({ ...token, amountInUSD: effectiveAmountUsd });
                             setPnlShareData(pnlForToken);
                           }}
                           className={`text-xs ${Number(pnlForToken.totalGain || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}
