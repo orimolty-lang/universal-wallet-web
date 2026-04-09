@@ -941,7 +941,26 @@ const TOKEN_LOGOS: Record<string, string> = {
 
 const getChainName = (chainId: number | string) => {
   if (typeof chainId === 'string') {
-    return CHAIN_NAMES[chainId] || chainId;
+    const raw = chainId.trim();
+    const lower = raw.toLowerCase();
+
+    // numeric strings like "101"
+    if (/^\d+$/.test(raw)) {
+      const asNum = Number(raw);
+      return CHAIN_NAMES[asNum] || `Chain ${raw}`;
+    }
+
+    // common aliases from providers
+    if (lower.includes('solana')) return 'Solana';
+    if (lower.includes('base')) return 'Base';
+    if (lower.includes('arbitrum')) return 'Arbitrum';
+    if (lower.includes('optim')) return 'Optimism';
+    if (lower.includes('polygon')) return 'Polygon';
+    if (lower.includes('bnb') || lower.includes('bsc') || lower.includes('binance')) return 'BNB Chain';
+    if (lower.includes('avax') || lower.includes('avalanche')) return 'Avalanche';
+    if (lower.includes('eth')) return 'Ethereum';
+
+    return CHAIN_NAMES[raw] || raw;
   }
   return CHAIN_NAMES[chainId] || `Chain ${chainId}`;
 };
@@ -5957,9 +5976,12 @@ const HomeTab = ({
                 if (contractChainRaw.includes("eth")) return "Ethereum";
                 return null;
               })();
+              const contractAddr = String(token.contracts?.[0]?.address || "");
+              const looksSolanaAddress = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(contractAddr);
               const badgeChainName =
                 (externalChainId != null ? String(getChainName(externalChainId)) : null)
-                || chainFromContract;
+                || chainFromContract
+                || (looksSolanaAddress ? "Solana" : null);
               const badgeLogo = badgeChainName ? CHAIN_LOGOS[badgeChainName] : undefined;
 
               const addr = String(token.contracts?.[0]?.address || "").toLowerCase();
