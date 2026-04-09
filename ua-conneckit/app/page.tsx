@@ -5942,8 +5942,25 @@ const HomeTab = ({
               contracts?: Array<{ address: string; blockchain: string }>;
               chainBreakdown: Array<{ chainId: number; chainName: string; amount: number; amountInUSD: number; address: string }>;
             }) => {
-              // For external tokens, get chain from first chain breakdown or contracts
-              const externalChainId = token.isExternal && token.chainBreakdown[0]?.chainId;
+              // Determine badge chain robustly (works for all supported chains)
+              const externalChainId = token.chainBreakdown[0]?.chainId;
+              const contractChainRaw = String(token.contracts?.[0]?.blockchain || "").toLowerCase();
+              const chainFromContract: string | null = (() => {
+                if (!contractChainRaw) return null;
+                if (contractChainRaw.includes("sol")) return "Solana";
+                if (contractChainRaw.includes("base")) return "Base";
+                if (contractChainRaw.includes("arb")) return "Arbitrum";
+                if (contractChainRaw.includes("optim")) return "Optimism";
+                if (contractChainRaw.includes("polygon")) return "Polygon";
+                if (contractChainRaw.includes("bsc") || contractChainRaw.includes("bnb") || contractChainRaw.includes("binance")) return "BNB Chain";
+                if (contractChainRaw.includes("avax") || contractChainRaw.includes("avalanche")) return "Avalanche";
+                if (contractChainRaw.includes("eth")) return "Ethereum";
+                return null;
+              })();
+              const badgeChainName =
+                (externalChainId != null ? String(getChainName(externalChainId)) : null)
+                || chainFromContract;
+              const badgeLogo = badgeChainName ? CHAIN_LOGOS[badgeChainName] : undefined;
 
               const addr = String(token.contracts?.[0]?.address || "").toLowerCase();
               const symKey = `sym:${String(token.symbol || "").toUpperCase()}`;
@@ -6044,10 +6061,10 @@ const HomeTab = ({
                         <TokenLogo symbol={token.symbol} size={40} />
                       )}
                       {/* Chain badge for external tokens */}
-                      {token.isExternal && externalChainId && (
+                      {token.isExternal && badgeLogo && (
                         <img 
-                          src={CHAIN_LOGOS[getChainName(externalChainId)] || CHAIN_LOGOS["Base"]}
-                          alt="chain"
+                          src={badgeLogo}
+                          alt={badgeChainName || "chain"}
                           className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[#0a0a0a]"
                         />
                       )}
