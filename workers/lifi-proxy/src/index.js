@@ -33,24 +33,81 @@ export default {
           mobulaUrl.searchParams.set(key, value);
         });
 
-        const mobulaResponse = await fetch(mobulaUrl.toString(), {
+        const isGet = request.method === "GET";
+        const cache = caches.default;
+        const cacheKey = new Request(mobulaUrl.toString(), { method: "GET" });
+        const cacheEligible =
+          isGet && (
+            mobulaPath.startsWith("/search") ||
+            mobulaPath.startsWith("/metadata") ||
+            mobulaPath.startsWith("/wallet/portfolio")
+          );
+
+        if (cacheEligible) {
+          const hit = await cache.match(cacheKey);
+          if (hit) {
+            return new Response(await hit.text(), {
+              status: hit.status,
+              headers: {
+                "Content-Type": hit.headers.get("Content-Type") || "application/json",
+                "Cache-Control": hit.headers.get("Cache-Control") || "public, s-maxage=30, max-age=15",
+                "X-Proxy-Cache": "HIT",
+                ...corsHeaders(env),
+              },
+            });
+          }
+        }
+
+        const fetchMobula = async () => fetch(mobulaUrl.toString(), {
           method: request.method,
           headers: {
             Accept: "application/json",
             "Content-Type": "application/json",
             Authorization: env.MOBULA_API_KEY,
           },
-          body: request.method !== "GET" ? await request.text() : undefined,
+          body: isGet ? undefined : await request.text(),
         });
 
+        let mobulaResponse = await fetchMobula();
+
+        // One short retry for rate-limit/transient upstream failures
+        if (isGet && (mobulaResponse.status === 429 || mobulaResponse.status >= 500)) {
+          await new Promise((r) => setTimeout(r, 250));
+          mobulaResponse = await fetchMobula();
+        }
+
+        // If still rate-limited and we have cached content, serve stale cache.
+        if (cacheEligible && mobulaResponse.status === 429) {
+          const stale = await cache.match(cacheKey);
+          if (stale) {
+            return new Response(await stale.text(), {
+              status: 200,
+              headers: {
+                "Content-Type": stale.headers.get("Content-Type") || "application/json",
+                "Cache-Control": stale.headers.get("Cache-Control") || "public, s-maxage=30, max-age=15",
+                "X-Proxy-Cache": "STALE-429",
+                ...corsHeaders(env),
+              },
+            });
+          }
+        }
+
         const text = await mobulaResponse.text();
-        return new Response(text, {
+        const out = new Response(text, {
           status: mobulaResponse.status,
           headers: {
-            "Content-Type": "application/json",
+            "Content-Type": mobulaResponse.headers.get("Content-Type") || "application/json",
+            "Cache-Control": cacheEligible ? "public, s-maxage=30, max-age=15" : "no-store",
+            "X-Proxy-Cache": "MISS",
             ...corsHeaders(env),
           },
         });
+
+        if (cacheEligible && mobulaResponse.status === 200) {
+          await cache.put(cacheKey, out.clone());
+        }
+
+        return out;
       }
 
       // Pyth TradingView shim proxy path: /pyth-tv/* (with edge cache to avoid upstream 429)
