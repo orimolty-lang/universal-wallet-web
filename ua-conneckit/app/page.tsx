@@ -2103,39 +2103,20 @@ const ConvertModal = ({
         if (sendResult?.transactionId) {
           console.log('[Convert] Transaction sent:', sendResult.transactionId);
           onWalletActivity?.('convert_submit');
-          setLoadingStatus('Waiting for confirmation...');
-          
-          // Wait for balance refresh to confirm conversion
+
+          // Immediate UX: close modal + success toast after successful submission.
+          // Refresh balances in background (no extra user action / no second prompt).
+          setLoadingStatus('');
+          onWalletActivity?.('converted');
+          setFromAsset('');
+          setFromChain(null);
+          setToAsset('');
+          setToChain(null);
+          setAmount('');
+          onClose();
+
           if (onSuccess) {
-            // Poll balance until it updates (max 30 seconds)
-            let attempts = 0;
-            const maxAttempts = 15;
-            
-            const checkBalance = async () => {
-              attempts++;
-              await onSuccess();
-              
-              // After refresh, mark as complete
-              // In production, we'd compare before/after balances
-              // For now, trust the refresh after a few attempts
-              if (attempts >= 3) {
-                setLoadingStatus('');
-                onWalletActivity?.('converted');
-                setFromAsset('');
-                setFromChain(null);
-                setToAsset('');
-                setToChain(null);
-                setAmount('');
-                onClose();
-              } else if (attempts < maxAttempts) {
-                setTimeout(checkBalance, 2000);
-              }
-            };
-            
-            setTimeout(checkBalance, 2000);
-          } else {
-            onWalletActivity?.('converted');
-            onClose();
+            void onSuccess();
           }
         }
       } else {

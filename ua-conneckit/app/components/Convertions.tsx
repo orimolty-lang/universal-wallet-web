@@ -36,10 +36,10 @@ export default function ConvertToUsdc({
         throw new Error("Please enter a valid USDC amount.");
       }
 
-      // 1) Ask UA to ensure `amount` USDC on Arbitrum (auto-sourcing from your assets elsewhere)
+      // 1) Ask UA to ensure `amount` USDC on Monad (auto-sourcing from your assets elsewhere)
       const transaction =
         await universalAccountInstance.createConvertTransaction({
-          expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount: "0.1" },
+          expectToken: { type: SUPPORTED_TOKEN_TYPE.USDC, amount },
           chainId: 143,
         });
 
@@ -98,11 +98,11 @@ export default function ConvertToUsdc({
               <p className="text-sm text-gray-300 mb-4">
                 This runs a conversion so your Universal Account ends up with{" "}
                 <span className="font-semibold">{amount || "X"}</span> USDC on
-                Solana. UA handles sourcing and swapping from assets you hold on
+                Monad. UA handles sourcing and swapping from assets you hold on
                 other chains.
               </p>
               <div className="flex items-center justify-between text-xs text-gray-400 mb-4">
-                <span>Destination Network: Solana</span>
+                <span>Destination Network: Monad</span>
                 <a
                   href="https://github.com/soos3d/universal-accounts-connectkit-demo/blob/main/ua-conneckit/app/components/Convertions.tsx"
                   target="_blank"
