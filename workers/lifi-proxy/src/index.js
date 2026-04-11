@@ -352,13 +352,15 @@ export default {
       });
       lifiUrl.searchParams.set("integrator", "Omni");
 
+      const lifiHeaders = {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      };
+      // Important: do not forward an invalid LI.FI API key header.
+      // Public LI.FI endpoints work without x-lifi-api-key, while an invalid key hard-fails.
       const lifiResponse = await fetch(lifiUrl.toString(), {
         method: request.method,
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-          "x-lifi-api-key": env.LIFI_API_KEY,
-        },
+        headers: lifiHeaders,
         body: request.method !== "GET" ? await request.text() : undefined,
       });
 
