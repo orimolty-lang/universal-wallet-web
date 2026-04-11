@@ -76,6 +76,13 @@ export default {
           env.MOBULA_API_KEY_BACKUP,
         ].filter(Boolean)));
 
+        // Spread load across keys to reduce burst 429s on a single key.
+        const startIdx = mobulaKeys.length > 1 ? Math.floor(Math.random() * mobulaKeys.length) : 0;
+        const orderedMobulaKeys = [
+          ...mobulaKeys.slice(startIdx),
+          ...mobulaKeys.slice(0, startIdx),
+        ];
+
         const requestBody = isGet ? undefined : await request.text();
 
         const fetchMobulaWithKey = async (apiKey) => fetch(mobulaUrl.toString(), {
@@ -91,21 +98,29 @@ export default {
         let mobulaResponse = null;
 
         // Try keys in order. Fail over on likely quota/auth/rate-limit/transient statuses.
-        for (const key of mobulaKeys) {
+        for (let i = 0; i < orderedMobulaKeys.length; i++) {
+          const key = orderedMobulaKeys[i];
           mobulaResponse = await fetchMobulaWithKey(key);
           if (mobulaResponse.status < 400) break;
           const shouldFailover = [401, 402, 403, 429].includes(mobulaResponse.status) || mobulaResponse.status >= 500;
           if (!shouldFailover) break;
+          if (mobulaResponse.status === 429) {
+            await new Promise((r) => setTimeout(r, 120 + i * 120));
+          }
         }
 
         // One short retry for transient upstream failures using the same rotation order.
         if (isGet && mobulaResponse && (mobulaResponse.status === 429 || mobulaResponse.status >= 500)) {
           await new Promise((r) => setTimeout(r, 250));
-          for (const key of mobulaKeys) {
+          for (let i = 0; i < orderedMobulaKeys.length; i++) {
+            const key = orderedMobulaKeys[i];
             mobulaResponse = await fetchMobulaWithKey(key);
             if (mobulaResponse.status < 400) break;
             const shouldFailover = [401, 402, 403, 429].includes(mobulaResponse.status) || mobulaResponse.status >= 500;
             if (!shouldFailover) break;
+            if (mobulaResponse.status === 429) {
+              await new Promise((r) => setTimeout(r, 180 + i * 120));
+            }
           }
         }
 
