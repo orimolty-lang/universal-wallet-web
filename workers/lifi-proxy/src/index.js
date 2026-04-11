@@ -9,6 +9,9 @@ const MOBULA_API_BASE = "https://api.mobula.io/api/1";
 const PYTH_TV_BASE = "https://benchmarks.pyth.network/v1/shims/tradingview";
 const ZERION_API_BASE = "https://api.zerion.io/v1";
 
+// Mobula API key rotation: prefer the new key first, then env keys as fallbacks.
+const MOBULA_PRIMARY_API_KEY = "1055ae87-773e-4286-8fc0-c7d83f4d3a50";
+
 const ZEROX_CHAIN_ALIAS_TO_ID = {
   monad: 10143,
 };
@@ -67,22 +70,43 @@ export default {
           }
         }
 
-        const fetchMobula = async () => fetch(mobulaUrl.toString(), {
+        const mobulaKeys = Array.from(new Set([
+          MOBULA_PRIMARY_API_KEY,
+          env.MOBULA_API_KEY,
+          env.MOBULA_API_KEY_BACKUP,
+        ].filter(Boolean)));
+
+        const requestBody = isGet ? undefined : await request.text();
+
+        const fetchMobulaWithKey = async (apiKey) => fetch(mobulaUrl.toString(), {
           method: request.method,
           headers: {
             Accept: "application/json",
             "Content-Type": "application/json",
-            Authorization: env.MOBULA_API_KEY,
+            Authorization: apiKey,
           },
-          body: isGet ? undefined : await request.text(),
+          body: requestBody,
         });
 
-        let mobulaResponse = await fetchMobula();
+        let mobulaResponse = null;
 
-        // One short retry for rate-limit/transient upstream failures
-        if (isGet && (mobulaResponse.status === 429 || mobulaResponse.status >= 500)) {
+        // Try keys in order. Fail over on likely quota/auth/rate-limit/transient statuses.
+        for (const key of mobulaKeys) {
+          mobulaResponse = await fetchMobulaWithKey(key);
+          if (mobulaResponse.status < 400) break;
+          const shouldFailover = [401, 402, 403, 429].includes(mobulaResponse.status) || mobulaResponse.status >= 500;
+          if (!shouldFailover) break;
+        }
+
+        // One short retry for transient upstream failures using the same rotation order.
+        if (isGet && mobulaResponse && (mobulaResponse.status === 429 || mobulaResponse.status >= 500)) {
           await new Promise((r) => setTimeout(r, 250));
-          mobulaResponse = await fetchMobula();
+          for (const key of mobulaKeys) {
+            mobulaResponse = await fetchMobulaWithKey(key);
+            if (mobulaResponse.status < 400) break;
+            const shouldFailover = [401, 402, 403, 429].includes(mobulaResponse.status) || mobulaResponse.status >= 500;
+            if (!shouldFailover) break;
+          }
         }
 
         // If still rate-limited and we have cached content, serve stale cache.
