@@ -643,20 +643,23 @@ export const SwapModal = ({
         return;
       }
 
-      // Step 2: Sign with wallet
-      if (result.requiresSignature && result.rootHash && primaryWallet) {
+      // Step 2: Sign + send
+      const isSolanaSwap = targetChainId === 101 || targetChainId === 792703809;
+      if (result.requiresSignature && result.rootHash && (isSolanaSwap || primaryWallet)) {
         try {
-          const walletClient = primaryWallet.getWalletClient();
-          
-          // Sign rootHash (demo parity): prefer signMessage(raw) path.
-          let signature: unknown;
-          if (walletClient.signMessage) {
-            signature = await walletClient.signMessage({ message: { raw: result.rootHash as `0x${string}` } });
-          } else {
-            signature = await walletClient.request({
-              method: 'personal_sign',
-              params: [result.rootHash as `0x${string}`, walletClient.account?.address as `0x${string}`],
-            });
+          const walletClient = isSolanaSwap ? null : primaryWallet!.getWalletClient();
+
+          // EVM: sign rootHash via personal_sign. Solana: skip EVM signing.
+          let signature: unknown = undefined;
+          if (!isSolanaSwap) {
+            if (walletClient?.signMessage) {
+              signature = await walletClient.signMessage({ message: { raw: result.rootHash as `0x${string}` } });
+            } else {
+              signature = await walletClient!.request({
+                method: 'personal_sign',
+                params: [result.rootHash as `0x${string}`, walletClient?.account?.address as `0x${string}`],
+              });
+            }
           }
 
           // Step 3: Send transaction (+EIP-7702 authorizations - demo-aligned, no chain switch)
@@ -664,9 +667,9 @@ export const SwapModal = ({
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const txAny = result.transaction as any;
           let authorizations: Array<{ userOpHash: string; signature: string }> | undefined;
-          const walletAddr = walletClient.account?.address as string | undefined;
+          const walletAddr = walletClient?.account?.address as string | undefined;
           const userOps = getUserOpsFromTx(txAny);
-          if (userOps.length > 0) {
+          if (!isSolanaSwap && userOps.length > 0) {
             if (sign7702 && walletAddr) {
               authorizations = await handleEIP7702Authorizations(userOps as Parameters<typeof handleEIP7702Authorizations>[0], sign7702, walletAddr);
             } else {
@@ -682,7 +685,7 @@ export const SwapModal = ({
                 const nonceKey = `${chainId}:${auth.nonce}`;
                 let serialized = nonceMap.get(nonceKey);
                 if (!serialized) {
-                  const payload = await walletClient.request({
+                  const payload = await walletClient!.request({
                     method: "magic_wallet_sign_7702_authorization",
                     params: [{ contractAddress: auth.address, chainId, nonce: auth.nonce }],
                   }) as { r: string; s: string; v?: number | bigint; yParity: number };
@@ -699,7 +702,11 @@ export const SwapModal = ({
             }
             if (!authorizations?.length) authorizations = undefined;
           }
-          const sendResult = await universalAccount.sendTransaction(txAny, signature as string, authorizations);
+          const sendResult = await universalAccount.sendTransaction(
+            txAny,
+            (isSolanaSwap ? (undefined as unknown as string) : (signature as string)),
+            authorizations,
+          );
           
           if (sendResult?.transactionId) {
             onWalletActivity?.("swap_submit", targetToken.symbol);
