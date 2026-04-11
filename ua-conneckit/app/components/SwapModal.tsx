@@ -644,12 +644,14 @@ export const SwapModal = ({
       }
 
       // Step 2: Sign with wallet
-      if (result.requiresSignature && result.rootHash && primaryWallet) {
+      // Solana sell: UA SDK signs natively, skip EVM-style signMessage path.
+      const isSolanaSwap = targetChainId === 101 || targetChainId === 792703809;
+      let signature: unknown;
+      if (result.requiresSignature && result.rootHash && primaryWallet && !isSolanaSwap) {
         try {
           const walletClient = primaryWallet.getWalletClient();
           
           // Sign rootHash (demo parity): prefer signMessage(raw) path.
-          let signature: unknown;
           if (walletClient.signMessage) {
             signature = await walletClient.signMessage({ message: { raw: result.rootHash as `0x${string}` } });
           } else {
@@ -700,7 +702,7 @@ export const SwapModal = ({
             if (!authorizations?.length) authorizations = undefined;
           }
           const sendResult = await universalAccount.sendTransaction(txAny, signature as string, authorizations);
-          
+
           if (sendResult?.transactionId) {
             onWalletActivity?.("swap_submit", targetToken.symbol);
             setIsLoading(false);
@@ -736,6 +738,48 @@ export const SwapModal = ({
         } catch (signError) {
           console.error("Signing error:", signError);
           setError("Failed to sign transaction");
+          return;
+        }
+      } else if (result.transaction && isSolanaSwap) {
+        // Solana sell: UA SDK has the tx ready, send it directly (no EVM signMessage).
+        onWalletActivity?.("swap_submit", targetToken.symbol);
+        setIsLoading(true);
+        setLoadingStatus("Sending transaction...");
+        try {
+          /* eslint-disable @typescript-eslint/no-explicit-any */
+        const sendResult = await universalAccount.sendTransaction(
+          result.transaction as any,
+          undefined as any,
+          undefined as any
+        );
+        /* eslint-enable @typescript-eslint/no-explicit-any */
+          if (sendResult?.transactionId) {
+            setIsLoading(false);
+            setIsConfirming(true);
+            setLoadingStatus("");
+            const txDetails = await pollTransactionDetails(
+              universalAccount,
+              sendResult.transactionId,
+              targetChainId,
+            );
+            if (txDetails.status === "completed") {
+              const fromSym = direction === "buy" ? "USDC" : (targetToken?.symbol || "TOKEN");
+              const toSym = direction === "buy" ? (targetToken?.symbol || "TOKEN") : "USDC";
+              onWalletActivity?.("swap_confirmed", `${fromSym} → ${toSym}`);
+              onSwapSuccess?.(sendResult.transactionId);
+              onClose();
+            } else if (txDetails.status === "failed") {
+              setError("Swap failed on-chain");
+            }
+            setIsConfirming(false);
+          } else {
+            setError("Transaction failed - no ID returned");
+          }
+        } catch (err) {
+          console.error("Solana send error:", err);
+          setError(err instanceof Error ? err.message : "Transaction failed");
+          setIsLoading(false);
+          setIsConfirming(false);
           return;
         }
       } else if (result.transactionId) {
