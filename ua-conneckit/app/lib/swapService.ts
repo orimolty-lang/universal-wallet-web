@@ -28,6 +28,7 @@ const RELAY_CHAIN_IDS = {
   OPTIMISM: 10,
   POLYGON: 137,
   BSC: 56,
+  MONAD: 143,
   SOLANA: 792703809,
 };
 
@@ -39,6 +40,7 @@ const USDC_ADDRESSES: Record<number, string> = {
   [RELAY_CHAIN_IDS.OPTIMISM]: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
   [RELAY_CHAIN_IDS.POLYGON]: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
   [RELAY_CHAIN_IDS.BSC]: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+  [RELAY_CHAIN_IDS.MONAD]: "0x754704Bc059F8C67012fEd69BC8A327a5aafb603",
   [RELAY_CHAIN_IDS.SOLANA]: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
 };
 
@@ -57,6 +59,7 @@ const CHAIN_EXPLORERS: Record<number, string> = {
   137: "https://polygonscan.com",
   56: "https://bscscan.com",
   43114: "https://snowtrace.io",
+  143: "https://monadscan.io",
   101: "https://solscan.io", // Solana
 };
 
@@ -71,6 +74,7 @@ export const CHAIN_LOGOS: Record<string, string> = {
   "bnb": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/smartchain/info/logo.png",
   "solana": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png",
   "avalanche": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/avalanchec/info/logo.png",
+  "monad": "https://raw.githubusercontent.com/wevm/viem/main/src/chains/images/monad.png",
 };
 
 /**
@@ -100,6 +104,7 @@ export function getChainName(chainId: number): string {
     137: "Polygon",
     56: "BNB Chain",
     43114: "Avalanche",
+    143: "Monad",
     101: "Solana",
     792703809: "Solana", // Relay's Solana chain ID
   };
@@ -1091,6 +1096,7 @@ export function getChainIdFromBlockchain(blockchain: string): number {
     bsc: 56,
     bnb: 56,
     avalanche: 43114,
+    monad: 143,
     solana: 101,
   };
   return mapping[blockchain.toLowerCase()] || 0;

@@ -1,5 +1,5 @@
 {
-  "originHash" : "4defbe8276abe1df7c5323f0bfc1056ca68f9f6bdc95811ec4f196f2e4360940",
+  "originHash" : "41d0343ca5eeb78c697755f0dacb9b07e1b9036f0d04316babd9b6c8a1d5ffa3",
   "pins" : [
     {
       "identity" : "capacitor-swift-pm",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "6a2a3feb25fda8df2a284d0818bc9c83e57a7d56",
         "version" : "8.3.0"
+      }
+    },
+    {
+      "identity" : "privy-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/privy-io/privy-ios",
+      "state" : {
+        "revision" : "dbb81a5b7dd4a6d8b489fc8307f3c10469ae6451",
+        "version" : "2.10.0"
       }
     }
   ],

@@ -46,6 +46,7 @@ const CHAIN_LOGOS: Record<number, string> = {
   42161: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png",
   10: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/optimism/info/logo.png",
   137: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/polygon/info/logo.png",
+  143: "https://raw.githubusercontent.com/wevm/viem/main/src/chains/images/monad.png",
   101: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png",
 };
 
@@ -225,7 +226,8 @@ export const SwapModal = ({
     const selectedChainId = targetToken.chainId
       || (targetToken.contracts?.find((c) => c.blockchain.toLowerCase() === "base") ? 8453 :
           (targetToken.contracts?.find((c) => c.blockchain.toLowerCase() === "ethereum") ? 1 :
-            (targetToken.contracts?.find((c) => c.blockchain.toLowerCase() === "solana") ? 101 : undefined)));
+            (targetToken.contracts?.find((c) => c.blockchain.toLowerCase() === "monad") ? 143 :
+              (targetToken.contracts?.find((c) => c.blockchain.toLowerCase() === "solana") ? 101 : undefined))));
     if (chainAgg?.length && selectedAddress && selectedChainId) {
       const row = chainAgg.find((c) =>
         (c.token?.chainId === selectedChainId) &&
@@ -341,6 +343,9 @@ export const SwapModal = ({
       const ethContract = targetToken.contracts.find(c => 
         c.blockchain.toLowerCase() === "ethereum"
       );
+      const monadContract = targetToken.contracts.find(c => 
+        c.blockchain.toLowerCase() === "monad"
+      );
       const solContract = targetToken.contracts.find(c => 
         c.blockchain.toLowerCase() === "solana"
       );
@@ -352,6 +357,10 @@ export const SwapModal = ({
       if (ethContract) {
         console.log("[SwapModal] Using Ethereum contract:", ethContract.address);
         return { address: ethContract.address, chainId: 1 };
+      }
+      if (monadContract) {
+        console.log("[SwapModal] Using Monad contract:", monadContract.address);
+        return { address: monadContract.address, chainId: 143 };
       }
       if (solContract) {
         console.log("[SwapModal] Using Solana contract:", solContract.address);

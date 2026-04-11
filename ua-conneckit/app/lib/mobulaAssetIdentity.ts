@@ -20,6 +20,7 @@ export const BLOCKCHAIN_SLUG_TO_CHAIN_ID: Record<string, number> = {
   sol: 101,
   avalanche: 43114,
   avax: 43114,
+  monad: 143,
 };
 
 /** Canonical wrapped native per chain — UA often uses 0x0/0xeee for gas while Mobula uses these. */

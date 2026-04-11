@@ -9,6 +9,15 @@ const MOBULA_API_BASE = "https://api.mobula.io/api/1";
 const PYTH_TV_BASE = "https://benchmarks.pyth.network/v1/shims/tradingview";
 const ZERION_API_BASE = "https://api.zerion.io/v1";
 
+const ZEROX_CHAIN_ALIAS_TO_ID = {
+  monad: 10143,
+};
+
+const ZEROX_CHAIN_ID_MAP = {
+  // UA uses Monad as 143; 0x expects 10143.
+  "143": 10143,
+};
+
 const corsHeaders = (env) => ({
   "Access-Control-Allow-Origin": env.ALLOWED_ORIGIN || "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -252,6 +261,22 @@ export default {
         url.searchParams.forEach((value, key) => {
           zeroXUrl.searchParams.set(key, value);
         });
+
+        // Convenience alias support, e.g. /0x/...?...&chain=monad
+        // 0x expects numeric chainId.
+        const chainAlias = (zeroXUrl.searchParams.get("chain") || "").toLowerCase();
+        if (chainAlias && !zeroXUrl.searchParams.get("chainId")) {
+          const mapped = ZEROX_CHAIN_ALIAS_TO_ID[chainAlias];
+          if (mapped) {
+            zeroXUrl.searchParams.set("chainId", String(mapped));
+          }
+        }
+
+        // Normalize known app chain IDs to 0x chain IDs.
+        const requestedChainId = zeroXUrl.searchParams.get("chainId");
+        if (requestedChainId && ZEROX_CHAIN_ID_MAP[requestedChainId]) {
+          zeroXUrl.searchParams.set("chainId", String(ZEROX_CHAIN_ID_MAP[requestedChainId]));
+        }
 
         const zeroXResponse = await fetch(zeroXUrl.toString(), {
           method: request.method,

@@ -121,6 +121,7 @@ const CHAIN_LOGOS: Record<string, string> = {
   "bnb": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/binance/info/logo.png",
   "solana": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png",
   "avalanche": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/avalanchec/info/logo.png",
+  "monad": "https://raw.githubusercontent.com/wevm/viem/main/src/chains/images/monad.png",
 };
 
 // Map blockchain names to block explorer token URLs (for "View on Explorer")
@@ -134,6 +135,7 @@ const EXPLORER_TOKEN_URLS: Record<string, string> = {
   bnb: "https://bscscan.com/token/",
   solana: "https://explorer.solana.com/address/",
   avalanche: "https://snowtrace.io/token/",
+  monad: "https://monadscan.io/token/",
 };
 
 const EXPLORER_TX_URLS: Record<string, string> = {
@@ -146,6 +148,7 @@ const EXPLORER_TX_URLS: Record<string, string> = {
   bnb: "https://bscscan.com/tx/",
   solana: "https://explorer.solana.com/tx/",
   avalanche: "https://snowtrace.io/tx/",
+  monad: "https://monadscan.io/tx/",
 };
 
 // Map blockchain names to DEXScreener/GeckoTerminal network slugs
@@ -159,6 +162,7 @@ const NETWORK_SLUGS: Record<string, { dexscreener: string; geckoterminal: string
   "bnb": { dexscreener: "bsc", geckoterminal: "bsc" },
   "solana": { dexscreener: "solana", geckoterminal: "solana" },
   "avalanche": { dexscreener: "avalanche", geckoterminal: "avax" },
+  "monad": { dexscreener: "monad", geckoterminal: "monad" },
 };
 
 const normalizeBlockchain = (blockchain?: string): string => {
@@ -170,6 +174,7 @@ const normalizeBlockchain = (blockchain?: string): string => {
   if (raw.includes("optim")) return "optimism";
   if (raw.includes("polygon") || raw === "matic") return "polygon";
   if (raw.includes("avax") || raw.includes("avalanche")) return "avalanche";
+  if (raw.includes("monad")) return "monad";
   if (raw.includes("bnb") || raw.includes("bsc") || raw.includes("binance")) return "bsc";
   if (raw.includes("eth") || raw.includes("erc20")) return "ethereum";
   if (raw.includes("base")) return "base";

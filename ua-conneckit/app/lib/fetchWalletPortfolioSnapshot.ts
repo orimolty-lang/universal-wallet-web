@@ -82,7 +82,7 @@ async function fetchMoralisWalletBalances(address: string): Promise<MobulaPortfo
 async function fetchMobulaWalletBalances(address: string): Promise<MobulaPortfolioAsset[]> {
   if (!address) return [];
   try {
-    const url = `${MOBULA_PROXY_BASE}/mobula/api/1/wallet/portfolio?wallet=${address}&blockchains=base,ethereum,arbitrum,polygon,solana,optimistic,bnb`;
+    const url = `${MOBULA_PROXY_BASE}/mobula/api/1/wallet/portfolio?wallet=${address}&blockchains=base,ethereum,arbitrum,polygon,solana,optimistic,bnb,monad`;
     const response = await fetch(url, { method: "GET", headers: { "Content-Type": "application/json" } });
     if (!response.ok) return await fetchMoralisWalletBalances(address);
     const data = await response.json();

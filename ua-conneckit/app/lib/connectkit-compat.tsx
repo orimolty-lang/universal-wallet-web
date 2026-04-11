@@ -14,7 +14,7 @@ import {
   useWallets as usePrivyWallets,
 } from "@privy-io/react-auth";
 import type { ConnectedWallet } from "@privy-io/react-auth";
-import { getAddress, isAddress } from "viem";
+import { defineChain, getAddress, isAddress } from "viem";
 import { arbitrum, avalanche, base, bsc, mainnet, optimism, polygon } from "viem/chains";
 import {
   defaultWalletSlotProfile,
@@ -30,6 +30,19 @@ export type { WalletSlotProfile } from "./walletSlotStorage";
 
 /** Max embedded Ethereum wallets per Privy user (Omni cap). */
 export const MAX_PRIVY_EMBEDDED_WALLETS = 5;
+
+// UA uses Monad as chainId 143 (0x quote chainId differs and is normalized in proxy worker).
+const MONAD_UA_CHAIN = defineChain({
+  id: 143,
+  name: "Monad",
+  nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 },
+  rpcUrls: {
+    default: { http: ["https://rpc.monad.xyz"] },
+  },
+  blockExplorers: {
+    default: { name: "Monadscan", url: "https://monadscan.io" },
+  },
+});
 
 export type EmbeddedWalletRow = {
   address: string;
@@ -556,7 +569,7 @@ export function MagicAuthProvider({ children }: React.PropsWithChildren) {
           showWalletUIs: false,
         },
         defaultChain: base,
-        supportedChains: [base, optimism, arbitrum, polygon, bsc, mainnet, avalanche],
+        supportedChains: [base, optimism, arbitrum, polygon, bsc, mainnet, avalanche, MONAD_UA_CHAIN],
       }}
     >
       <PrivyAuthInner>{children}</PrivyAuthInner>
