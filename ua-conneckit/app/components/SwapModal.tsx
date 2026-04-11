@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type { IAssetsResponse, UniversalAccount } from "@particle-network/universal-account-sdk";
 import { executeSwap, executeSell, get0xSwapQuote, getRelayQuote, getChainIdFromBlockchain, pollTransactionDetails, USDC_ADDRESSES } from "../lib/swapService";
 import { mergedAssetMatchesContractKeys, tokenContractKeySet } from "../lib/mobulaAssetIdentity";
-import { useWallets, useSign7702AuthorizationCompat } from "@/app/lib/connectkit-compat";
+import { useWallets, useSign7702AuthorizationCompat, useSignMessageCompat } from "@/app/lib/connectkit-compat";
 import { getUserOpsFromTx, handleEIP7702Authorizations } from "@/lib/eip7702";
 import SlideToConfirm from "../../components/SlideToConfirm";
 import type { WalletActivityToastKind } from "./WalletActivityToast";
@@ -560,6 +560,7 @@ export const SwapModal = ({
   // Get wallet for signing
   const [primaryWallet] = useWallets();
   const sign7702 = useSign7702AuthorizationCompat();
+  const signMessage = useSignMessageCompat();
 
   const sellTokenHuman = tokenBalance * sliderValue / 100;
 
@@ -649,9 +650,18 @@ export const SwapModal = ({
         try {
           const walletClient = isSolanaSwap ? null : primaryWallet!.getWalletClient();
 
-          // EVM: sign rootHash via personal_sign. Solana: skip EVM signing.
+          // EVM: sign rootHash via personal_sign.
+          // Solana: sign via compat signer (required by UA sendTransaction serialization).
           let signature: unknown = undefined;
-          if (!isSolanaSwap) {
+          if (isSolanaSwap) {
+            const ownerAddr = primaryWallet?.getWalletClient()?.account?.address as `0x${string}` | undefined;
+            if (!signMessage || !ownerAddr) throw new Error("Solana signer unavailable");
+            const signed = await signMessage(
+              { message: result.rootHash as `0x${string}` },
+              { uiOptions: { title: "Sign swap" }, address: ownerAddr }
+            );
+            signature = signed.signature;
+          } else {
             if (walletClient?.signMessage) {
               signature = await walletClient.signMessage({ message: { raw: result.rootHash as `0x${string}` } });
             } else {
@@ -704,7 +714,7 @@ export const SwapModal = ({
           }
           const sendResult = await universalAccount.sendTransaction(
             txAny,
-            (isSolanaSwap ? (undefined as unknown as string) : (signature as string)),
+            signature as string,
             authorizations,
           );
           
