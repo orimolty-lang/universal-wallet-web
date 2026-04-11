@@ -741,8 +741,14 @@ export const SwapModal = ({
             setError("Transaction failed - no ID returned");
           }
         } catch (signError) {
-          console.error("Signing error:", signError);
-          setError("Failed to sign transaction");
+          console.error("Swap signing/send error:", signError);
+          if (isSolanaSwap) {
+            const msg = signError instanceof Error ? signError.message : String(signError || "Unknown error");
+            setError(`solana_send_failed: ${msg}`);
+          } else {
+            const msg = signError instanceof Error ? signError.message : "Failed to sign transaction";
+            setError(`sign_failed: ${msg}`);
+          }
           return;
         }
       } else if (result.transactionId) {
