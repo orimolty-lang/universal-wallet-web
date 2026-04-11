@@ -6193,6 +6193,7 @@ const SearchTab = ({
   const dexMetricsCacheRef = useRef<Record<string, DexPairMetrics>>({});
   const dexMetricsGateRef = useRef(Promise.resolve());
   const dexMetricsNextSlotRef = useRef(0);
+  const mobulaSearchNextSlotRef = useRef(0);
 
   const enqueueDexMetricsFetch = useCallback(<T,>(fn: () => Promise<T>): Promise<T> => {
     const run = dexMetricsGateRef.current.then(async () => {
@@ -6404,6 +6405,12 @@ const SearchTab = ({
     setLoading(true);
     setError(null);
     try {
+      // Mobula plan limit: 1 RPS. Enforce a local gate before firing search.
+      const now = Date.now();
+      const wait = Math.max(0, mobulaSearchNextSlotRef.current - now);
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      mobulaSearchNextSlotRef.current = Date.now() + 1050;
+
       const res = await fetch(`${MOBULA_PROXY_BASE}/mobula/api/1/search?input=${encodeURIComponent(q)}`);
       
       if (!res.ok) {
@@ -6486,7 +6493,7 @@ const SearchTab = ({
   }, [fetchDexMetrics, pickPrimaryContract, scoreToken]);
 
   useEffect(() => {
-    const timer = setTimeout(() => searchTokens(query), 500);
+    const timer = setTimeout(() => searchTokens(query), 850);
     return () => clearTimeout(timer);
   }, [query, searchTokens]);
 

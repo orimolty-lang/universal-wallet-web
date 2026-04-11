@@ -54,6 +54,9 @@ export default {
             mobulaPath.startsWith("/metadata") ||
             mobulaPath.startsWith("/wallet/portfolio")
           );
+        const cacheControl = mobulaPath.startsWith("/search")
+          ? "public, s-maxage=120, max-age=30"
+          : (cacheEligible ? "public, s-maxage=30, max-age=15" : "no-store");
 
         if (cacheEligible) {
           const hit = await cache.match(cacheKey);
@@ -62,7 +65,7 @@ export default {
               status: hit.status,
               headers: {
                 "Content-Type": hit.headers.get("Content-Type") || "application/json",
-                "Cache-Control": hit.headers.get("Cache-Control") || "public, s-maxage=30, max-age=15",
+                "Cache-Control": hit.headers.get("Cache-Control") || cacheControl,
                 "X-Proxy-Cache": "HIT",
                 ...corsHeaders(env),
               },
@@ -132,7 +135,7 @@ export default {
               status: 200,
               headers: {
                 "Content-Type": stale.headers.get("Content-Type") || "application/json",
-                "Cache-Control": stale.headers.get("Cache-Control") || "public, s-maxage=30, max-age=15",
+                "Cache-Control": stale.headers.get("Cache-Control") || cacheControl,
                 "X-Proxy-Cache": "STALE-429",
                 ...corsHeaders(env),
               },
@@ -145,7 +148,7 @@ export default {
           status: mobulaResponse.status,
           headers: {
             "Content-Type": mobulaResponse.headers.get("Content-Type") || "application/json",
-            "Cache-Control": cacheEligible ? "public, s-maxage=30, max-age=15" : "no-store",
+            "Cache-Control": cacheControl,
             "X-Proxy-Cache": "MISS",
             ...corsHeaders(env),
           },
