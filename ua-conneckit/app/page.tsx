@@ -1381,8 +1381,11 @@ const SendModal = ({
         const tokenAddr = (c.token?.address || "").trim();
         const bal = typeof c.amount === "string" ? parseFloat(c.amount) : Number(c.amount || 0);
         const usdValue = Number((c as { amountInUSD?: number | string }).amountInUSD || 0);
-        // Hide dust/spam rows under $0.10 from send selection.
-        if (!Number.isFinite(chainId) || bal < 0.0001 || !Number.isFinite(usdValue) || usdValue < 0.1) continue;
+        // Hide dust/spam rows primarily by token balance; only enforce USD floor when USD is actually known.
+        // This keeps external Solana assets visible even when upstream USD enrichment is missing.
+        const usdKnown = Number.isFinite(usdValue) && usdValue > 0;
+        if (!Number.isFinite(chainId) || bal < 0.0001) continue;
+        if (usdKnown && usdValue < 0.1) continue;
         const addrKey = tokenAddr ? tokenAddr.toLowerCase() : "native";
         const key = `${asset.assetKey ?? sym}|${chainId}|${addrKey}|${i}`;
         out.push({
@@ -1596,7 +1599,7 @@ const SendModal = ({
                         <div className="flex-1 min-w-0">
                           <div className="text-white text-sm">{o.symbol}</div>
                           <div className="text-gray-500 text-xs">
-                            {o.balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 6 })} · ${o.usdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {o.balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 6 })} · {Number.isFinite(o.usdValue) && o.usdValue > 0 ? `$${o.usdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "USD N/A"}
                           </div>
                         </div>
                       </button>
@@ -8192,7 +8195,7 @@ const App = () => {
           isExternal: true, // Flag to identify external assets
           contracts, // Now properly populated
           assetKey: positionKeys[0],
-          // Build chain aggregation from cross_chain_balances
+          // Build chain aggregation from cross_chain_balances, with contracts_balances fallback.
           chainAggregation: ma.cross_chain_balances
             ? Object.values(ma.cross_chain_balances).map((data) => {
                 const rawCid = data.chainId as string | number | undefined;
@@ -8208,7 +8211,23 @@ const App = () => {
                   amountInUSD: data.balance * ma.price,
                 };
               })
-            : [],
+            : (Array.isArray(ma.contracts_balances)
+                ? ma.contracts_balances
+                    .map((row, idx) => {
+                      const cid = parseChainIdMobula(row.chainId);
+                      if (!cid || !row.address) return null;
+                      const dyn = row as unknown as { balance?: number | string; token_balance?: number | string; amount?: number | string };
+                      const parsed = Number(dyn.balance ?? dyn.token_balance ?? dyn.amount ?? NaN);
+                      const fallbackAmount = idx === 0 ? ma.token_balance : 0;
+                      const amount = Number.isFinite(parsed) ? parsed : fallbackAmount;
+                      return {
+                        token: { chainId: cid, address: row.address },
+                        amount,
+                        amountInUSD: amount * ma.price,
+                      };
+                    })
+                    .filter((x): x is { token: { chainId: number; address: string }; amount: number; amountInUSD: number } => !!x)
+                : []),
         };
       });
     
