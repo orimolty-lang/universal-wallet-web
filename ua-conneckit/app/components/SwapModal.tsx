@@ -220,15 +220,14 @@ export const SwapModal = ({
     // Prefer chain-specific balance when available (prevents inflated merged balances on sell math).
     const chainAgg = (asset as { chainAggregation?: Array<{ amount?: number | string; token?: { address?: string; chainId?: number } }> }).chainAggregation;
     const selectedAddress = targetToken.address
-      || targetToken.contracts?.find((c) => c.blockchain.toLowerCase() === "solana")?.address
       || targetToken.contracts?.find((c) => c.blockchain.toLowerCase() === "base")?.address
       || targetToken.contracts?.[0]?.address
       || "";
     const selectedChainId = targetToken.chainId
-      || (targetToken.contracts?.find((c) => c.blockchain.toLowerCase() === "solana") ? 101 :
-          (targetToken.contracts?.find((c) => c.blockchain.toLowerCase() === "base") ? 8453 :
-            (targetToken.contracts?.find((c) => c.blockchain.toLowerCase() === "ethereum") ? 1 :
-              (targetToken.contracts?.find((c) => c.blockchain.toLowerCase() === "monad") ? 143 : undefined))));
+      || (targetToken.contracts?.find((c) => c.blockchain.toLowerCase() === "base") ? 8453 :
+          (targetToken.contracts?.find((c) => c.blockchain.toLowerCase() === "ethereum") ? 1 :
+            (targetToken.contracts?.find((c) => c.blockchain.toLowerCase() === "monad") ? 143 :
+              (targetToken.contracts?.find((c) => c.blockchain.toLowerCase() === "solana") ? 101 : undefined))));
     if (chainAgg?.length && selectedAddress && selectedChainId) {
       const row = chainAgg.find((c) =>
         (c.token?.chainId === selectedChainId) &&
@@ -335,37 +334,9 @@ export const SwapModal = ({
       return { address: targetToken.address, chainId: targetToken.chainId };
     }
     
-    // If we can resolve a positive-balance chain row for this token, prefer that.
-    if (assetsForTokenLookup?.assets && targetToken.contracts?.length) {
-      const want = tokenContractKeySet(targetToken.contracts);
-      if (want.size > 0) {
-        const matchingAsset = assetsForTokenLookup.assets.find((a) =>
-          mergedAssetMatchesContractKeys(a as never, want),
-        );
-        if (matchingAsset && (matchingAsset as { chainAggregation?: unknown[] }).chainAggregation) {
-          const agg = (matchingAsset as { chainAggregation: Array<{ amount?: number | string; token?: { address?: string; chainId?: number } }> })
-            .chainAggregation;
-          const positive = agg
-            .filter((c) => Number(c.amount || 0) > 0 && c.token?.address && c.token?.chainId)
-            .sort((a, b) => Number(b.amount || 0) - Number(a.amount || 0));
-          const preferred = positive.find((c) => c.token?.chainId === 101) || positive[0];
-          if (preferred?.token?.address && preferred?.token?.chainId) {
-            console.log("[SwapModal] Using chainAggregation address:", preferred.token.address, "chain:", preferred.token.chainId);
-            return {
-              address: preferred.token.address,
-              chainId: preferred.token.chainId,
-            };
-          }
-        }
-      }
-    }
-
     // If token has contracts array (from Mobula search or external assets)
     if (targetToken.contracts && targetToken.contracts.length > 0) {
-      // Prefer Solana first (to avoid Base-first misroutes for multi-chain tokens), then Base/Ethereum/Monad.
-      const solContract = targetToken.contracts.find(c => 
-        c.blockchain.toLowerCase() === "solana"
-      );
+      // Prefer Base, then Ethereum, then first available
       const baseContract = targetToken.contracts.find(c => 
         c.blockchain.toLowerCase() === "base"
       );
@@ -375,11 +346,10 @@ export const SwapModal = ({
       const monadContract = targetToken.contracts.find(c => 
         c.blockchain.toLowerCase() === "monad"
       );
+      const solContract = targetToken.contracts.find(c => 
+        c.blockchain.toLowerCase() === "solana"
+      );
       
-      if (solContract) {
-        console.log("[SwapModal] Using Solana contract:", solContract.address);
-        return { address: solContract.address, chainId: 101 };
-      }
       if (baseContract) {
         console.log("[SwapModal] Using Base contract:", baseContract.address);
         return { address: baseContract.address, chainId: 8453 };
@@ -391,6 +361,10 @@ export const SwapModal = ({
       if (monadContract) {
         console.log("[SwapModal] Using Monad contract:", monadContract.address);
         return { address: monadContract.address, chainId: 143 };
+      }
+      if (solContract) {
+        console.log("[SwapModal] Using Solana contract:", solContract.address);
+        return { address: solContract.address, chainId: 101 };
       }
       
       // Use first contract
